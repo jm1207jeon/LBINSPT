@@ -1,0 +1,17 @@
+pyproject.toml
+labelsuite/__init__.py
+labelsuite/__main__.py
+labelsuite.egg-info/PKG-INFO
+labelsuite.egg-info/SOURCES.txt
+labelsuite.egg-info/dependency_links.txt
+labelsuite.egg-info/entry_points.txt
+labelsuite.egg-info/requires.txt
+labelsuite.egg-info/top_level.txt
+labelsuite/core/__init__.py
+labelsuite/core/config.py
+labelsuite/core/schema.py
+labelsuite/core/standards.py
+labelsuite/resources/default_config/column_maps.json
+labelsuite/resources/default_config/settings.json
+labelsuite/resources/default_config/standards.json
+tests/test_schema.py

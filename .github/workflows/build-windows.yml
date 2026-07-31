@@ -1,0 +1,74 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Run tests (headless)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest tests -q
+
+      - name: Build with PyInstaller
+        run: pyinstaller packaging/labelsuite.spec --noconfirm
+
+      - name: Smoke check
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist/LabelSuite/LabelSuite.exe")) {
+            Write-Error "LabelSuite.exe가 생성되지 않았습니다."
+            exit 1
+          }
+          Get-ChildItem dist/LabelSuite | Select-Object -First 5
+
+      - name: Resolve version label
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            "label=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
+          } else {
+            $short = "${{ github.sha }}".Substring(0, 7)
+            "label=$short" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Package zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/LabelSuite -DestinationPath "LabelSuite-windows-${{ steps.version.outputs.label }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LabelSuite-windows-${{ steps.version.outputs.label }}
+          path: LabelSuite-windows-${{ steps.version.outputs.label }}.zip
+          retention-days: 30
+
+      - name: Create GitHub Release (tags only)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: LabelSuite-windows-${{ steps.version.outputs.label }}.zip
+          generate_release_notes: true

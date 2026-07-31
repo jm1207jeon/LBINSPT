@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+*.spec.bak
+.DS_Store
+csharp/**/bin/
+csharp/**/obj/
+csharp/**/publish/

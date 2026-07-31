@@ -1,0 +1,2 @@
+[gui_scripts]
+labelsuite = labelsuite.gui.app:main
