@@ -1,0 +1,73 @@
+name: Build C# Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["cs-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Run core tests
+        run: dotnet test csharp/tests/LabelSuite.Core.Tests -c Release --nologo
+
+      - name: Publish self-contained single-file exe
+        run: >
+          dotnet publish csharp/src/LabelSuite.App -c Release -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -o publish
+
+      - name: Smoke check
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "publish/LabelSuite.exe")) {
+            Write-Error "LabelSuite.exe가 생성되지 않았습니다."
+            exit 1
+          }
+          "{0:N1} MB" -f ((Get-Item publish/LabelSuite.exe).Length / 1MB)
+
+      - name: Resolve version label
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            "label=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
+          } else {
+            $short = "${{ github.sha }}".Substring(0, 7)
+            "label=$short" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Package zip
+        shell: pwsh
+        run: >
+          Compress-Archive -Path publish/*
+          -DestinationPath "LabelSuite-csharp-${{ steps.version.outputs.label }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LabelSuite-csharp-${{ steps.version.outputs.label }}
+          path: LabelSuite-csharp-${{ steps.version.outputs.label }}.zip
+          retention-days: 30
+
+      - name: Create GitHub Release (tags only)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: LabelSuite-csharp-${{ steps.version.outputs.label }}.zip
+          generate_release_notes: true

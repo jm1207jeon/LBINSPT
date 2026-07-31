@@ -1,7 +1,39 @@
 # LabelSuite — 통합 라벨 검사 프로그램
 
 기존 두 프로그램(`Label Inspector_list generator`의 목록 생성, `Label Inspector`의
-라벨 OCR 검사)을 하나의 PySide6 앱으로 통합·고도화한 프로그램입니다.
+라벨 OCR 검사)을 하나의 앱으로 통합·고도화한 프로그램입니다.
+
+**두 가지 구현이 있습니다:**
+
+| 구현 | 위치 | 배포물 | 상태 |
+|---|---|---|---|
+| **C# (.NET 8 + WPF)** — 권장 | `csharp/` | 자립형 **단일 exe** (~80MB, 설치·런타임 불필요) | 신규 — 장기 유지 대상 |
+| Python (PySide6) | `labelsuite/` | PyInstaller onedir zip (~500MB) | 검증된 참조 구현 |
+
+두 구현은 동일한 로직(스키마·생성 규칙·GS1 파서·검사 엔진·프리페치·캐시)을
+공유하며, C# 쪽은 파이썬 테스트 스위트를 명세로 포팅한 xunit 70건으로 동등성을
+보장합니다. OCR은 양쪽 다 AWS Textract(서버 측 인식)라 인식률이 동일합니다.
+
+## C# 버전 (csharp/)
+
+```bash
+# 빌드/테스트 (Windows 또는 Linux)
+dotnet test csharp/tests/LabelSuite.Core.Tests
+# 실행 (Windows)
+dotnet run --project csharp/src/LabelSuite.App
+# 단일 exe 배포 (Windows)
+dotnet publish csharp/src/LabelSuite.App -c Release -r win-x64 --self-contained \
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+```
+
+GitHub Actions: **Actions 탭 → "Build C# Windows EXE" → Run workflow**,
+또는 `cs-v1.0.0` 형식 태그를 푸시하면 Release에 단일 exe zip이 첨부됩니다.
+고급 설정(컬럼 매핑·중국 REF 매핑)은 설정 창의 "설정 폴더 열기"로 JSON을 직접
+편집합니다.
+
+---
+
+## Python 버전 (labelsuite/)
 
 ## 주요 기능
 
