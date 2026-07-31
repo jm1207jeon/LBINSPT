@@ -1,0 +1,18 @@
+{
+  "_comment": "사용자 설정 기본값. 최초 실행 시 %APPDATA%/LabelSuite/settings.json 으로 복사됨.",
+  "schema_version": 1,
+  "last_files": {"schedule": "", "product": "", "bsc": ""},
+  "last_list_path": "",
+  "save_directory": "",
+  "aws": {"region": "ap-northeast-2", "profile": ""},
+  "shelf_life_months": 36,
+  "country_standard_map": {"일본": "BSC", "중국": "중국", "*": "MDR"},
+  "pdf_render_zoom": 4.0,
+  "prefetch_policy": "all",
+  "ocr_cache_max_entries": 500,
+  "page_image_cache_pages": 6,
+  "auto_save_default": false,
+  "camera_index": 0,
+  "jpeg_quality": 90,
+  "save_scale": 0.5
+}

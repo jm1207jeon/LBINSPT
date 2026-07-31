@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: labelsuite
+Version: 1.0.0
+Summary: 통합 라벨 검사 프로그램 — 검사 목록 생성 + 라벨 OCR/바코드 검사
+Requires-Python: >=3.11
+Requires-Dist: PySide6-Essentials>=6.6
+Requires-Dist: pandas>=2.0
+Requires-Dist: openpyxl>=3.1
+Requires-Dist: python-dateutil>=2.8
+Requires-Dist: platformdirs>=4.0
+Requires-Dist: boto3>=1.34
+Requires-Dist: PyMuPDF>=1.24
+Requires-Dist: opencv-python>=4.9
+Requires-Dist: numpy>=1.26
+Requires-Dist: zxing-cpp>=2.2
+Requires-Dist: Pillow>=10.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pyinstaller>=6.6; extra == "dev"

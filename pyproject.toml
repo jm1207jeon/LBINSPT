@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "labelsuite"
+version = "1.0.0"
+description = "통합 라벨 검사 프로그램 — 검사 목록 생성 + 라벨 OCR/바코드 검사"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6-Essentials>=6.6",
+    "pandas>=2.0",
+    "openpyxl>=3.1",
+    "python-dateutil>=2.8",
+    "platformdirs>=4.0",
+    "boto3>=1.34",
+    "PyMuPDF>=1.24",
+    "opencv-python>=4.9",
+    "numpy>=1.26",
+    "zxing-cpp>=2.2",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pyinstaller>=6.6"]
+
+[project.gui-scripts]
+labelsuite = "labelsuite.gui.app:main"
+
+[tool.setuptools.packages.find]
+include = ["labelsuite*"]
+
+[tool.setuptools.package-data]
+labelsuite = ["resources/default_config/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

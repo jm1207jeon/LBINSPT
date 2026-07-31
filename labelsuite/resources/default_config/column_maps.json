@@ -1,0 +1,15 @@
+{
+  "_comment": "입력 엑셀 컬럼 매핑(0-기반 인덱스)과 시트명. 레거시 LiGen의 iloc 인덱스를 그대로 이식. 참고: schedule.ref=9는 J열.",
+  "schedule": {
+    "sheet": "진행수량",
+    "columns": {"lot": 5, "pn": 6, "products": 7, "ref": 9, "country": 13, "mfg": 23}
+  },
+  "product": {
+    "sheet": "품목번호리스트",
+    "columns": {"pn": 0, "gtin": 11}
+  },
+  "bsc": {
+    "sheet": "현UPN별",
+    "columns": {"ref": 12, "pn": 15, "gtin": 42}
+  }
+}
