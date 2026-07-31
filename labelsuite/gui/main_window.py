@@ -9,7 +9,8 @@ from __future__ import annotations
 from PySide6.QtWidgets import QLabel, QMainWindow, QMessageBox, QTabWidget
 
 from labelsuite import __version__
-from labelsuite.core.config import AppConfig
+from labelsuite.core.config import AppConfig, data_dir
+from labelsuite.core.history.db import HistoryDb
 from labelsuite.core.schema import LabelRecord
 from labelsuite.core.standards import StandardsBundle, load_standards
 from labelsuite.gui.generator_page import GeneratorPage
@@ -24,6 +25,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.config = config
         self.standards: StandardsBundle = load_standards(config)
+        self.history_db = HistoryDb(data_dir() / "history.sqlite3")
         self.setWindowTitle(f"LabelSuite v{__version__} — 통합 라벨 검사")
         self.resize(1600, 900)
 
@@ -48,11 +50,10 @@ class MainWindow(QMainWindow):
 
         self._create_menu()
 
-    # 검사/이력 페이지는 이후 단계에서 실제 구현으로 교체된다.
     def _create_inspector_page(self):
         from labelsuite.gui.inspector_page import InspectorPage
 
-        page = InspectorPage(self.config, self.standards)
+        page = InspectorPage(self.config, self.standards, history_db=self.history_db)
         page.status_message.connect(self.statusBar().showMessage)
         page.aws_status_changed.connect(self._on_aws_status)
         return page
@@ -60,7 +61,10 @@ class MainWindow(QMainWindow):
     def _create_history_page(self):
         from labelsuite.gui.history_page import HistoryPage
 
-        return HistoryPage(self.config)
+        page = HistoryPage(self.config, db=self.history_db)
+        self.tabs.currentChanged.connect(
+            lambda index: page.refresh() if index == TAB_HISTORY else None)
+        return page
 
     def _create_menu(self) -> None:
         menu = self.menuBar().addMenu("설정")
@@ -95,4 +99,5 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # 레거시엔 없어 카메라/문서가 미해제였음
         self.inspector_page.shutdown()
+        self.history_db.close()
         super().closeEvent(event)

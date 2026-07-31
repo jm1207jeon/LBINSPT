@@ -77,10 +77,12 @@ class InspectorPage(QWidget):
     aws_status_changed = Signal(bool, str)
     page_inspected = Signal(int, object)   # page, InspectionOutcome — 자동저장/이력 훅
 
-    def __init__(self, config: AppConfig, standards: StandardsBundle, parent=None):
+    def __init__(self, config: AppConfig, standards: StandardsBundle,
+                 history_db=None, parent=None):
         super().__init__(parent)
         self.config = config
         self.standards = standards
+        self.history_db = history_db
         self.engine = InspectionEngine(standards)
         self.textract = TextractClient(
             region=config.settings["aws"].get("region", "ap-northeast-2"),
@@ -598,6 +600,8 @@ class InspectorPage(QWidget):
             self.status_message.emit(f"저장 경로: {path}")
 
     def _next_counter(self) -> int:
+        if self.history_db is not None:
+            return self.history_db.next_file_counter()
         counter = int(self.config.settings.get("file_counter", 0)) + 1
         self.config.settings["file_counter"] = counter
         self.config.save_settings()
@@ -641,7 +645,13 @@ class InspectorPage(QWidget):
 
     def _record_history(self, outcome: InspectionOutcome, image_path: str,
                         page: int) -> None:
-        """검사 이력 기록 — Phase 7에서 HistoryDb로 배선된다."""
+        if self.history_db is None:
+            return
+        self.history_db.record_inspection(
+            outcome, image_path,
+            source=self.mode or "unknown",
+            pdf_path=self.pdf.path if self.mode == "pdf" else None,
+            page=page if self.mode == "pdf" else None)
 
     # ------------------------------------------------------------------ 종료
 
