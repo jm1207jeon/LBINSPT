@@ -30,7 +30,23 @@ python -m labelsuite
 
 ## Windows exe 빌드
 
-Windows 머신에서:
+### 방법 1 — GitHub Actions (권장, Windows 머신 불필요)
+
+- **수동 빌드**: GitHub 저장소의 **Actions 탭 → "Build Windows EXE" → Run
+  workflow** 실행 후, 완료된 잡의 Artifacts에서
+  `LabelSuite-windows-*.zip`을 내려받습니다.
+- **릴리스 빌드**: 버전 태그를 푸시하면 자동으로 GitHub Release가 만들어지고
+  zip이 첨부됩니다.
+
+  ```bash
+  git tag v1.0.0
+  git push origin v1.0.0
+  ```
+
+빌드 파이프라인은 테스트(94건) → PyInstaller(onedir) → exe 스모크 확인 →
+zip 패키징 순으로 수행됩니다.
+
+### 방법 2 — 로컬 Windows 머신
 
 ```bat
 packaging\build_win.bat
