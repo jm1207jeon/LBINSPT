@@ -160,6 +160,10 @@ class GeneratorPage(QWidget):
         layout = QHBoxLayout(self)
         layout.addWidget(splitter)
 
+    def apply_config(self) -> None:
+        """설정 변경 반영 — 컬럼 매핑을 다시 읽는다 (다음 로드부터 적용)."""
+        self.colmaps = ColumnMaps.from_config(self.config.column_maps_raw)
+
     # ---------- 파일 로드 ----------
 
     def _restore_last_files(self) -> None:

@@ -80,6 +80,8 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self.standards = load_standards(self.config)
             self.inspector_page.apply_config()
+            self.generator_page.apply_config()
+            self.statusBar().showMessage("설정이 저장되었습니다.")
 
     def _show_about(self) -> None:
         QMessageBox.about(
