@@ -1,7 +1,16 @@
-from labelsuite.core.ocr.cache import OcrCache, frame_cache_key, page_cache_key
+from labelsuite.core.barcode.detector import BarcodeHit
+from labelsuite.core.ocr.cache import (
+    OcrCache,
+    PageAnalysis,
+    frame_cache_key,
+    page_cache_key,
+)
 from labelsuite.core.ocr.textract_client import OcrWord
 
-WORDS = [OcrWord("hello", (1, 2, 3, 4), 99)]
+ANALYSIS = PageAnalysis(
+    words=[OcrWord("hello", (1, 2, 3, 4), 99)],
+    barcodes=[BarcodeHit("DataMatrix", "0108806173612345", (5, 6, 7, 8), True)],
+)
 
 
 class TestKeys:
@@ -28,23 +37,25 @@ class TestKeys:
 class TestCache:
     def test_memory_round_trip(self, tmp_path):
         cache = OcrCache(tmp_path / "cache")
-        cache.put("k1", WORDS)
-        assert cache.get("k1") == WORDS
+        cache.put("k1", ANALYSIS)
+        assert cache.get("k1") is ANALYSIS
         assert cache.get("missing") is None
 
     def test_disk_persistence(self, tmp_path):
         directory = tmp_path / "cache"
-        OcrCache(directory).put("k1", WORDS)
+        OcrCache(directory).put("k1", ANALYSIS)
         fresh = OcrCache(directory)
         got = fresh.get("k1")
         assert got is not None
-        assert got[0].text == "hello"
-        assert got[0].bbox == (1, 2, 3, 4)
+        assert got.words[0].text == "hello"
+        assert got.words[0].bbox == (1, 2, 3, 4)
+        assert got.barcodes[0].symbology == "DataMatrix"
+        assert got.barcodes[0].is_gs1 is True
 
     def test_lru_cap(self, tmp_path):
         cache = OcrCache(None, max_entries=2)
-        cache.put("a", WORDS)
-        cache.put("b", WORDS)
-        cache.put("c", WORDS)
+        cache.put("a", ANALYSIS)
+        cache.put("b", ANALYSIS)
+        cache.put("c", ANALYSIS)
         assert cache.get("a") is None
         assert cache.get("c") is not None

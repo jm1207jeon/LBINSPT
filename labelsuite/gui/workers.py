@@ -93,11 +93,11 @@ class OcrPrefetchWorker(QThread):
       현재 페이지/세대와 대조해 결정하고, 캐시 저장은 항상 수행한다.
     """
 
-    page_done = Signal(int, int, str, list)    # generation, page, cache_key, words
+    page_done = Signal(int, int, str, object)  # generation, page, cache_key, PageAnalysis
     page_failed = Signal(int, int, str)        # generation, page, 사용자용 메시지
     queue_idle = Signal()
 
-    def __init__(self, ocr_fn: Callable[[np.ndarray], list], parent=None):
+    def __init__(self, ocr_fn: Callable[[np.ndarray], object], parent=None):
         super().__init__(parent)
         self._ocr_fn = ocr_fn
         self._heap: list[_OcrJob] = []
@@ -158,7 +158,7 @@ class OcrPrefetchWorker(QThread):
                 continue  # 문서가 바뀐 뒤 남은 잡 — 렌더/과금 없이 폐기
             try:
                 image = job.render()
-                words = self._ocr_fn(image)
+                analysis = self._ocr_fn(image)
             except Exception as exc:
                 with self._lock:
                     self._pending.discard((job.generation, job.page))
@@ -166,4 +166,4 @@ class OcrPrefetchWorker(QThread):
                 continue
             with self._lock:
                 self._pending.discard((job.generation, job.page))
-            self.page_done.emit(job.generation, job.page, job.cache_key, words)
+            self.page_done.emit(job.generation, job.page, job.cache_key, analysis)

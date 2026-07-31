@@ -18,6 +18,15 @@ def qapp():
     yield app
 
 
+@pytest.fixture(autouse=True)
+def stub_aws(monkeypatch):
+    """AWS 체크 스레드가 실제 네트워크를 타지 않도록 무력화."""
+    from labelsuite.gui.inspector_page import _AwsCheckWorker
+
+    monkeypatch.setattr(_AwsCheckWorker, "run",
+                        lambda self: self.checked.emit(True, "AWS: 스텁"))
+
+
 @pytest.fixture
 def config(tmp_path):
     from labelsuite.core.config import AppConfig
