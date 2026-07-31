@@ -1,0 +1,57 @@
+{
+  "_comment": "검사 규격 정의. counts: 필드별 기대 출현 횟수, date_format: strftime 포맷, uses_china_field: CHINA 필드 사용 여부. 레거시 main_window.py의 reference_counts를 그대로 이식.",
+  "standards": {
+    "MDR": {
+      "counts": {"LOT": 11, "PN": 3, "REF": 11, "MFG DATE": 2, "EXP DATE": 3, "GTIN": 8, "CHINA": 0},
+      "date_format": "%Y-%m-%d",
+      "uses_china_field": false
+    },
+    "MDD": {
+      "counts": {"LOT": 11, "PN": 3, "REF": 11, "MFG DATE": 2, "EXP DATE": 3, "GTIN": 8, "CHINA": 0},
+      "date_format": "%Y-%m-%d",
+      "uses_china_field": false
+    },
+    "BSC": {
+      "counts": {"LOT": 13, "PN": 4, "REF": 4, "MFG DATE": 2, "EXP DATE": 2, "GTIN": 1, "CHINA": 0},
+      "date_format": "%Y.%m.%d",
+      "uses_china_field": false
+    },
+    "A00": {
+      "counts": {"LOT": 13, "PN": 3, "REF": 13, "MFG DATE": 2, "EXP DATE": 2, "GTIN": 1, "CHINA": 0},
+      "date_format": "%Y-%m-%d",
+      "uses_china_field": false
+    },
+    "A02": {
+      "counts": {"LOT": 13, "PN": 3, "REF": 13, "MFG DATE": 2, "EXP DATE": 4, "GTIN": 1, "CHINA": 0},
+      "date_format": "%Y-%m-%d",
+      "uses_china_field": false
+    },
+    "중국": {
+      "counts": {"LOT": 5, "PN": 0, "REF": 5, "MFG DATE": 1, "EXP DATE": 5, "GTIN": 4, "CHINA": 1},
+      "date_format": "%Y-%m-%d",
+      "uses_china_field": true
+    }
+  },
+  "china_ref_mapping": {
+    "HEV": "LBDA-02",
+    "NDS": "LBDC-01",
+    "NES": "LBDA-01",
+    "SHS": "LBDB-01",
+    "TLC": "LBDC-02",
+    "EPF": "LBDA-03",
+    "EPE": "LBDA-04",
+    "BCL": "LBDB-02",
+    "BCA": "LBDB-03",
+    "BPJ": "LBDB-04"
+  },
+  "field_colors": {
+    "LOT": [255, 0, 0, 100],
+    "PRODUCTS": [128, 128, 128, 100],
+    "PN": [0, 0, 255, 100],
+    "REF": [0, 255, 0, 100],
+    "MFG DATE": [255, 255, 0, 100],
+    "EXP DATE": [255, 0, 255, 100],
+    "GTIN": [0, 255, 255, 100],
+    "CHINA": [255, 165, 0, 100]
+  }
+}

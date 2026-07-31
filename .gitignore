@@ -8,3 +8,6 @@ dist/
 .pytest_cache/
 *.spec.bak
 .DS_Store
+csharp/**/bin/
+csharp/**/obj/
+csharp/**/publish/
