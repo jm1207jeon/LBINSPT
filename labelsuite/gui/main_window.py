@@ -30,6 +30,7 @@ class MainWindow(QMainWindow):
         self.resize(1600, 900)
 
         self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
         self.setCentralWidget(self.tabs)
 
         self.generator_page = GeneratorPage(config)

@@ -17,10 +17,11 @@ from PySide6.QtWidgets import (
 )
 
 from labelsuite.core.inspection import InspectionOutcome
+from labelsuite.gui import style
 
-_PASS_BG = QColor(144, 238, 144)     # 연녹 (레거시 #90EE90)
-_FAIL_BG = QColor(255, 228, 181)     # 연주황 (레거시 #FFE4B5)
-_INFO_BG = QColor(240, 240, 240)
+_PASS_BG = QColor(220, 252, 231)     # style.SUCCESS_BG
+_FAIL_BG = QColor(254, 243, 199)     # style.WARN_BG
+_INFO_BG = QColor(240, 241, 245)
 
 
 class ResultPanel(QWidget):
@@ -32,8 +33,7 @@ class ResultPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.status_label = QLabel("검사 대기")
-        self.status_label.setStyleSheet(
-            "font-size: 16px; font-weight: bold; padding: 6px;")
+        self.status_label.setStyleSheet(style.BADGE_IDLE)
         layout.addWidget(self.status_label)
 
         self.field_table = QTableWidget(0, 3)
@@ -58,22 +58,17 @@ class ResultPanel(QWidget):
 
     def clear(self, message: str = "검사 대기") -> None:
         self.status_label.setText(message)
-        self.status_label.setStyleSheet(
-            "font-size: 16px; font-weight: bold; padding: 6px;")
+        self.status_label.setStyleSheet(style.BADGE_IDLE)
         self.field_table.setRowCount(0)
         self.barcode_table.setRowCount(0)
 
     def show_outcome(self, outcome: InspectionOutcome) -> None:
         if outcome.passed:
-            self.status_label.setText(f"합격 (PASSED) — 규격 {outcome.standard.name}")
-            self.status_label.setStyleSheet(
-                "font-size: 16px; font-weight: bold; padding: 6px;"
-                "background-color: #90EE90;")
+            self.status_label.setText(f"✓ 합격 (PASSED) · 규격 {outcome.standard.name}")
+            self.status_label.setStyleSheet(style.BADGE_PASS)
         else:
-            self.status_label.setText(f"확인 필요 (CHECK) — 규격 {outcome.standard.name}")
-            self.status_label.setStyleSheet(
-                "font-size: 16px; font-weight: bold; padding: 6px;"
-                "background-color: #FFE4B5;")
+            self.status_label.setText(f"⚠ 확인 필요 (CHECK) · 규격 {outcome.standard.name}")
+            self.status_label.setStyleSheet(style.BADGE_FAIL)
 
         fields = list(outcome.fields.values())
         self.field_table.setRowCount(len(fields))

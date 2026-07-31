@@ -104,11 +104,6 @@ class SettingsDialog(QDialog):
         self.render_zoom_spin.setValue(float(self.config.settings.get("pdf_render_zoom", 4.0)))
         form.addRow("PDF 렌더 배율 (72dpi 기준):", self.render_zoom_spin)
 
-        self.camera_index_spin = QSpinBox()
-        self.camera_index_spin.setRange(0, 9)
-        self.camera_index_spin.setValue(int(self.config.settings.get("camera_index", 0)))
-        form.addRow("카메라 번호:", self.camera_index_spin)
-
         restore = QPushButton("일반 설정 기본값 복원")
         restore.clicked.connect(lambda: self._restore(SETTINGS_FILE))
         form.addRow(restore)
@@ -254,7 +249,6 @@ class SettingsDialog(QDialog):
         settings["prefetch_policy"] = ["all", 1, 2, 5, 0][
             self.prefetch_combo.currentIndex()]
         settings["pdf_render_zoom"] = self.render_zoom_spin.value()
-        settings["camera_index"] = self.camera_index_spin.value()
         settings["aws"] = {"region": self.aws_region_edit.text().strip()
                                      or "ap-northeast-2",
                            "profile": self.aws_profile_edit.text().strip()}

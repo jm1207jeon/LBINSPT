@@ -1,4 +1,4 @@
-"""라벨 검사 탭 — PDF/카메라 이미지의 OCR·바코드 검사.
+"""라벨 검사 탭 — 라벨 PDF의 OCR·바코드 검사.
 
 핵심 동작:
 - PDF 로드 시 전 페이지를 우선순위 큐로 백그라운드 선행 OCR(프리페치)하고
@@ -6,6 +6,7 @@
 - 사용자가 보고 있는 페이지는 항상 큐 최우선. 문서 교체 시 이전 잡은 전부 폐기.
 - 규격은 목록의 STANDARD 값으로 자동 선택(수동 변경 가능), LOT은 OCR로 자동 매칭.
 - 합불은 InspectionOutcome.passed 단일 원천. 결과 저장은 core/annotate 경유.
+- PDF 파일을 창에 끌어다 놓아도 열린다. ←/→/Home/End로 페이지 이동.
 """
 
 from __future__ import annotations
@@ -40,18 +41,13 @@ from labelsuite.core.annotate import (
 from labelsuite.core.barcode.detector import cross_check_hits, detect_barcodes
 from labelsuite.core.config import AppConfig, data_dir
 from labelsuite.core.inspection import InspectionEngine, InspectionOutcome
-from labelsuite.core.ocr.cache import (
-    OcrCache,
-    PageAnalysis,
-    frame_cache_key,
-    page_cache_key,
-)
+from labelsuite.core.ocr.cache import OcrCache, PageAnalysis, page_cache_key
 from labelsuite.core.ocr.preprocess import PREPROCESS_SIGNATURE, auto_skew_correction
 from labelsuite.core.ocr.textract_client import TextractClient
 from labelsuite.core.pdf_document import PdfDocument, PdfError
 from labelsuite.core.schema import LabelRecord, load_inspection_list
 from labelsuite.core.standards import StandardsBundle
-from labelsuite.gui.camera import CameraWorker
+from labelsuite.gui import style
 from labelsuite.gui.widgets.result_panel import ResultPanel
 from labelsuite.gui.widgets.zoomable_view import ZoomableImageView
 from labelsuite.gui.workers import OcrPrefetchWorker
@@ -67,7 +63,7 @@ class _AwsCheckWorker(QThread):
     def run(self) -> None:
         status = self._client.validate_credentials()
         if status.ok:
-            self.checked.emit(True, "AWS: 인증 확인됨")
+            self.checked.emit(True, "AWS 인증 확인됨")
         else:
             self.checked.emit(False, f"AWS 인증 실패: {status.error}")
 
@@ -80,6 +76,8 @@ class InspectorPage(QWidget):
     def __init__(self, config: AppConfig, standards: StandardsBundle,
                  history_db=None, parent=None):
         super().__init__(parent)
+        self.setObjectName("page")
+        self.setAcceptDrops(True)
         self.config = config
         self.standards = standards
         self.history_db = history_db
@@ -96,14 +94,10 @@ class InspectorPage(QWidget):
 
         self.records: list[LabelRecord] = []
         self.current_page = 0
-        self.mode: str | None = None            # 'pdf' | 'camera'
         self._analyses: dict[int, PageAnalysis] = {}   # 현재 세대의 페이지별 결과
         self._corrected: OrderedDict[int, np.ndarray] = OrderedDict()  # 스큐 보정 이미지
         self._outcomes: dict[int, InspectionOutcome] = {}
         self._lot_auto_selected = False
-        self._camera_worker: CameraWorker | None = None
-        self._live_frame: np.ndarray | None = None
-        self._frozen_frame: np.ndarray | None = None
         self._aws_ok: bool | None = None
 
         self.ocr_worker = OcrPrefetchWorker(self._analyze_image, self)
@@ -123,29 +117,34 @@ class InspectorPage(QWidget):
         left = QWidget()
         left.setMaximumWidth(460)
         left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(10)
 
         list_group = QGroupBox("검사 목록")
         list_layout = QVBoxLayout(list_group)
+        list_layout.setSpacing(8)
         row = QHBoxLayout()
         open_list_button = QPushButton("목록 열기")
         open_list_button.clicked.connect(self._open_list)
-        self.list_status = QLabel("목록 없음")
-        self.list_status.setStyleSheet("color: gray;")
+        self.list_status = QLabel("목록 없음 — 목록 생성 탭에서 보내거나 파일을 여세요")
+        self.list_status.setStyleSheet(style.STATUS_MUTED)
+        self.list_status.setWordWrap(True)
         row.addWidget(open_list_button)
         row.addWidget(self.list_status, stretch=1)
         list_layout.addLayout(row)
 
         lot_row = QHBoxLayout()
-        lot_row.addWidget(QLabel("LOT:"))
+        lot_row.addWidget(QLabel("LOT"))
         self.lot_combo = QComboBox()
         self.lot_combo.currentIndexChanged.connect(self._on_lot_changed)
         lot_row.addWidget(self.lot_combo, stretch=1)
         self.lot_match_label = QLabel("")
+        self.lot_match_label.setStyleSheet(style.STATUS_OK)
         lot_row.addWidget(self.lot_match_label)
         list_layout.addLayout(lot_row)
 
         standard_row = QHBoxLayout()
-        standard_row.addWidget(QLabel("검사 규격:"))
+        standard_row.addWidget(QLabel("규격"))
         self.standard_combo = QComboBox()
         self.standard_combo.addItems(list(self.standards.standards))
         self.standard_combo.currentIndexChanged.connect(
@@ -154,9 +153,9 @@ class InspectorPage(QWidget):
         list_layout.addLayout(standard_row)
 
         search_row = QHBoxLayout()
-        search_row.addWidget(QLabel("추가 검색:"))
+        search_row.addWidget(QLabel("검색"))
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("라벨에서 찾을 텍스트 (선택)")
+        self.search_input.setPlaceholderText("라벨에서 추가로 찾을 텍스트 (선택)")
         self.search_input.returnPressed.connect(self._reinspect_current)
         search_row.addWidget(self.search_input, stretch=1)
         list_layout.addLayout(search_row)
@@ -168,25 +167,21 @@ class InspectorPage(QWidget):
         # ---- 우측: 뷰어/조작 ----
         right = QWidget()
         right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
 
         toolbar = QHBoxLayout()
         open_pdf_button = QPushButton("PDF 열기")
+        open_pdf_button.setProperty("accent", True)
+        open_pdf_button.setToolTip("검사할 라벨 PDF를 엽니다 (창에 끌어다 놓아도 됩니다)")
         open_pdf_button.clicked.connect(self._open_pdf)
-        self.camera_button = QPushButton("카메라 시작")
-        self.camera_button.setCheckable(True)
-        self.camera_button.toggled.connect(self._toggle_camera)
-        self.capture_button = QPushButton("촬영+검사")
-        self.capture_button.setEnabled(False)
-        self.capture_button.clicked.connect(self._capture_and_inspect)
-        self.resume_button = QPushButton("다시 촬영")
-        self.resume_button.setEnabled(False)
-        self.resume_button.clicked.connect(self._resume_camera)
         toolbar.addWidget(open_pdf_button)
-        toolbar.addWidget(self.camera_button)
-        toolbar.addWidget(self.capture_button)
-        toolbar.addWidget(self.resume_button)
+        self.pdf_name_label = QLabel("")
+        self.pdf_name_label.setStyleSheet(style.STATUS_MUTED)
+        toolbar.addWidget(self.pdf_name_label)
         toolbar.addStretch(1)
         self.auto_save_check = QCheckBox("자동 저장")
+        self.auto_save_check.setToolTip("페이지 검사가 끝날 때마다 결과 이미지를 저장합니다")
         self.auto_save_check.setChecked(
             bool(self.config.settings.get("auto_save_default", False)))
         toolbar.addWidget(self.auto_save_check)
@@ -199,23 +194,31 @@ class InspectorPage(QWidget):
         right_layout.addLayout(toolbar)
 
         self.viewer = ZoomableImageView()
+        self.viewer.show_message("PDF를 열거나 이 창에 끌어다 놓으세요")
         right_layout.addWidget(self.viewer, stretch=1)
 
         nav = QHBoxLayout()
         self.nav_buttons = []
-        for text, delta in (("≪ 첫", "first"), ("< 이전", -1),
-                            ("다음 >", 1), ("끝 ≫", "last")):
+        for text, delta, tip in (("⏮", "first", "첫 페이지 (Home)"),
+                                 ("◀", -1, "이전 페이지 (←)"),
+                                 ("▶", 1, "다음 페이지 (→)"),
+                                 ("⏭", "last", "끝 페이지 (End)")):
             button = QPushButton(text)
+            button.setFixedWidth(44)
+            button.setToolTip(tip)
             button.clicked.connect(partial(self._navigate, delta))
             button.setEnabled(False)
             self.nav_buttons.append(button)
             nav.addWidget(button)
         self.page_label = QLabel("- / -")
+        self.page_label.setStyleSheet("font-weight: 700; padding: 0 6px;")
         nav.addWidget(self.page_label)
         nav.addStretch(1)
         self.prefetch_label = QLabel("")
+        self.prefetch_label.setStyleSheet(style.STATUS_MUTED)
         nav.addWidget(self.prefetch_label)
-        nav.addWidget(QLabel("배율:"))
+        nav.addSpacing(12)
+        nav.addWidget(QLabel("배율"))
         self.zoom_slider = QSlider(Qt.Orientation.Horizontal)
         self.zoom_slider.setRange(10, 500)
         self.zoom_slider.setValue(100)
@@ -223,6 +226,9 @@ class InspectorPage(QWidget):
         self.zoom_slider.valueChanged.connect(self.viewer.set_zoom_percent)
         self.viewer.zoom_changed.connect(self._sync_zoom_slider)
         nav.addWidget(self.zoom_slider)
+        self.zoom_label = QLabel("100%")
+        self.zoom_label.setMinimumWidth(44)
+        nav.addWidget(self.zoom_label)
         right_layout.addLayout(nav)
 
         splitter.addWidget(left)
@@ -230,12 +236,29 @@ class InspectorPage(QWidget):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
         layout.addWidget(splitter)
 
     def _sync_zoom_slider(self, percent: int) -> None:
         self.zoom_slider.blockSignals(True)
         self.zoom_slider.setValue(percent)
         self.zoom_slider.blockSignals(False)
+        self.zoom_label.setText(f"{percent}%")
+
+    # ------------------------------------------------------------------ 드래그앤드롭
+
+    def dragEnterEvent(self, event) -> None:
+        if any(url.toLocalFile().lower().endswith(".pdf")
+               for url in event.mimeData().urls()):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if path.lower().endswith(".pdf"):
+                self._load_pdf(path)
+                event.acceptProposedAction()
+                return
 
     # ------------------------------------------------------------------ AWS
 
@@ -283,7 +306,7 @@ class InspectorPage(QWidget):
             self.lot_combo.addItem(record.lot)
         self.lot_combo.blockSignals(False)
         self.list_status.setText(f"{len(records)}건 로드됨")
-        self.list_status.setStyleSheet("color: black;")
+        self.list_status.setStyleSheet(style.STATUS_OK)
         self._reinspect_current()
 
     def _open_list(self) -> None:
@@ -322,16 +345,15 @@ class InspectorPage(QWidget):
     def _open_pdf(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "라벨 PDF 열기", "",
                                               "PDF 파일 (*.pdf)")
-        if not path:
-            return
-        if self.camera_button.isChecked():
-            self.camera_button.setChecked(False)
+        if path:
+            self._load_pdf(path)
+
+    def _load_pdf(self, path: str) -> None:
         try:
             self.pdf.open(path)
         except PdfError as exc:
             QMessageBox.critical(self, "PDF 오류", str(exc))
             return
-        self.mode = "pdf"
         self.current_page = 0
         self._analyses.clear()
         self._outcomes.clear()
@@ -340,6 +362,8 @@ class InspectorPage(QWidget):
         self.ocr_worker.new_generation()
         for button in self.nav_buttons:
             button.setEnabled(True)
+        self.pdf_name_label.setText(
+            f"{os.path.basename(path)} · {self.pdf.page_count}페이지")
         self.status_message.emit(f"PDF 로드: {os.path.basename(path)} "
                                  f"({self.pdf.page_count}페이지)")
         self._show_page(0, fit=True)
@@ -384,7 +408,7 @@ class InspectorPage(QWidget):
         self._update_prefetch_label()
 
     def _navigate(self, delta) -> None:
-        if self.mode != "pdf" or not self.pdf.is_open:
+        if not self.pdf.is_open:
             return
         if delta == "first":
             target = 0
@@ -398,10 +422,20 @@ class InspectorPage(QWidget):
             self._show_page(target)
 
     def keyPressEvent(self, event) -> None:
-        if self.mode == "pdf" and event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right):
-            self._navigate(-1 if event.key() == Qt.Key.Key_Left else 1)
-            event.accept()
-            return
+        if self.pdf.is_open:
+            key = event.key()
+            if key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+                self._navigate(-1 if key == Qt.Key.Key_Left else 1)
+                event.accept()
+                return
+            if key == Qt.Key.Key_Home:
+                self._navigate("first")
+                event.accept()
+                return
+            if key == Qt.Key.Key_End:
+                self._navigate("last")
+                event.accept()
+                return
         super().keyPressEvent(event)
 
     def _show_page(self, page: int, fit: bool = False) -> None:
@@ -443,10 +477,8 @@ class InspectorPage(QWidget):
             return
         self._analyses[page] = analysis
         self._update_prefetch_label()
-        if self.mode == "pdf" and page == self.current_page:
+        if page == self.current_page:
             self._run_inspection(page, analysis, self._corrected_image(page))
-        elif self.mode == "camera" and self._frozen_frame is not None:
-            self._run_inspection(page, analysis, self._frozen_frame)
 
     def _on_page_failed(self, generation: int, page: int, message: str) -> None:
         if generation != self.ocr_worker.generation:
@@ -457,15 +489,17 @@ class InspectorPage(QWidget):
         QMessageBox.warning(self, "OCR 실패", message)
 
     def _update_prefetch_label(self) -> None:
-        if self.mode != "pdf" or not self.pdf.is_open:
+        if not self.pdf.is_open:
             self.prefetch_label.setText("")
             return
         done = len(self._analyses)
         total = self.pdf.page_count
         if done >= total:
-            self.prefetch_label.setText(f"OCR 완료 {done}/{total} 페이지 ✓")
+            self.prefetch_label.setText(f"OCR 완료 {done}/{total} ✓")
+            self.prefetch_label.setStyleSheet(style.STATUS_OK)
         else:
-            self.prefetch_label.setText(f"OCR 완료 {done}/{total} 페이지…")
+            self.prefetch_label.setText(f"OCR 진행 {done}/{total}…")
+            self.prefetch_label.setStyleSheet(style.STATUS_MUTED)
 
     # ------------------------------------------------------------------ 검사
 
@@ -511,80 +545,11 @@ class InspectorPage(QWidget):
 
     def _reinspect_current(self) -> None:
         """LOT/규격/검색어 변경 시 캐시된 분석으로 즉시 재검사."""
-        if self.mode == "pdf" and self.pdf.is_open:
+        if self.pdf.is_open:
             analysis = self._analyses.get(self.current_page)
             if analysis is not None:
                 self._run_inspection(self.current_page, analysis,
                                      self._corrected_image(self.current_page))
-        elif self.mode == "camera" and self._frozen_frame is not None:
-            analysis = self._analyses.get(0)
-            if analysis is not None:
-                self._run_inspection(0, analysis, self._frozen_frame)
-
-    # ------------------------------------------------------------------ 카메라
-
-    def _toggle_camera(self, on: bool) -> None:
-        if on:
-            self.mode = "camera"
-            self.camera_button.setText("카메라 중지")
-            self.capture_button.setEnabled(True)
-            self.resume_button.setEnabled(False)
-            self._frozen_frame = None
-            for button in self.nav_buttons:
-                button.setEnabled(False)
-            index = int(self.config.settings.get("camera_index", 0))
-            self._camera_worker = CameraWorker(index, parent=self)
-            self._camera_worker.frame_ready.connect(self._on_frame)
-            self._camera_worker.failed.connect(self._on_camera_failed)
-            self._camera_worker.start()
-        else:
-            self.camera_button.setText("카메라 시작")
-            self.capture_button.setEnabled(False)
-            self.resume_button.setEnabled(False)
-            if self._camera_worker is not None:
-                self._camera_worker.stop()
-                self._camera_worker = None
-            if self.mode == "camera":
-                self.mode = None
-                self.viewer.show_message("LIVE CAM 또는 PDF를 선택하세요")
-
-    def _on_frame(self, frame: np.ndarray) -> None:
-        self._live_frame = frame
-        if self._frozen_frame is None:
-            first = self.viewer._base_pixmap is None
-            self.viewer.set_image(frame, fit=first)
-
-    def _on_camera_failed(self, message: str) -> None:
-        self.camera_button.setChecked(False)
-        QMessageBox.warning(self, "카메라 오류", message)
-
-    def _capture_and_inspect(self) -> None:
-        if self._live_frame is None:
-            return
-        self._frozen_frame = self._live_frame.copy()
-        self._frozen_frame = auto_skew_correction(self._frozen_frame)
-        self.capture_button.setEnabled(False)
-        self.resume_button.setEnabled(True)
-        self.viewer.set_image(self._frozen_frame)
-        self.result_panel.clear("OCR 진행 중…")
-        self._analyses.clear()
-        self._outcomes.clear()
-        self._lot_auto_selected = False
-        self.ocr_worker.new_generation()
-        key = frame_cache_key(self._frozen_frame.tobytes(), PREPROCESS_SIGNATURE)
-        cached = self.ocr_cache.get(key)
-        if cached is not None:
-            self._analyses[0] = cached
-            self._run_inspection(0, cached, self._frozen_frame)
-            return
-        frozen = self._frozen_frame
-        self.ocr_worker.submit(0, key, lambda: frozen, priority=0)
-
-    def _resume_camera(self) -> None:
-        self._frozen_frame = None
-        self.capture_button.setEnabled(True)
-        self.resume_button.setEnabled(False)
-        self.result_panel.clear()
 
     # ------------------------------------------------------------------ 저장
 
@@ -607,21 +572,13 @@ class InspectorPage(QWidget):
         self.config.save_settings()
         return counter
 
-    def _current_source_image(self) -> np.ndarray | None:
-        if self.mode == "pdf" and self.pdf.is_open:
-            return self._corrected_image(self.current_page)
-        if self.mode == "camera" and self._frozen_frame is not None:
-            return self._frozen_frame
-        return None
-
     def _save_current(self) -> None:
-        page = self.current_page if self.mode == "pdf" else 0
-        outcome = self._outcomes.get(page)
-        image = self._current_source_image()
-        if outcome is None or image is None:
+        outcome = self._outcomes.get(self.current_page)
+        if outcome is None or not self.pdf.is_open:
             QMessageBox.information(self, "저장", "저장할 검사 결과가 없습니다.")
             return
-        self._save_outcome(page, outcome, image, notify=True)
+        self._save_outcome(self.current_page, outcome,
+                           self._corrected_image(self.current_page), notify=True)
 
     def _save_outcome(self, page: int, outcome: InspectionOutcome,
                       image: np.ndarray, notify: bool) -> None:
@@ -648,10 +605,8 @@ class InspectorPage(QWidget):
         if self.history_db is None:
             return
         self.history_db.record_inspection(
-            outcome, image_path,
-            source=self.mode or "unknown",
-            pdf_path=self.pdf.path if self.mode == "pdf" else None,
-            page=page if self.mode == "pdf" else None)
+            outcome, image_path, source="pdf",
+            pdf_path=self.pdf.path, page=page)
 
     # ------------------------------------------------------------------ 종료
 
@@ -661,6 +616,4 @@ class InspectorPage(QWidget):
         aws_worker = getattr(self, "_aws_worker", None)
         if aws_worker is not None and aws_worker.isRunning():
             aws_worker.wait(5000)
-        if self._camera_worker is not None:
-            self._camera_worker.stop()
         self.pdf.close()

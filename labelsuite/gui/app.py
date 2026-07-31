@@ -27,6 +27,10 @@ def main() -> int:
     app.setApplicationName("LabelSuite")
     app.setOrganizationName("LabelSuite")
 
+    from labelsuite.gui.style import apply_theme
+
+    apply_theme(app)
+
     config = AppConfig()
     legacy = _find_legacy_ligen_config()
     if legacy is not None:

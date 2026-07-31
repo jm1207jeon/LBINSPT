@@ -83,6 +83,8 @@ class GeneratorPage(QWidget):
 
     def __init__(self, config: AppConfig, parent=None):
         super().__init__(parent)
+        self.setObjectName("page")
+        self.setAcceptDrops(True)
         self.config = config
         self.colmaps = ColumnMaps.from_config(config.column_maps_raw)
         self.frames: dict[str, object] = {"schedule": None, "product": None, "bsc": None}
@@ -91,6 +93,53 @@ class GeneratorPage(QWidget):
         self._result: GenerationResult | None = None
         self._build_ui()
         self._restore_last_files()
+
+    # ---------- 드래그앤드롭: 시트명으로 파일 종류 자동 판별 ----------
+
+    def dragEnterEvent(self, event) -> None:
+        if any(url.toLocalFile().lower().endswith((".xlsx", ".xls"))
+               for url in event.mimeData().urls()):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if not path.lower().endswith((".xlsx", ".xls")):
+                continue
+            key = self._identify_file_key(path)
+            if key is None:
+                QMessageBox.warning(
+                    self, "파일 판별 실패",
+                    f"{os.path.basename(path)}\n"
+                    "필요한 시트를 찾지 못했습니다. 버튼으로 직접 선택해 주세요.\n"
+                    f"(기대 시트: {self.colmaps.schedule.sheet} / "
+                    f"{self.colmaps.product.sheet} / {self.colmaps.bsc.sheet})")
+                continue
+            self._load_file(key, path, silent=False)
+        event.acceptProposedAction()
+
+    def _identify_file_key(self, path: str) -> str | None:
+        """엑셀의 시트명을 읽어 어느 입력 파일인지 판별한다."""
+        try:
+            from openpyxl import load_workbook
+
+            wb = load_workbook(path, read_only=True)
+            sheets = set(wb.sheetnames)
+            wb.close()
+        except Exception:
+            sheets = set()
+        for key in ("schedule", "product", "bsc"):
+            if getattr(self.colmaps, key).sheet in sheets:
+                return key
+        # 폴백: 파일명 키워드
+        name = os.path.basename(path)
+        if "주문일정" in name or "일정" in name:
+            return "schedule"
+        if "품목" in name:
+            return "product"
+        if "BSC" in name.upper() or "FGD" in name.upper():
+            return "bsc"
+        return None
 
     def _build_ui(self) -> None:
         splitter = QSplitter(Qt.Orientation.Horizontal, self)
@@ -101,13 +150,19 @@ class GeneratorPage(QWidget):
 
         files_group = QGroupBox("입력 파일")
         files_layout = QVBoxLayout(files_group)
+        files_layout.setSpacing(8)
+        hint = QLabel("엑셀 파일을 이 창에 끌어다 놓으면 자동으로 분류됩니다")
+        hint.setStyleSheet("color: #6b7280; font-weight: 400;")
+        files_layout.addWidget(hint)
         self.file_status: dict[str, QLabel] = {}
         for key, label in _FILE_LABELS.items():
             row = QHBoxLayout()
             button = QPushButton(label)
+            button.setMinimumWidth(170)
             button.clicked.connect(lambda _=False, k=key: self._pick_file(k))
-            status = QLabel("파일이 선택되지 않음")
-            status.setStyleSheet("color: gray;")
+            status = QLabel("선택되지 않음")
+            status.setStyleSheet("color: #6b7280;")
+            status.setWordWrap(True)
             self.file_status[key] = status
             row.addWidget(button)
             row.addWidget(status, stretch=1)
@@ -120,12 +175,14 @@ class GeneratorPage(QWidget):
 
         actions = QHBoxLayout()
         self.generate_button = QPushButton("리스트 생성")
+        self.generate_button.setProperty("accent", True)
         self.generate_button.setEnabled(False)
         self.generate_button.clicked.connect(self._generate)
         self.save_button = QPushButton("엑셀로 저장")
         self.save_button.setEnabled(False)
         self.save_button.clicked.connect(self._save_xlsx)
-        self.inspect_button = QPushButton("검사 탭으로 보내기")
+        self.inspect_button = QPushButton("검사 탭으로 보내기 →")
+        self.inspect_button.setProperty("accent", True)
         self.inspect_button.setEnabled(False)
         self.inspect_button.clicked.connect(self._send_to_inspector)
         actions.addWidget(self.generate_button)
@@ -141,7 +198,9 @@ class GeneratorPage(QWidget):
         self.table_model = RecordsTableModel(self)
         self.table = QTableView()
         self.table.setModel(self.table_model)
+        self.table.setAlternatingRowColors(True)
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.verticalHeader().setVisible(False)
         preview_layout.addWidget(self.table)
         right_layout.addWidget(preview_group, stretch=3)
 
@@ -158,6 +217,7 @@ class GeneratorPage(QWidget):
         splitter.setStretchFactor(1, 2)
 
         layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
         layout.addWidget(splitter)
 
     def apply_config(self) -> None:
@@ -194,8 +254,8 @@ class GeneratorPage(QWidget):
 
     def _on_file_loaded(self, key: str, frame, path: str, silent: bool) -> None:
         self.frames[key] = frame
-        self.file_status[key].setText(os.path.basename(path))
-        self.file_status[key].setStyleSheet("color: black;")
+        self.file_status[key].setText("✓ " + os.path.basename(path))
+        self.file_status[key].setStyleSheet("color: #16a34a; font-weight: 600;")
         self.config.settings["last_files"][key] = path
         self.config.save_settings()
         if key == "schedule":

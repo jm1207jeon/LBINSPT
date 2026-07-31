@@ -12,7 +12,6 @@
   "ocr_cache_max_entries": 500,
   "page_image_cache_pages": 6,
   "auto_save_default": false,
-  "camera_index": 0,
   "jpeg_quality": 90,
   "save_scale": 0.5
 }

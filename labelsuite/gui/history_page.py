@@ -36,6 +36,7 @@ _COLUMNS = ["일시", "LOT", "REF", "PN", "규격", "소스", "페이지", "판�
 class HistoryPage(QWidget):
     def __init__(self, config: AppConfig, db: HistoryDb | None = None, parent=None):
         super().__init__(parent)
+        self.setObjectName("page")
         self.config = config
         self.db = db
         self._rows = []
@@ -47,6 +48,8 @@ class HistoryPage(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
 
         filters = QHBoxLayout()
         filters.addWidget(QLabel("LOT:"))
@@ -70,6 +73,7 @@ class HistoryPage(QWidget):
 
         self.table = QTableWidget(0, len(_COLUMNS))
         self.table.setHorizontalHeaderLabels(_COLUMNS)
+        self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
