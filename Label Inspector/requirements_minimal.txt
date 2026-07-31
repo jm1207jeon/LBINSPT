@@ -1,0 +1,29 @@
+# Label Inspector 최소 필수 의존성
+# 핵심 기능만 포함한 경량 버전
+
+# GUI 프레임워크
+PyQt5==5.15.11
+
+# AWS 서비스
+boto3==1.35.82
+botocore==1.35.82
+
+# 이미지 처리
+opencv-python==4.12.0.88
+pillow==10.4.0
+numpy==2.2.3
+
+# PDF 처리
+PyMuPDF==1.26.4
+pdf2image==1.17.0
+
+# 바코드 인식
+pyzbar==0.1.9
+
+# 데이터 처리
+pandas==2.2.3
+openpyxl==3.1.5
+
+# 기타 필수
+requests==2.31.0
+python-dateutil==2.9.0.post0
