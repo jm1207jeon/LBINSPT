@@ -30,6 +30,45 @@ class OcrError(RuntimeError):
     """사용자에게 보여줄 메시지를 담은 OCR 실패."""
 
 
+def friendly_credential_error(exc: Exception) -> str:
+    """SDK 원문 오류를 초보자가 조치할 수 있는 한국어 안내로 변환한다."""
+    import os
+
+    message = str(exc)
+    name = type(exc).__name__
+    credentials_path = os.path.join(os.path.expanduser("~"), ".aws", "credentials")
+
+    not_configured = (
+        "EC2 Instance Metadata" in message
+        or "Unable to get IAM security credentials" in message
+        or "Unable to locate credentials" in message
+        or name in ("NoCredentialsError", "CredentialRetrievalError",
+                    "ProfileNotFound"))
+    if name == "ProfileNotFound":
+        return (f"프로필을 찾을 수 없습니다: {message}\n"
+                "설정의 프로필 칸을 비우거나(기본 자격증명 사용) 이름을 확인하세요.")
+    if not_configured:
+        if os.path.exists(credentials_path):
+            return ("자격증명을 읽지 못했습니다.\n"
+                    f"credentials 파일은 존재합니다: {credentials_path}\n다음을 확인하세요:\n"
+                    "1) 파일명이 credentials.txt가 아닌지 (확장자 없어야 함)\n"
+                    "2) 첫 줄이 [default] 인지\n"
+                    "3) 메모장 저장 인코딩이 'UTF-8' (BOM 아님) 인지\n"
+                    "4) 수정 후 프로그램을 완전히 껐다 다시 실행했는지")
+        return (f"자격증명이 설정되지 않았습니다.\n{credentials_path} 파일이 없습니다.\n"
+                "aws configure를 실행하거나 해당 위치에 파일을 만드세요. (README 참고)")
+    if "InvalidClientTokenId" in message or "security token included" in message:
+        return ("액세스 키가 잘못되었습니다 (오타 또는 비활성화된 키). "
+                "AWS IAM에서 키 상태를 확인하세요.")
+    if "SignatureDoesNotMatch" in message:
+        return ("Secret Key가 잘못되었습니다 (복사 시 일부 누락됐을 수 있음). "
+                "credentials 파일의 aws_secret_access_key를 다시 확인하세요.")
+    if (name in ("EndpointConnectionError", "ConnectTimeoutError", "ReadTimeoutError")
+            or "timed out" in message.lower()):
+        return "AWS에 연결할 수 없습니다. 인터넷/방화벽/프록시를 확인하세요."
+    return f"인증 확인 실패: {message}"
+
+
 @dataclass(frozen=True)
 class OcrWord:
     text: str
@@ -68,7 +107,7 @@ class TextractClient:
             identity = sts.get_caller_identity()
             return CredentialStatus(ok=True, identity_arn=identity.get("Arn"))
         except Exception as exc:
-            return CredentialStatus(ok=False, error=str(exc))
+            return CredentialStatus(ok=False, error=friendly_credential_error(exc))
 
     def _textract(self):
         if self._client is None:

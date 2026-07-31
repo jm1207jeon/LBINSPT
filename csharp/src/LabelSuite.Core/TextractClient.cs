@@ -23,11 +23,56 @@ public sealed class TextractClient(string region = "ap-northeast-2", string? pro
 
     private AmazonTextractClient? _client;
 
+    public class ProfileNotFoundException(string profileName) : Exception(
+        $"프로필 '{profileName}'을(를) 찾을 수 없습니다. " +
+        "설정의 프로필 칸을 비우거나(기본 자격증명 사용) 이름을 확인하세요.");
+
     private Amazon.Runtime.AWSCredentials? ResolveCredentials()
     {
         if (string.IsNullOrEmpty(profile)) return null;
         var chain = new Amazon.Runtime.CredentialManagement.CredentialProfileStoreChain();
-        return chain.TryGetAWSCredentials(profile, out var credentials) ? credentials : null;
+        if (!chain.TryGetAWSCredentials(profile, out var credentials))
+            throw new ProfileNotFoundException(profile!);
+        return credentials;
+    }
+
+    /// <summary>SDK 원문 오류를 초보자가 조치할 수 있는 한국어 안내로 변환한다.</summary>
+    public static string FriendlyCredentialError(Exception ex)
+    {
+        if (ex is ProfileNotFoundException) return ex.Message;
+        var message = ex.Message ?? "";
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (message.Contains("EC2 Instance Metadata", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("Unable to get IAM security credentials",
+                                StringComparison.OrdinalIgnoreCase)
+            || message.Contains("Unable to find credentials", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("Failed to resolve AWS credentials",
+                                StringComparison.OrdinalIgnoreCase))
+        {
+            var credentialsPath = Path.Combine(home, ".aws", "credentials");
+            return "자격증명을 읽지 못했습니다.\n" + (File.Exists(credentialsPath)
+                ? $"credentials 파일은 존재합니다: {credentialsPath}\n다음을 확인하세요:\n" +
+                  "1) 파일명이 credentials.txt가 아닌지 (확장자 없어야 함)\n" +
+                  "2) 첫 줄이 [default] 인지\n" +
+                  "3) 메모장 저장 인코딩이 'UTF-8' (BOM 아님) 인지\n" +
+                  "4) 수정 후 프로그램을 완전히 껐다 다시 실행했는지"
+                : $"{credentialsPath} 파일이 없습니다.\n" +
+                  "aws configure를 실행하거나 해당 위치에 파일을 만드세요. (README 참고)");
+        }
+        if (message.Contains("InvalidClientTokenId", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("security token included in the request is invalid",
+                                StringComparison.OrdinalIgnoreCase))
+            return "액세스 키가 잘못되었습니다 (오타 또는 비활성화된 키). " +
+                   "AWS IAM에서 키 상태를 확인하세요.";
+        if (message.Contains("SignatureDoesNotMatch", StringComparison.OrdinalIgnoreCase))
+            return "Secret Key가 잘못되었습니다 (복사 시 일부 누락됐을 수 있음). " +
+                   "credentials 파일의 aws_secret_access_key를 다시 확인하세요.";
+        if (ex is TaskCanceledException or OperationCanceledException
+            || message.Contains("timed out", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("NameResolutionFailure", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("No such host", StringComparison.OrdinalIgnoreCase))
+            return "AWS에 연결할 수 없습니다. 인터넷/방화벽/프록시를 확인하세요.";
+        return $"인증 확인 실패: {message}";
     }
 
     public async Task<CredentialStatus> ValidateCredentialsAsync(
@@ -46,7 +91,7 @@ public sealed class TextractClient(string region = "ap-northeast-2", string? pro
         }
         catch (Exception ex)
         {
-            return new CredentialStatus(false, Error: ex.Message);
+            return new CredentialStatus(false, Error: FriendlyCredentialError(ex));
         }
     }
 
