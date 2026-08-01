@@ -44,7 +44,8 @@ public partial class MainWindow : Window
 
     private void OnAwsStatus(bool ok, string text) => Dispatcher.Invoke(() =>
     {
-        AwsStatusText.Text = text;
+        AwsStatusText.Text = ok ? "AWS: 인증됨" : "AWS: 인증 실패";
+        AwsStatusText.ToolTip = text;
         AwsStatusText.Foreground = ok
             ? (System.Windows.Media.Brush)FindResource("SuccessBrush")
             : (System.Windows.Media.Brush)FindResource("DangerBrush");
