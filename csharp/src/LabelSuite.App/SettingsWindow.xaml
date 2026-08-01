@@ -1,70 +1,70 @@
 <Window x:Class="LabelSuite.App.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="환경설정" Width="720" Height="560"
-        WindowStartupLocation="CenterOwner"
-        Background="{StaticResource BgBrush}"
-        FontFamily="Malgun Gothic, Segoe UI" FontSize="13">
-    <DockPanel Margin="10">
+        Title="설정" Width="640" Height="640"
+        WindowStartupLocation="CenterOwner">
+    <DockPanel Margin="4">
         <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
-                    HorizontalAlignment="Right" Margin="0,10,0,0">
+                    HorizontalAlignment="Right" Margin="4,6">
             <Button Content="설정 폴더 열기" Click="OnOpenConfigFolder"/>
-            <Button Content="저장" Style="{StaticResource AccentButton}"
-                    Margin="8,0,0,0" MinWidth="90" Click="OnSave"/>
-            <Button Content="취소" Margin="8,0,0,0" MinWidth="90" Click="OnCancel"/>
+            <Button Content="설정 저장" FontWeight="Bold" MinWidth="90" Click="OnSave"/>
+            <Button Content="취소" MinWidth="70" Click="OnCancel"/>
         </StackPanel>
-        <TabControl>
-            <TabItem Header="일반">
-                <StackPanel Margin="12">
-                    <TextBlock Text="결과 저장 폴더" FontWeight="Bold"/>
-                    <DockPanel Margin="0,4,0,12">
-                        <Button Content="찾아보기…" DockPanel.Dock="Right" Margin="8,0,0,0"
-                                Click="OnBrowseSaveDir"/>
-                        <TextBox x:Name="SaveDirBox"/>
-                    </DockPanel>
-                    <TextBlock Text="유효기간 (EXP = MFG + 기간 - 1일, 개월)" FontWeight="Bold"/>
-                    <TextBox x:Name="ShelfLifeBox" Width="120" HorizontalAlignment="Left"
-                             Margin="0,4,0,12"/>
-                    <TextBlock Text="OCR 프리페치 범위" FontWeight="Bold"/>
-                    <ComboBox x:Name="PrefetchCombo" Width="180" HorizontalAlignment="Left"
-                              Margin="0,4,0,12">
-                        <ComboBoxItem Content="전체 페이지"/>
-                        <ComboBoxItem Content="1페이지 앞"/>
-                        <ComboBoxItem Content="2페이지 앞"/>
-                        <ComboBoxItem Content="5페이지 앞"/>
-                        <ComboBoxItem Content="프리페치 없음"/>
-                    </ComboBox>
-                    <TextBlock Text="PDF 렌더 배율 (72dpi 기준)" FontWeight="Bold"/>
-                    <TextBox x:Name="RenderZoomBox" Width="120" HorizontalAlignment="Left"
-                             Margin="0,4,0,0"/>
-                </StackPanel>
-            </TabItem>
-            <TabItem Header="AWS">
-                <StackPanel Margin="12">
-                    <TextBlock Text="리전" FontWeight="Bold"/>
-                    <TextBox x:Name="AwsRegionBox" Width="240" HorizontalAlignment="Left"
-                             Margin="0,4,0,12"/>
-                    <TextBlock Text="프로필 (비우면 기본 자격증명 체인)" FontWeight="Bold"/>
-                    <TextBox x:Name="AwsProfileBox" Width="240" HorizontalAlignment="Left"
-                             Margin="0,4,0,12"/>
-                    <StackPanel Orientation="Horizontal">
-                        <Button Content="인증 확인" Click="OnCheckAws"/>
-                        <TextBlock x:Name="AwsCheckLabel" Margin="10,0,0,0"
-                                   VerticalAlignment="Center" TextWrapping="Wrap"/>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <GroupBox Header="일반">
+                    <StackPanel>
+                        <TextBlock Text="결과 저장 경로 (재실행 시에도 유지됩니다)"/>
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="찾아보기"
+                                    Click="OnBrowseSaveDir"/>
+                            <TextBox x:Name="SaveDirBox"/>
+                        </DockPanel>
+                        <WrapPanel Margin="0,6,0,0">
+                            <TextBlock Text="유효기간(개월):" VerticalAlignment="Center"/>
+                            <TextBox x:Name="ShelfLifeBox" Width="60"/>
+                            <TextBlock Text="   OCR 프리페치:" VerticalAlignment="Center"/>
+                            <ComboBox x:Name="PrefetchCombo" Width="130">
+                                <ComboBoxItem Content="전체 페이지"/>
+                                <ComboBoxItem Content="1페이지 앞"/>
+                                <ComboBoxItem Content="2페이지 앞"/>
+                                <ComboBoxItem Content="5페이지 앞"/>
+                                <ComboBoxItem Content="프리페치 없음"/>
+                            </ComboBox>
+                            <TextBlock Text="   PDF 렌더 배율:" VerticalAlignment="Center"/>
+                            <TextBox x:Name="RenderZoomBox" Width="50"/>
+                        </WrapPanel>
+                        <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                                   Text="유효기간: EXP = MFG + 기간 - 1일  /  렌더 배율: 72dpi 기준 (기본 4.0)"/>
                     </StackPanel>
-                    <TextBlock Margin="0,16,0,0" Foreground="{StaticResource MutedBrush}"
-                               TextWrapping="Wrap"
-                               Text="자격증명은 코드에 저장되지 않습니다.&#10;aws configure 또는 환경변수(AWS_ACCESS_KEY_ID 등)로 설정하세요."/>
-                </StackPanel>
-            </TabItem>
-            <TabItem Header="검사 기준">
-                <DockPanel Margin="12">
-                    <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8"
-                               Text="규격별 필드 기대 출현 횟수 (더블클릭으로 수정)"/>
+                </GroupBox>
+
+                <GroupBox Header="AWS Textract">
+                    <StackPanel>
+                        <WrapPanel>
+                            <TextBlock Text="리전:" VerticalAlignment="Center"/>
+                            <TextBox x:Name="AwsRegionBox" Width="150"/>
+                            <TextBlock Text="   프로필:" VerticalAlignment="Center"/>
+                            <TextBox x:Name="AwsProfileBox" Width="130"
+                                     ToolTip="비우면 기본 자격증명 체인을 사용합니다"/>
+                            <Button Content="인증 확인" FontWeight="Bold" Click="OnCheckAws"/>
+                        </WrapPanel>
+                        <TextBlock x:Name="AwsCheckLabel" TextWrapping="Wrap" Margin="2,4,2,0"/>
+                        <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                                   Text="자격증명은 코드에 저장되지 않습니다. aws configure 또는 환경변수(AWS_ACCESS_KEY_ID 등)로 설정하세요."/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Header="검사 기준 (규격별 필드 기대 출현 횟수 — 더블클릭으로 수정)">
                     <DataGrid x:Name="CountsGrid" IsReadOnly="False"
-                              AutoGenerateColumns="True" CanUserAddRows="False"/>
-                </DockPanel>
-            </TabItem>
-        </TabControl>
+                              AutoGenerateColumns="True" CanUserAddRows="False"
+                              Height="220"/>
+                </GroupBox>
+
+                <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap" Margin="6,2"
+                           Text="고급 설정(컬럼 매핑 · 중국 REF 매핑 · 규격 표시명)은 [설정 폴더 열기]에서 JSON 파일을 직접 편집합니다."/>
+            </StackPanel>
+        </ScrollViewer>
     </DockPanel>
 </Window>

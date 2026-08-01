@@ -474,7 +474,7 @@ public partial class InspectorView : UserControl
     {
         StatusBadgeText.Text = message;
         StatusBadgeText.Foreground = (Brush)FindResource("MutedBrush");
-        StatusBadge.Background = new SolidColorBrush(Color.FromRgb(0xEE, 0xF1, 0xF5));
+        StatusBadge.Background = (Brush)FindResource("ReadoutBrush");
         FieldGrid.ItemsSource = null;
         BarcodeGrid.ItemsSource = null;
     }
