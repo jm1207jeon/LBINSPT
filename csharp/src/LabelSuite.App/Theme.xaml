@@ -177,4 +177,43 @@
         <Setter Property="CornerRadius" Value="8"/>
         <Setter Property="Padding" Value="12,8"/>
     </Style>
+
+    <!-- 규격 선택 토글 버튼 (RadioButton) -->
+    <Style x:Key="StandardToggle" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Margin" Value="0,0,6,6"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border x:Name="border" Background="{StaticResource PanelBrush}"
+                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                            CornerRadius="7" Padding="10,6">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="border" Property="Background"
+                                    Value="{StaticResource AccentBrush}"/>
+                            <Setter TargetName="border" Property="BorderBrush"
+                                    Value="{StaticResource AccentBrush}"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                                <Condition Property="IsChecked" Value="False"/>
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="border" Property="Background"
+                                    Value="{StaticResource AccentSoftBrush}"/>
+                            <Setter TargetName="border" Property="BorderBrush"
+                                    Value="{StaticResource AccentBrush}"/>
+                        </MultiTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

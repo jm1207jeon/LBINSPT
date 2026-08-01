@@ -13,6 +13,11 @@ class StandardSpec:
     counts: dict[str, int] = field(default_factory=dict)
     date_format: str = "%Y-%m-%d"
     uses_china_field: bool = False
+    display_name: str = ""   # UI 표시명 — 내부 키(name)는 목록 파일 호환을 위해 불변
+
+    @property
+    def label(self) -> str:
+        return self.display_name or self.name
 
 
 @dataclass(frozen=True)
@@ -41,6 +46,7 @@ def load_standards(config: AppConfig) -> StandardsBundle:
             counts=dict(spec.get("counts", {})),
             date_format=spec.get("date_format", "%Y-%m-%d"),
             uses_china_field=bool(spec.get("uses_china_field", False)),
+            display_name=spec.get("display_name", ""),
         )
         for name, spec in raw.get("standards", {}).items()
     }
