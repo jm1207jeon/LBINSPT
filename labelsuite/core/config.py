@@ -70,7 +70,7 @@ class AppConfig:
         self._migrate()
 
     def _migrate(self) -> None:
-        """번들 기본값에 새 키가 추가됐을 때 사용자 settings.json을 보충한다."""
+        """번들 기본값에 새 키가 추가됐을 때 사용자 설정 파일을 보충한다."""
         defaults = _read_json(resources_dir() / SETTINGS_FILE)
         changed = False
         for key, value in defaults.items():
@@ -79,6 +79,23 @@ class AppConfig:
                 changed = True
         if changed:
             self.save_settings()
+
+        # 기존 사용자 standards.json에 새 규격 속성(display_name 등) 보충
+        standards_defaults = _read_json(resources_dir() / STANDARDS_FILE)
+        standards_changed = False
+        user_specs = self.standards_raw.get("standards", {})
+        for name, default_spec in standards_defaults.get("standards", {}).items():
+            user_spec = user_specs.get(name)
+            if not isinstance(user_spec, dict):
+                continue
+            for prop, value in default_spec.items():
+                if prop == "counts":   # 사용자 편집값은 유지
+                    continue
+                if prop not in user_spec:
+                    user_spec[prop] = value
+                    standards_changed = True
+        if standards_changed:
+            self.save_standards()
 
     def save_settings(self) -> None:
         _write_json(self.directory / SETTINGS_FILE, self.settings)
