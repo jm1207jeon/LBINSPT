@@ -29,7 +29,9 @@ public partial class InspectorView : UserControl
     private int _currentPage;
     private readonly Dictionary<int, PageAnalysis> _analyses = [];
     private readonly Dictionary<int, InspectionOutcome> _outcomes = [];
-    private bool _lotAutoSelected;
+    private readonly HashSet<int> _manualLotPages = [];   // 사용자가 직접 LOT 고른 페이지
+    private readonly Dictionary<int, int> _pageLotChoice = [];  // 페이지 → 수동 선택 인덱스
+    private string? _selectedStandard;
     private bool _suppressEvents;
     private double _zoom = 1.0;
     private SKBitmap? _displayed;
@@ -65,7 +67,7 @@ public partial class InspectorView : UserControl
         _worker.PageFailed += (gen, page, message) =>
             Dispatcher.Invoke(() => OnPageFailed(gen, page, message));
 
-        PopulateStandardCombo();
+        PopulateStandardButtons();
         _ = CheckAwsAsync();
     }
 
@@ -83,7 +85,7 @@ public partial class InspectorView : UserControl
         _engine = new InspectionEngine(_standards);
         _textract = MakeTextract();
         _pdf.RenderZoom = _config.GetDouble("pdf_render_zoom", 4.0);
-        PopulateStandardCombo();
+        PopulateStandardButtons();
         _ = CheckAwsAsync();
     }
 
@@ -102,15 +104,51 @@ public partial class InspectorView : UserControl
             StatusMessage?.Invoke("AWS 인증 실패 — OCR 실행 전에 설정에서 자격증명을 확인하세요.");
     }
 
-    private void PopulateStandardCombo()
+    private void PopulateStandardButtons()
     {
         _suppressEvents = true;
-        var current = StandardCombo.SelectedItem as string;
-        StandardCombo.ItemsSource = _standards.Standards.Keys.ToList();
-        StandardCombo.SelectedItem =
-            current is not null && _standards.Standards.ContainsKey(current)
-                ? current : _standards.Standards.Keys.FirstOrDefault();
+        StandardPanel.Children.Clear();
+        foreach (var spec in _standards.Standards.Values)
+        {
+            var button = new System.Windows.Controls.RadioButton
+            {
+                Content = spec.DisplayName,
+                Tag = spec.Name,
+                GroupName = "standard",
+                Style = (Style)FindResource("StandardToggle"),
+                ToolTip = spec.Name == spec.DisplayName ? null : $"내부 코드: {spec.Name}",
+            };
+            var key = spec.Name;
+            button.Checked += (_, _) =>
+            {
+                if (_suppressEvents) return;
+                _selectedStandard = key;
+                ReinspectCurrent();
+            };
+            StandardPanel.Children.Add(button);
+        }
+        if (_selectedStandard is null || !_standards.Standards.ContainsKey(_selectedStandard))
+            _selectedStandard = _standards.Standards.Keys.FirstOrDefault();
+        CheckStandardButton(_selectedStandard);
         _suppressEvents = false;
+    }
+
+    private void CheckStandardButton(string? key)
+    {
+        foreach (var child in StandardPanel.Children
+                     .OfType<System.Windows.Controls.RadioButton>())
+            child.IsChecked = (string?)child.Tag == key;
+    }
+
+    /// <summary>규격 자동 선택 (이벤트 억제 상태로 버튼 체크만 갱신).</summary>
+    private void SelectStandard(string key)
+    {
+        if (!_standards.Standards.ContainsKey(key)) return;
+        _selectedStandard = key;
+        var previous = _suppressEvents;
+        _suppressEvents = true;
+        CheckStandardButton(key);
+        _suppressEvents = previous;
     }
 
     // ---------------- 목록 ----------------
@@ -118,7 +156,8 @@ public partial class InspectorView : UserControl
     public void LoadRecords(List<LabelRecord> records)
     {
         _records = records;
-        _lotAutoSelected = false;
+        _manualLotPages.Clear();
+        _pageLotChoice.Clear();
         _suppressEvents = true;
         var items = new List<string> { "LOT 선택…" };
         items.AddRange(records.Select(r => r.Lot));
@@ -161,19 +200,13 @@ public partial class InspectorView : UserControl
     private void OnLotChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressEvents) return;
+        // 사용자가 직접 고른 페이지 — 선택을 기억해 두고 자동 매칭이 덮어쓰지 않는다
+        _manualLotPages.Add(_currentPage);
+        _pageLotChoice[_currentPage] = LotCombo.SelectedIndex;
+        LotMatchLabel.Text = "수동";
         var record = CurrentRecord();
-        if (record?.Standard is { } standard && _standards.Standards.ContainsKey(standard))
-        {
-            _suppressEvents = true;
-            StandardCombo.SelectedItem = standard;
-            _suppressEvents = false;
-        }
+        if (record?.Standard is { } standard) SelectStandard(standard);
         ReinspectCurrent();
-    }
-
-    private void OnStandardChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!_suppressEvents) ReinspectCurrent();
     }
 
     private void OnSearchKeyDown(object sender, KeyEventArgs e)
@@ -219,7 +252,8 @@ public partial class InspectorView : UserControl
         _currentPage = 0;
         _analyses.Clear();
         _outcomes.Clear();
-        _lotAutoSelected = false;
+        _manualLotPages.Clear();
+        _pageLotChoice.Clear();
         _worker.NewGeneration();
         foreach (var button in new[] { FirstButton, PrevButton, NextButton, LastButton })
             button.IsEnabled = true;
@@ -348,21 +382,34 @@ public partial class InspectorView : UserControl
     private void RunInspection(int page, PageAnalysis analysis, SKBitmap image,
                                bool fit = false)
     {
-        if (!_lotAutoSelected && _records.Count > 0 && LotCombo.SelectedIndex <= 0)
+        // 페이지별 LOT 매칭 — 수동 선택 페이지는 그때의 선택을 복원하고,
+        // 그 외 페이지는 매번 라벨의 LOT을 다시 읽어 자동 선택한다.
+        if (_manualLotPages.Contains(page))
+        {
+            if (_pageLotChoice.TryGetValue(page, out var stored)
+                && LotCombo.SelectedIndex != stored)
+            {
+                _suppressEvents = true;
+                LotCombo.SelectedIndex = stored;
+                _suppressEvents = false;
+            }
+            LotMatchLabel.Text = "수동";
+        }
+        else if (_records.Count > 0)
         {
             var match = _engine.MatchLot(analysis.Words, _records);
             if (match is not null)
             {
-                _lotAutoSelected = true;
                 var index = _records.FindIndex(r => r.Lot == match.Lot);
                 if (index >= 0)
                 {
-                    _suppressEvents = true;
-                    LotCombo.SelectedIndex = index + 1;
-                    var record0 = _records[index];
-                    if (record0.Standard is { } std && _standards.Standards.ContainsKey(std))
-                        StandardCombo.SelectedItem = std;
-                    _suppressEvents = false;
+                    if (LotCombo.SelectedIndex != index + 1)
+                    {
+                        _suppressEvents = true;
+                        LotCombo.SelectedIndex = index + 1;
+                        _suppressEvents = false;
+                    }
+                    if (_records[index].Standard is { } std) SelectStandard(std);
                 }
                 LotMatchLabel.Text = match.MatchType switch
                 {
@@ -370,6 +417,7 @@ public partial class InspectorView : UserControl
                     _ => "자동(유사)",
                 };
             }
+            // 이 페이지에서 LOT 후보를 못 찾으면 현재 선택 유지
         }
 
         var record = CurrentRecord();
@@ -381,8 +429,7 @@ public partial class InspectorView : UserControl
             return;
         }
 
-        var standardName = StandardCombo.SelectedItem as string
-            ?? _standards.Standards.Keys.First();
+        var standardName = _selectedStandard ?? _standards.Standards.Keys.First();
         var barcodeChecks = BarcodeDetector.CrossCheckHits(analysis.Barcodes, record);
         var outcome = _engine.Inspect(record, standardName, analysis.Words,
                                       barcodeChecks, SearchBox.Text);
@@ -399,20 +446,22 @@ public partial class InspectorView : UserControl
     {
         if (outcome.Passed)
         {
-            StatusBadgeText.Text = $"✓ 합격 (PASSED) · 규격 {outcome.Standard.Name}";
+            StatusBadgeText.Text = $"✓ 합격 (PASSED) · 규격 {outcome.Standard.DisplayName}";
             StatusBadgeText.Foreground = (Brush)FindResource("SuccessBrush");
             StatusBadge.Background = (Brush)FindResource("SuccessBgBrush");
         }
         else
         {
-            StatusBadgeText.Text = $"⚠ 확인 필요 (CHECK) · 규격 {outcome.Standard.Name}";
+            StatusBadgeText.Text = $"⚠ 확인 필요 (CHECK) · 규격 {outcome.Standard.DisplayName}";
             StatusBadgeText.Foreground = (Brush)FindResource("WarnBrush");
             StatusBadge.Background = (Brush)FindResource("WarnBgBrush");
         }
-        FieldGrid.ItemsSource = outcome.Fields.Values.Select(f => new FieldRowVm(
-            f.Field, f.Term.Length > 0 ? f.Term : "-",
-            f.Expected is { } expected ? $"{f.Found}/{expected}" : f.Found.ToString(),
-            f.Expected is null ? "info" : f.Passed ? "pass" : "fail")).ToList();
+        FieldGrid.ItemsSource = outcome.Fields.Values
+            .Where(f => f.Field != "PRODUCTS")   // 요청: 필드별 검출에서 PRODUCTS 제외
+            .Select(f => new FieldRowVm(
+                f.Field, f.Term.Length > 0 ? f.Term : "-",
+                f.Expected is { } expected ? $"{f.Found}/{expected}" : f.Found.ToString(),
+                f.Expected is null ? "info" : f.Passed ? "pass" : "fail")).ToList();
         BarcodeGrid.ItemsSource = outcome.BarcodeChecks.Count > 0
             ? outcome.BarcodeChecks.Select(c => new BarcodeRowVm(
                 c.Source, c.Field,

@@ -70,6 +70,28 @@ public class AppConfig
             }
         }
         if (changed) SaveSettings();
+
+        // 기존 사용자 standards.json에 새 규격 속성(display_name 등) 보충
+        var standardsDefaults = JsonNode.Parse(ReadEmbedded(StandardsFile))!.AsObject();
+        var standardsChanged = false;
+        if (standardsDefaults["standards"] is JsonObject defaultSpecs
+            && StandardsRaw["standards"] is JsonObject userSpecs)
+        {
+            foreach (var (name, defaultSpec) in defaultSpecs)
+            {
+                if (userSpecs[name] is not JsonObject userSpec) continue;
+                foreach (var (prop, value) in defaultSpec!.AsObject())
+                {
+                    if (prop == "counts") continue;   // 사용자 편집값은 유지
+                    if (!userSpec.ContainsKey(prop))
+                    {
+                        userSpec[prop] = value?.DeepClone();
+                        standardsChanged = true;
+                    }
+                }
+            }
+        }
+        if (standardsChanged) SaveStandards();
     }
 
     private static readonly JsonSerializerOptions WriteOptions = new()

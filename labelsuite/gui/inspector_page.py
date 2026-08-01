@@ -97,7 +97,8 @@ class InspectorPage(QWidget):
         self._analyses: dict[int, PageAnalysis] = {}   # 현재 세대의 페이지별 결과
         self._corrected: OrderedDict[int, np.ndarray] = OrderedDict()  # 스큐 보정 이미지
         self._outcomes: dict[int, InspectionOutcome] = {}
-        self._lot_auto_selected = False
+        self._manual_lot_pages: set[int] = set()   # 사용자가 직접 LOT 고른 페이지
+        self._page_lot_choice: dict[int, int] = {}  # 페이지 → 수동 선택 콤보 인덱스
         self._aws_ok: bool | None = None
 
         self.ocr_worker = OcrPrefetchWorker(self._analyze_image, self)
@@ -146,7 +147,7 @@ class InspectorPage(QWidget):
         standard_row = QHBoxLayout()
         standard_row.addWidget(QLabel("규격"))
         self.standard_combo = QComboBox()
-        self.standard_combo.addItems(list(self.standards.standards))
+        self._populate_standard_combo()
         self.standard_combo.currentIndexChanged.connect(
             lambda _=0: self._reinspect_current())
         standard_row.addWidget(self.standard_combo, stretch=1)
@@ -239,6 +240,29 @@ class InspectorPage(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.addWidget(splitter)
 
+    def _populate_standard_combo(self) -> None:
+        """규격 콤보 — 항목 표시는 display_name, 내부 값은 규격 키."""
+        self.standard_combo.blockSignals(True)
+        current = self.standard_combo.currentData()
+        self.standard_combo.clear()
+        for name, spec in self.standards.standards.items():
+            self.standard_combo.addItem(spec.label, userData=name)
+        if current is not None:
+            index = self.standard_combo.findData(current)
+            if index >= 0:
+                self.standard_combo.setCurrentIndex(index)
+        self.standard_combo.blockSignals(False)
+
+    def _current_standard_name(self) -> str:
+        return self.standard_combo.currentData() or next(iter(self.standards.standards))
+
+    def _select_standard(self, name: str) -> None:
+        index = self.standard_combo.findData(name)
+        if index >= 0:
+            self.standard_combo.blockSignals(True)
+            self.standard_combo.setCurrentIndex(index)
+            self.standard_combo.blockSignals(False)
+
     def _sync_zoom_slider(self, percent: int) -> None:
         self.zoom_slider.blockSignals(True)
         self.zoom_slider.setValue(percent)
@@ -280,13 +304,7 @@ class InspectorPage(QWidget):
         self.standards = load_standards(self.config)
         self.engine = InspectionEngine(self.standards)
         self.result_panel.set_field_colors(self.standards.field_colors)
-        current = self.standard_combo.currentText()
-        self.standard_combo.blockSignals(True)
-        self.standard_combo.clear()
-        self.standard_combo.addItems(list(self.standards.standards))
-        if current in self.standards.standards:
-            self.standard_combo.setCurrentText(current)
-        self.standard_combo.blockSignals(False)
+        self._populate_standard_combo()
         self.textract = TextractClient(
             region=self.config.settings["aws"].get("region", "ap-northeast-2"),
             profile=self.config.settings["aws"].get("profile") or None)
@@ -298,7 +316,8 @@ class InspectorPage(QWidget):
     def load_records(self, records: list[LabelRecord]) -> None:
         """목록 생성 탭 핸드오프 또는 파일 열기로 레코드 수신."""
         self.records = list(records)
-        self._lot_auto_selected = False
+        self._manual_lot_pages.clear()
+        self._page_lot_choice.clear()
         self.lot_combo.blockSignals(True)
         self.lot_combo.clear()
         self.lot_combo.addItem("LOT 선택…")
@@ -333,11 +352,13 @@ class InspectorPage(QWidget):
         return None
 
     def _on_lot_changed(self, index: int) -> None:
+        # 사용자가 직접 고른 페이지 — 선택을 기억해 두고 자동 매칭이 덮어쓰지 않는다
+        self._manual_lot_pages.add(self.current_page)
+        self._page_lot_choice[self.current_page] = index
+        self.lot_match_label.setText("수동")
         record = self.current_record()
         if record is not None and record.standard in self.standards.standards:
-            self.standard_combo.blockSignals(True)
-            self.standard_combo.setCurrentText(record.standard)
-            self.standard_combo.blockSignals(False)
+            self._select_standard(record.standard)
         self._reinspect_current()
 
     # ------------------------------------------------------------------ PDF
@@ -358,7 +379,8 @@ class InspectorPage(QWidget):
         self._analyses.clear()
         self._outcomes.clear()
         self._corrected.clear()
-        self._lot_auto_selected = False
+        self._manual_lot_pages.clear()
+        self._page_lot_choice.clear()
         self.ocr_worker.new_generation()
         for button in self.nav_buttons:
             button.setEnabled(True)
@@ -505,21 +527,31 @@ class InspectorPage(QWidget):
 
     def _run_inspection(self, page: int, analysis: PageAnalysis,
                         image: np.ndarray, fit: bool = False) -> None:
-        # LOT 자동 매칭 (최초 1회, 수동 선택 전)
-        if (not self._lot_auto_selected and self.records
-                and self.lot_combo.currentIndex() <= 0):
+        # 페이지별 LOT 매칭 — 수동 선택 페이지는 그때의 선택을 복원하고,
+        # 그 외 페이지는 매번 라벨의 LOT을 다시 읽어 자동 선택한다.
+        if page in self._manual_lot_pages:
+            stored = self._page_lot_choice.get(page)
+            if stored is not None and self.lot_combo.currentIndex() != stored:
+                self.lot_combo.blockSignals(True)
+                self.lot_combo.setCurrentIndex(stored)
+                self.lot_combo.blockSignals(False)
+            self.lot_match_label.setText("수동")
+        elif self.records:
             match = self.engine.match_lot(analysis.words, self.records)
             if match is not None:
-                self._lot_auto_selected = True
                 index = self.lot_combo.findText(match.lot)
                 if index > 0:
-                    self.lot_combo.blockSignals(True)
-                    self.lot_combo.setCurrentIndex(index)
-                    self.lot_combo.blockSignals(False)
-                    self._on_lot_changed(index)
+                    if self.lot_combo.currentIndex() != index:
+                        self.lot_combo.blockSignals(True)
+                        self.lot_combo.setCurrentIndex(index)
+                        self.lot_combo.blockSignals(False)
+                    record = self.records[index - 1]
+                    if record.standard in self.standards.standards:
+                        self._select_standard(record.standard)
                 self.lot_match_label.setText(
                     {"exact": "자동(정확)", "suffix_unique": "자동(끝4자리)",
                      "suffix_best": "자동(유사)"}.get(match.match_type, "자동"))
+            # 이 페이지에서 LOT 후보를 못 찾으면 현재 선택 유지
 
         record = self.current_record()
         if record is None:
@@ -529,7 +561,7 @@ class InspectorPage(QWidget):
                                     "검사 목록을 먼저 로드하세요")
             return
 
-        standard_name = self.standard_combo.currentText()
+        standard_name = self._current_standard_name()
         barcode_checks = cross_check_hits(analysis.barcodes, record)
         outcome = self.engine.inspect(record, standard_name, analysis.words,
                                       barcode_checks,

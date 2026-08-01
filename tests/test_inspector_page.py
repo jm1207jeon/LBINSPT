@@ -27,11 +27,11 @@ def qapp():
 
 @pytest.fixture
 def sample_pdf(tmp_path):
-    """3페이지 라벨 PDF: 각 페이지에 LOT/REF 텍스트."""
+    """3페이지 라벨 PDF — 페이지마다 폭을 다르게 해 스텁이 페이지를 식별한다."""
     path = tmp_path / "labels.pdf"
     doc = fitz.open()
     for i in range(3):
-        page = doc.new_page(width=400, height = 300)
+        page = doc.new_page(width=400 + i * 10, height=300)
         page.insert_text((50, 100), f"LOT 2509077{i}")
         page.insert_text((50, 130), "REF NCN20-080-230")
     doc.save(str(path))
@@ -40,16 +40,19 @@ def sample_pdf(tmp_path):
 
 
 class StubTextract:
-    """호출 횟수를 세는 가짜 Textract — 페이지 텍스트를 그대로 돌려준다."""
+    """호출 횟수를 세는 가짜 Textract — 페이지(이미지 폭)별로 다른 LOT을 돌려준다."""
 
-    def __init__(self):
+    def __init__(self, render_zoom=4.0):
         self.calls = 0
+        self.render_zoom = render_zoom
 
     def detect_words(self, image_rgb):
         from labelsuite.core.ocr.textract_client import OcrWord
 
         self.calls += 1
-        return [OcrWord("25090776", (10, 10, 50, 12), 95),
+        page_index = round((image_rgb.shape[1] / self.render_zoom - 400) / 10)
+        page_index = max(0, min(2, page_index))
+        return [OcrWord(f"2509077{page_index}", (10, 10, 50, 12), 95),
                 OcrWord("NCN20-080-230", (10, 40, 80, 12), 95)]
 
 
@@ -82,14 +85,14 @@ def _wait_until(qapp, predicate, timeout=10.0):
     return False
 
 
-RECORDS_ARGS = ("25090776", "HANAROSTENT X", "HANARO-01", "NCN20-080-230",
-                "2024-05-10", "2027-05-09", "08806173612345")
-
-
 def _records():
     from labelsuite.core.schema import LabelRecord
 
-    return [LabelRecord(*RECORDS_ARGS, standard="MDR")]
+    return [
+        LabelRecord(f"2509077{i}", "HANAROSTENT X", "HANARO-01", "NCN20-080-230",
+                    "2024-05-10", "2027-05-09", "08806173612345", standard="MDR")
+        for i in range(3)
+    ]
 
 
 class TestPrefetchFlow:
@@ -134,8 +137,55 @@ class TestPrefetchFlow:
         page._show_page(0, fit=True)
         page._submit_prefetch_jobs()
         assert _wait_until(qapp, lambda: page.current_page in page._outcomes)
-        assert page.lot_combo.currentText() == "25090776"
-        assert page.standard_combo.currentText() == "MDR"
+        assert page.lot_combo.currentText() == "25090770"
+        assert page._current_standard_name() == "MDR"
+        assert page.standard_combo.currentText() == "PML-001(Rev.1)"  # 표시명
+
+    def test_lot_follows_page_navigation(self, qapp, page, sample_pdf):
+        """다페이지 PDF에서 페이지를 넘기면 그 페이지의 LOT이 자동 선택돼야 한다."""
+        page.load_records(_records())
+        page.pdf.open(sample_pdf)
+        page.mode = "pdf"
+        page.current_page = 0
+        page.ocr_worker.new_generation()
+        page._show_page(0, fit=True)
+        page._submit_prefetch_jobs()
+        assert _wait_until(qapp, lambda: len(page._analyses) == 3)
+
+        page._navigate(1)
+        qapp.processEvents()
+        assert page.lot_combo.currentText() == "25090771"
+        page._navigate(1)
+        qapp.processEvents()
+        assert page.lot_combo.currentText() == "25090772"
+        page._navigate("first")
+        qapp.processEvents()
+        assert page.lot_combo.currentText() == "25090770"
+
+    def test_manual_lot_choice_sticks_on_its_page(self, qapp, page, sample_pdf):
+        """사용자가 직접 고른 페이지는 자동 매칭이 덮어쓰지 않는다."""
+        page.load_records(_records())
+        page.pdf.open(sample_pdf)
+        page.mode = "pdf"
+        page.current_page = 0
+        page.ocr_worker.new_generation()
+        page._show_page(0, fit=True)
+        page._submit_prefetch_jobs()
+        assert _wait_until(qapp, lambda: len(page._analyses) == 3)
+
+        # 0페이지에서 수동으로 다른 LOT 선택 (시그널 경유 → 수동으로 기록됨)
+        page.lot_combo.setCurrentIndex(3)   # 25090772
+        qapp.processEvents()
+        assert page.lot_combo.currentText() == "25090772"
+        assert 0 in page._manual_lot_pages
+
+        # 다른 페이지는 여전히 자동, 수동 페이지로 돌아오면 수동 선택 유지
+        page._navigate(1)
+        qapp.processEvents()
+        assert page.lot_combo.currentText() == "25090771"
+        page._navigate("first")
+        qapp.processEvents()
+        assert page.lot_combo.currentText() == "25090772"
 
     def test_disk_cache_survives_reopen(self, qapp, page, sample_pdf):
         page.load_records(_records())
@@ -172,4 +222,4 @@ class TestAutoSave:
         out_dir = tmp_path / "out"
         assert _wait_until(qapp, lambda: out_dir.exists() and list(out_dir.glob("*.jpg")))
         names = [p.name for p in out_dir.glob("*.jpg")]
-        assert any("_25090776_" in n for n in names)
+        assert any("_25090770_" in n for n in names)

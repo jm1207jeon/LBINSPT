@@ -42,7 +42,7 @@ class ResultPanel(QWidget):
         self.field_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch)
         self.field_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        layout.addWidget(self.field_table, stretch=3)
+        layout.addWidget(self.field_table, stretch=2)
 
         layout.addWidget(QLabel("바코드 검증"))
         self.barcode_table = QTableWidget(0, 4)
@@ -51,7 +51,7 @@ class ResultPanel(QWidget):
         self.barcode_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.Stretch)
         self.barcode_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        layout.addWidget(self.barcode_table, stretch=2)
+        layout.addWidget(self.barcode_table, stretch=3)
 
     def set_field_colors(self, colors: dict[str, tuple[int, int, int, int]]) -> None:
         self.field_colors = colors
@@ -63,14 +63,16 @@ class ResultPanel(QWidget):
         self.barcode_table.setRowCount(0)
 
     def show_outcome(self, outcome: InspectionOutcome) -> None:
+        label = outcome.standard.label
         if outcome.passed:
-            self.status_label.setText(f"✓ 합격 (PASSED) · 규격 {outcome.standard.name}")
+            self.status_label.setText(f"✓ 합격 (PASSED) · 규격 {label}")
             self.status_label.setStyleSheet(style.BADGE_PASS)
         else:
-            self.status_label.setText(f"⚠ 확인 필요 (CHECK) · 규격 {outcome.standard.name}")
+            self.status_label.setText(f"⚠ 확인 필요 (CHECK) · 규격 {label}")
             self.status_label.setStyleSheet(style.BADGE_FAIL)
 
-        fields = list(outcome.fields.values())
+        # 요청: 필드별 검출에서 PRODUCTS 제외 (정보성 행이라 판정에 영향 없음)
+        fields = [f for f in outcome.fields.values() if f.field != "PRODUCTS"]
         self.field_table.setRowCount(len(fields))
         for row, result in enumerate(fields):
             name_item = QTableWidgetItem(result.field)

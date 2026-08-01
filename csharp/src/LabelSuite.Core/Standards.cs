@@ -7,7 +7,12 @@ public sealed record StandardSpec(
     string Name,
     IReadOnlyDictionary<string, int> Counts,
     string DateFormat,
-    bool UsesChinaField);
+    bool UsesChinaField,
+    string? DisplayNameRaw = null)
+{
+    /// <summary>UI 표시명 — 내부 키(Name)는 목록 파일 호환을 위해 불변.</summary>
+    public string DisplayName => DisplayNameRaw ?? Name;
+}
 
 public sealed class StandardsBundle
 {
@@ -48,7 +53,8 @@ public sealed class StandardsBundle
                 standards[name] = new StandardSpec(
                     name, counts,
                     ConvertDateFormat(obj["date_format"]?.GetValue<string>() ?? "%Y-%m-%d"),
-                    obj["uses_china_field"]?.GetValue<bool>() ?? false);
+                    obj["uses_china_field"]?.GetValue<bool>() ?? false,
+                    obj["display_name"]?.GetValue<string>());
             }
         }
         var china = new Dictionary<string, string>();
