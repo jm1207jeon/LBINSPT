@@ -58,11 +58,24 @@ public partial class SettingsWindow : Window
         public string Min { get; set; } = "2";
     }
 
+    public sealed class FormRuleVm
+    {
+        public string Name { get; set; } = "";
+        public string Standard { get; set; } = "";
+        public string X { get; set; } = "0";
+        public string Y { get; set; } = "0";
+        public string W { get; set; } = "20";
+        public string H { get; set; } = "10";
+        public string Pattern { get; set; } = "";
+        public bool UseImage { get; set; }
+    }
+
     private readonly ObservableCollection<CustomFieldVm> _customFields = [];
     private readonly ObservableCollection<ColorVm> _fieldColors = [];
     private readonly ObservableCollection<CorrectionVm> _correctionRows = [];
     private readonly ObservableCollection<CharsetVm> _charsetRows = [];
     private readonly ObservableCollection<SameValueVm> _sameValueRows = [];
+    private readonly ObservableCollection<FormRuleVm> _formRuleRows = [];
     private readonly Dictionary<string, CheckBox> _disableChecks = [];
 
     private readonly GlyphLibrary _glyphs;
@@ -172,6 +185,9 @@ public partial class SettingsWindow : Window
         OcrMinConfBox.Text = _config.SectionInt("ocr", "min_confidence", 0).ToString();
         ContrastStretchCheck.IsChecked = _config.SectionBool("ocr", "contrast_stretch", false);
         ConfusablesCheck.IsChecked = _config.SectionBool("ocr", "allow_confusables", true);
+        QualityAlarmCheck.IsChecked = _config.SectionBool("ocr", "quality_alarm", true);
+        LowWordConfBox.Text = _config.SectionInt("ocr", "low_word_confidence", 70).ToString();
+        LowAvgConfBox.Text = _config.SectionInt("ocr", "low_avg_confidence", 80).ToString();
 
         // OCR 대상 필드
         var disabled = new HashSet<string>();
@@ -221,6 +237,25 @@ public partial class SettingsWindow : Window
         SameValueGrid.ItemsSource = _sameValueRows;
         TypeLearningCheck.IsChecked = _config.SectionBool("type_learning", "enabled", true);
         TypeMinSamplesBox.Text = _config.SectionInt("type_learning", "min_samples", 5).ToString();
+
+        // 라벨 양식 자동 감지
+        if (_config.Section("label_forms")["rules"] is JsonArray formArray)
+            foreach (var node in formArray)
+                if (node is JsonObject obj)
+                {
+                    string At(int i) => obj["region"] is JsonArray r && r.Count == 4
+                        && r[i]!.AsValue().TryGetValue<double>(out var v)
+                        ? v.ToString("0.#") : "0";
+                    _formRuleRows.Add(new FormRuleVm
+                    {
+                        Name = obj["name"]?.GetValue<string>() ?? "",
+                        Standard = obj["standard"]?.GetValue<string>() ?? "",
+                        X = At(0), Y = At(1), W = At(2), H = At(3),
+                        Pattern = obj["text_pattern"]?.GetValue<string>() ?? "",
+                        UseImage = obj["use_image"]?.GetValue<bool>() ?? false,
+                    });
+                }
+        FormRulesGrid.ItemsSource = _formRuleRows;
 
         // 바운딩 박스
         OverlayThicknessBox.Text = _config.SectionInt("overlay", "thickness", 2).ToString();
@@ -304,7 +339,8 @@ public partial class SettingsWindow : Window
     private void OnSave(object sender, RoutedEventArgs e)
     {
         foreach (var grid in new[] { CustomFieldsGrid, FieldColorsGrid, CorrectionsGrid,
-                                     CountsGrid, CharsetsGrid, SameValueGrid })
+                                     CountsGrid, CharsetsGrid, SameValueGrid,
+                                     FormRulesGrid })
             grid.CommitEdit(DataGridEditingUnit.Row, true);
 
         var settings = _config.Settings;
@@ -330,6 +366,9 @@ public partial class SettingsWindow : Window
         ocr["min_confidence"] = ParseInt(OcrMinConfBox.Text, 0, 0, 100);
         ocr["contrast_stretch"] = ContrastStretchCheck.IsChecked == true;
         ocr["allow_confusables"] = ConfusablesCheck.IsChecked == true;
+        ocr["quality_alarm"] = QualityAlarmCheck.IsChecked == true;
+        ocr["low_word_confidence"] = ParseInt(LowWordConfBox.Text, 70, 0, 100);
+        ocr["low_avg_confidence"] = ParseInt(LowAvgConfBox.Text, 80, 0, 100);
 
         // 대상 필드
         var fields = _config.Section("fields");
@@ -365,6 +404,25 @@ public partial class SettingsWindow : Window
         var typeLearning = _config.Section("type_learning");
         typeLearning["enabled"] = TypeLearningCheck.IsChecked == true;
         typeLearning["min_samples"] = ParseInt(TypeMinSamplesBox.Text, 5, 2, 100);
+
+        // 라벨 양식 자동 감지 규칙
+        static double ParsePercent(string text) =>
+            double.TryParse(text, out var v) ? Math.Clamp(v, 0, 100) : 0;
+        _config.Section("label_forms")["rules"] = new JsonArray(_formRuleRows
+            .Where(vm => vm.Name.Trim().Length > 0
+                && (vm.Pattern.Trim().Length > 0 || vm.UseImage))
+            .Select(vm => (JsonNode)new JsonObject
+            {
+                ["name"] = vm.Name.Trim(),
+                ["standard"] = vm.Standard.Trim(),
+                ["region"] = new JsonArray(
+                    JsonValue.Create(ParsePercent(vm.X)),
+                    JsonValue.Create(ParsePercent(vm.Y)),
+                    JsonValue.Create(Math.Max(1, ParsePercent(vm.W))),
+                    JsonValue.Create(Math.Max(1, ParsePercent(vm.H)))),
+                ["text_pattern"] = vm.Pattern.Trim(),
+                ["use_image"] = vm.UseImage,
+            }).ToArray());
 
         // 바운딩 박스
         var overlay = _config.Section("overlay");

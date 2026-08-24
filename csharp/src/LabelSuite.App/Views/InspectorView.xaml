@@ -150,6 +150,17 @@
                                    VerticalAlignment="Top" Margin="0,6,0,0"/>
                         <WrapPanel x:Name="StandardPanel"/>
                     </DockPanel>
+                    <DockPanel x:Name="FormRow" Margin="0,4,0,0"
+                               Visibility="Collapsed">
+                        <TextBlock DockPanel.Dock="Left" Text="양식:" Width="34"
+                                   VerticalAlignment="Center"/>
+                        <Button DockPanel.Dock="Right" Content="양식 학습"
+                                Click="OnLearnForm"
+                                ToolTip="현재 페이지의 규칙 영역 이미지를 이 양식의 기준 템플릿으로 학습합니다"/>
+                        <TextBlock x:Name="FormMatchLabel" VerticalAlignment="Center"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource SuccessBrush}"/>
+                    </DockPanel>
                     <DockPanel Margin="0,2,0,0">
                         <TextBlock DockPanel.Dock="Left" Text="검색:" Width="34"
                                    VerticalAlignment="Center"/>

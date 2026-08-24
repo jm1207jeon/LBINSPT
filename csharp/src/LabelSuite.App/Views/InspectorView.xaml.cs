@@ -48,6 +48,8 @@ public partial class InspectorView : UserControl
 
     private SameValueChecker _sameValue = null!;
     private List<SameValueRule> _sameValueRules = [];
+    private LabelFormDetector _formDetector = null!;
+    private List<LabelFormRule> _formRules = [];
     private LabelTypeProfiler _profiler = null!;
     private readonly HashSet<int> _typeLearnedPages = [];   // 페이지당 1회만 표본 축적
     private readonly HashSet<int> _typeAlarmPages = [];     // 페이지당 1회만 알람
@@ -68,6 +70,11 @@ public partial class InspectorView : UserControl
         _sameValue = new SameValueChecker(
             Path.Combine(AppConfig.DataDir(), "same_value_layouts.json"), corrections);
         _sameValueRules = LoadSameValueRules();
+        _formDetector = new LabelFormDetector(
+            Path.Combine(AppConfig.DataDir(), "form_templates.json"));
+        _formRules = LoadFormRules();
+        FormRow.Visibility = _formRules.Count > 0 ? Visibility.Visible
+                                                  : Visibility.Collapsed;
         _profiler = new LabelTypeProfiler(
             Path.Combine(AppConfig.DataDir(), "label_profiles.json"))
         { MinSamples = _config.SectionInt("type_learning", "min_samples", 5) };
@@ -168,6 +175,85 @@ public partial class InspectorView : UserControl
         });
     }
 
+    /// <summary>설정의 라벨 양식 감지 규칙 (label_forms.rules — 영역은 %).</summary>
+    private List<LabelFormRule> LoadFormRules()
+    {
+        var rules = new List<LabelFormRule>();
+        if (_config.Section("label_forms")["rules"] is System.Text.Json.Nodes.JsonArray array)
+            foreach (var node in array)
+            {
+                if (node is not System.Text.Json.Nodes.JsonObject obj) continue;
+                double At(int i) => obj["region"] is System.Text.Json.Nodes.JsonArray r
+                    && r.Count == 4 && r[i]!.AsValue().TryGetValue<double>(out var v)
+                    ? Math.Clamp(v / 100.0, 0, 1) : 0;
+                rules.Add(new LabelFormRule(
+                    obj["name"]?.GetValue<string>() ?? "",
+                    obj["standard"]?.GetValue<string>() ?? "",
+                    (At(0), At(1), Math.Max(0.01, At(2)), Math.Max(0.01, At(3))),
+                    obj["text_pattern"]?.GetValue<string>() ?? "",
+                    obj["use_image"]?.GetValue<bool>() ?? false));
+            }
+        return rules;
+    }
+
+    /// <summary>현재 페이지의 규칙 영역을 양식 이미지 템플릿으로 학습.</summary>
+    private void OnLearnForm(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (!_pdf.IsOpen)
+        {
+            MessageBox.Show("PDF를 먼저 여세요.", "양식 학습");
+            return;
+        }
+        var imageRules = _formRules
+            .Where(r => r.UseImage && r.Name.Trim().Length > 0).ToList();
+        if (imageRules.Count == 0)
+        {
+            MessageBox.Show(
+                "'이미지 사용'이 켜진 양식 규칙이 없습니다.\n" +
+                "설정 → 라벨 양식 자동 감지에서 규칙을 추가하세요.", "양식 학습");
+            return;
+        }
+        var combo = new ComboBox
+        {
+            ItemsSource = imageRules.Select(r => r.Name).ToList(),
+            SelectedIndex = 0, MinWidth = 240, Margin = new Thickness(0, 8, 0, 8),
+        };
+        var okButton = new Button
+        {
+            Content = "이 양식으로 학습", MinWidth = 110, IsDefault = true,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        var panel = new StackPanel { Margin = new Thickness(12) };
+        panel.Children.Add(new TextBlock
+        { Text = "현재 페이지를 어느 양식의 기준 이미지로 학습할까요?" });
+        panel.Children.Add(combo);
+        panel.Children.Add(okButton);
+        var dialog = new Window
+        {
+            Title = "양식 이미지 학습", Content = panel,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            Owner = Window.GetWindow(this),
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+        };
+        okButton.Click += (_, _) => dialog.DialogResult = true;
+        if (dialog.ShowDialog() != true || combo.SelectedIndex < 0) return;
+
+        var rule = imageRules[combo.SelectedIndex];
+        var image = _pdf.RenderPage(_currentPage);   // PdfDoc 캐시 소유 — 해제 금지
+        if (_formDetector.LearnTemplate(rule, image))
+        {
+            StatusMessage?.Invoke(
+                $"양식 '{rule.Name}' 기준 이미지 학습 완료 " +
+                $"(영역 {rule.Region.X * 100:F0}%,{rule.Region.Y * 100:F0}% " +
+                $"{rule.Region.W * 100:F0}x{rule.Region.H * 100:F0}%)");
+            ReinspectCurrent();
+        }
+        else
+            MessageBox.Show("규칙 영역이 너무 작습니다. 설정에서 영역(%)을 확인하세요.",
+                            "양식 학습");
+    }
+
     /// <summary>설정의 동일값 패턴 규칙 (fields.same_value).</summary>
     private List<SameValueRule> LoadSameValueRules()
     {
@@ -194,6 +280,9 @@ public partial class InspectorView : UserControl
         _engine = BuildEngine();
         _textract = MakeTextract();
         _sameValueRules = LoadSameValueRules();
+        _formRules = LoadFormRules();
+        FormRow.Visibility = _formRules.Count > 0 ? Visibility.Visible
+                                                  : Visibility.Collapsed;
         _profiler.MinSamples = _config.SectionInt("type_learning", "min_samples", 5);
         _pdf.RenderZoom = _config.GetDouble("pdf_render_zoom", 4.0);
         PopulateStandardButtons();
@@ -570,6 +659,26 @@ public partial class InspectorView : UserControl
             // 이 페이지에서 LOT 후보를 못 찾으면 현재 선택 유지
         }
 
+        // 라벨 양식 자동 감지 (설정된 위치의 텍스트/이미지 패턴) → 규격 자동 선택
+        if (_formRules.Count > 0)
+        {
+            var form = _formDetector.Detect(_formRules, analysis.Words, image);
+            if (form is not null)
+            {
+                FormMatchLabel.Text =
+                    $"{form.Name} ({form.Method} {form.Score * 100:F0}%)";
+                FormMatchLabel.Foreground = (Brush)FindResource("SuccessBrush");
+                if (form.Standard.Length > 0
+                    && _standards.Standards.ContainsKey(form.Standard))
+                    SelectStandard(form.Standard);
+            }
+            else
+            {
+                FormMatchLabel.Text = "미감지";
+                FormMatchLabel.Foreground = (Brush)FindResource("MutedBrush");
+            }
+        }
+
         var record = CurrentRecord();
         if (record is null)
         {
@@ -599,6 +708,21 @@ public partial class InspectorView : UserControl
         ShowOutcome(outcome, analysis);
         using var annotated = Annotate.RenderOverlays(
             image, outcome.AllMatches, _standards.FieldColors, CurrentOverlayStyle());
+        // 저신뢰 OCR 알람 — 유의미하게 낮으면 해당 단어를 주황 파선으로 하이라이트
+        if (_config.SectionBool("ocr", "quality_alarm", true))
+        {
+            var lowThreshold = _config.SectionInt("ocr", "low_word_confidence", 70);
+            var quality = OcrQuality.Assess(analysis.Words,
+                _config.SectionInt("ocr", "low_avg_confidence", 80), lowThreshold);
+            if (quality.IsPoor)
+            {
+                Annotate.HighlightLowConfidence(annotated,
+                    OcrQuality.LowConfidenceWords(analysis.Words, lowThreshold),
+                    CurrentOverlayStyle());
+                StatusBadgeText.Text += $"  ·  ⚠ OCR 신뢰도 {quality.Average:F0}%";
+                StatusMessage?.Invoke($"⚠ p{page + 1}: {quality.Summary}");
+            }
+        }
         SetViewerImage(annotated, fit);
         UpdateDashboard();
         UpdatePageSlots();

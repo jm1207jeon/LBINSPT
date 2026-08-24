@@ -78,6 +78,16 @@
                             <CheckBox x:Name="ConfusablesCheck" Margin="16,2,0,2"
                                       Content="혼동 문자 허용 매칭 (O↔0, I↔1 등)"/>
                         </WrapPanel>
+                        <WrapPanel Margin="0,4,0,0">
+                            <CheckBox x:Name="QualityAlarmCheck"
+                                      Content="저신뢰 OCR 알람 (해당 단어 주황 하이라이트)"/>
+                            <TextBlock Text="   단어 임계(%):" VerticalAlignment="Center"/>
+                            <TextBox x:Name="LowWordConfBox" Width="46"/>
+                            <TextBlock Text="   평균 임계(%):" VerticalAlignment="Center"/>
+                            <TextBox x:Name="LowAvgConfBox" Width="46"/>
+                        </WrapPanel>
+                        <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                                   Text="페이지 평균 신뢰도가 평균 임계 미만이거나, 단어 임계 미만인 단어가 30%를 넘으면 배지·상태바에 알람을 띄우고 해당 단어를 주황 파선 박스로 표시합니다."/>
                         <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
                                    Text="렌더 배율↑·전송 크기↑ = 정밀·느림 / 최소 신뢰도: 이 값 미만 OCR 단어는 무시 (0=전부 사용)"/>
                     </StackPanel>
@@ -138,6 +148,27 @@
                         </WrapPanel>
                         <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
                                    Text="검사할 때마다 라벨 전체 OCR 문구를 유형(PN+규격)별로 축적하고, 표본이 쌓인 뒤 기존 유형과 다른 라벨(고정 문구 누락·처음 보는 문구 다수)이 나오면 알람을 띄웁니다."/>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Header="라벨 양식 자동 감지 (양식명 위치·패턴으로 라벨 종류 판별)">
+                    <StackPanel>
+                        <DataGrid x:Name="FormRulesGrid" IsReadOnly="False"
+                                  AutoGenerateColumns="False" CanUserAddRows="True"
+                                  Height="120" FontFamily="Consolas">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="양식명" Binding="{Binding Name}" Width="100"/>
+                                <DataGridTextColumn Header="규격" Binding="{Binding Standard}" Width="60"/>
+                                <DataGridTextColumn Header="X%" Binding="{Binding X}" Width="44"/>
+                                <DataGridTextColumn Header="Y%" Binding="{Binding Y}" Width="44"/>
+                                <DataGridTextColumn Header="W%" Binding="{Binding W}" Width="44"/>
+                                <DataGridTextColumn Header="H%" Binding="{Binding H}" Width="44"/>
+                                <DataGridTextColumn Header="텍스트 패턴 (정규식)" Binding="{Binding Pattern}" Width="*"/>
+                                <DataGridCheckBoxColumn Header="이미지" Binding="{Binding UseImage}" Width="52"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                                   Text="라벨마다 특정 위치에 인쇄되는 양식명(예: Rev.A00)으로 라벨 종류를 자동 감지해 규격을 선택합니다. 영역은 페이지 비율(%): X,Y=좌상단, W,H=크기. 텍스트 패턴(예: Rev\.?A00)과 이미지 중 하나만 설정해도 되고 둘 다 설정하면 어느 한쪽만 맞아도 감지됩니다(둘 다 맞으면 신뢰도 상승). 이미지 기준은 검사 탭에서 해당 양식 라벨을 띄우고 [양식 학습] 버튼으로 등록합니다. 규격 칸에는 내부 키(MDR/MDD/BSC/A00/A02/중국)를 입력하세요."/>
                     </StackPanel>
                 </GroupBox>
 

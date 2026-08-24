@@ -63,6 +63,36 @@ public static class Annotate
         return annotated;
     }
 
+    /// <summary>저신뢰 OCR 단어를 경고색(주황) 파선 박스로 하이라이트한다.
+    /// 원본을 제자리에서 수정한다 (RenderOverlays 결과 위에 겹쳐 그리는 용도).</summary>
+    public static void HighlightLowConfidence(SKBitmap image,
+                                              IEnumerable<OcrWord> lowWords,
+                                              OverlayStyle? style = null)
+    {
+        style ??= OverlayStyle.Default;
+        using var canvas = new SKCanvas(image);
+        var orange = new SKColor(255, 140, 0);
+        using var fill = new SKPaint
+        { Color = orange.WithAlpha(45), Style = SKPaintStyle.Fill };
+        using var stroke = new SKPaint
+        {
+            Color = orange, Style = SKPaintStyle.Stroke,
+            StrokeWidth = Math.Max(2, style.Thickness),
+            PathEffect = SKPathEffect.CreateDash([6f, 4f], 0),
+        };
+        using var font = new SKFont(SKTypeface.Default, 16);
+        using var text = new SKPaint { Color = orange, IsAntialias = true };
+        foreach (var word in lowWords)
+        {
+            var (x, y, w, h) = word.Bbox;
+            var rect = new SKRect(x - 2, y - 2, x + w + 2, y + h + 2);
+            canvas.DrawRect(rect, fill);
+            canvas.DrawRect(rect, stroke);
+            canvas.DrawText($"{word.Confidence}%", rect.Left,
+                            Math.Max(14, rect.Top - 4), font, text);
+        }
+    }
+
     /// <summary>우상단 필드별 found/expected 요약 박스 (저장본용).</summary>
     public static void DrawSummaryBox(SKBitmap image, InspectionOutcome outcome)
     {
