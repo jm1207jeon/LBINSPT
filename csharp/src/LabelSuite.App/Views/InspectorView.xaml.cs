@@ -926,7 +926,7 @@ public partial class InspectorView : UserControl
         var configured = _config.GetString("save_directory");
         return configured.Length > 0 ? configured
             : Path.Combine(Environment.GetFolderPath(
-                Environment.SpecialFolder.UserProfile), "LabelSuite_결과");
+                Environment.SpecialFolder.UserProfile), "LaVIS_결과");
     }
 
     private void OnPickSaveDir(object sender, RoutedEventArgs e)

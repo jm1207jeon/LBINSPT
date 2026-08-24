@@ -74,7 +74,7 @@ public static class LearningBundle
             var correctionsFile = Path.Combine(temp.FullName, CorrectionsEntry);
             if (!File.Exists(glyphsFile) && !File.Exists(correctionsFile))
                 throw new InvalidDataException(
-                    "LabelSuite 학습 데이터 번들이 아닙니다 (glyphs/corrections 없음).");
+                    "LaVIS 학습 데이터 번들이 아닙니다 (glyphs/corrections 없음).");
 
             var addedTemplates = 0;
             var importedGlyphs = new GlyphLibrary(

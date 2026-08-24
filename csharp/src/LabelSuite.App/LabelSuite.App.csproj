@@ -7,7 +7,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>12</LangVersion>
-    <AssemblyName>LabelSuite</AssemblyName>
+    <AssemblyName>LaVIS</AssemblyName>
+    <Product>LaVIS</Product>
+    <AssemblyTitle>LaVIS — Label Verification &amp; Inspection System</AssemblyTitle>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <Version>1.0.0</Version>

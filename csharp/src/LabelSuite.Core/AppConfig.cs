@@ -7,7 +7,10 @@ namespace LabelSuite.Core;
 
 public class AppConfig
 {
-    public const string AppName = "LabelSuite";
+    /// <summary>제품명 — LaVIS: Label Verification &amp; Inspection System.</summary>
+    public const string AppName = "LaVIS";
+    /// <summary>개명 전 데이터 폴더 이름 (기존 사용자 데이터 자동 이전용).</summary>
+    public const string LegacyAppName = "LabelSuite";
     public const string SettingsFile = "settings.json";
     public const string StandardsFile = "standards.json";
     public const string ColumnMapsFile = "column_maps.json";
@@ -25,12 +28,27 @@ public class AppConfig
 
     public AppConfig(string? directory = null)
     {
+        if (directory is null) MigrateLegacyDataDir();
         Directory = directory ?? DefaultConfigDir();
         EnsureDefaults();
         Settings = Read(SettingsFile);
         StandardsRaw = Read(StandardsFile);
         ColumnMapsRaw = Read(ColumnMapsFile);
         Migrate();
+    }
+
+    /// <summary>LabelSuite → LaVIS 개명: 기존 %APPDATA%\LabelSuite 데이터
+    /// (설정·학습 패턴·교정 사전·검사 이력·캐시)를 새 폴더로 통째로 이전한다.</summary>
+    private static void MigrateLegacyDataDir()
+    {
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var newDir = Path.Combine(appData, AppName);
+        var oldDir = Path.Combine(appData, LegacyAppName);
+        if (System.IO.Directory.Exists(newDir) || !System.IO.Directory.Exists(oldDir))
+            return;
+        try { System.IO.Directory.Move(oldDir, newDir); }
+        catch (IOException) { /* 이전 실패 시 새 폴더에서 새로 시작 */ }
+        catch (UnauthorizedAccessException) { }
     }
 
     private void EnsureDefaults()

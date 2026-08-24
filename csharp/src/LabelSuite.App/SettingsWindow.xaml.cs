@@ -95,8 +95,8 @@ public partial class SettingsWindow : Window
         var dialog = new SaveFileDialog
         {
             Title = "학습 데이터 내보내기",
-            FileName = $"LabelSuite-학습데이터-{DateTime.Now:yyyyMMdd}{LearningBundle.Extension}",
-            Filter = $"LabelSuite 학습 데이터 (*{LearningBundle.Extension})|*{LearningBundle.Extension}",
+            FileName = $"LaVIS-학습데이터-{DateTime.Now:yyyyMMdd}{LearningBundle.Extension}",
+            Filter = $"LaVIS 학습 데이터 (*{LearningBundle.Extension})|*{LearningBundle.Extension}",
         };
         if (dialog.ShowDialog() != true) return;
         try
@@ -120,7 +120,7 @@ public partial class SettingsWindow : Window
         var dialog = new OpenFileDialog
         {
             Title = "학습 데이터 가져오기",
-            Filter = $"LabelSuite 학습 데이터 (*{LearningBundle.Extension})|*{LearningBundle.Extension}|" +
+            Filter = $"LaVIS 학습 데이터 (*{LearningBundle.Extension})|*{LearningBundle.Extension}|" +
                      "모든 파일 (*.*)|*.*",
         };
         if (dialog.ShowDialog() != true) return;

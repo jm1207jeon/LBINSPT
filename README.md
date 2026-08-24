@@ -1,4 +1,6 @@
-# LabelSuite — 통합 라벨 검사 프로그램
+# LaVIS — 라벨 검증·검사 시스템
+
+**LaVIS** (Label Verification & Inspection System, 구 LabelSuite)
 
 기존 두 프로그램(`Label Inspector_list generator`의 목록 생성, `Label Inspector`의
 라벨 OCR 검사)을 하나의 앱으로 통합·고도화한 프로그램입니다.
@@ -7,7 +9,7 @@
 
 | 구현 | 위치 | 배포물 | 상태 |
 |---|---|---|---|
-| **C# (.NET 8 + WPF)** — 권장 | `csharp/` | 자립형 **폴더 배포** (`LabelSuite/` — exe+런타임+models, 설치·런타임 불필요) | 신규 — 장기 유지 대상 |
+| **C# (.NET 8 + WPF)** — 권장 | `csharp/` | 자립형 **폴더 배포** (`LaVIS/` — exe+런타임+models, 설치·런타임 불필요) | 신규 — 장기 유지 대상 |
 | Python (PySide6) | `labelsuite/` | PyInstaller onedir zip (~500MB) | 검증된 참조 구현 |
 
 두 구현은 동일한 로직(스키마·생성 규칙·GS1 파서·검사 엔진·프리페치·캐시)을
@@ -21,18 +23,18 @@
 dotnet test csharp/tests/LabelSuite.Core.Tests
 # 실행 (Windows)
 dotnet run --project csharp/src/LabelSuite.App
-# 폴더 배포 (Windows) — LabelSuite/ 폴더(exe + 런타임 DLL + models/) 생성
+# 폴더 배포 (Windows) — LaVIS/ 폴더(exe + 런타임 DLL + models/) 생성
 dotnet publish csharp/src/LabelSuite.App -c Release -r win-x64 --self-contained \
-  -o publish/LabelSuite
+  -o publish/LaVIS
 ```
 
-배포 폴더 구성: `LabelSuite.exe`(본체) + `*.dll`(런타임) + `models/`(로컬 ONNX OCR
+배포 폴더 구성: `LaVIS.exe`(본체) + `*.dll`(런타임) + `models/`(로컬 ONNX OCR
 모델) + `README.txt`. 사용자 데이터(설정·학습 패턴·교정 사전·검사 이력·캐시)는
-`%APPDATA%\LabelSuite`에 분리 저장되므로 폴더를 새 버전으로 통째로 교체해도
+`%APPDATA%\LaVIS`에 분리 저장되므로 (구 LabelSuite 데이터는 첫 실행 시 자동 이전) 폴더를 새 버전으로 통째로 교체해도
 유지됩니다. 학습 데이터는 설정 → OCR 설정 → [학습 데이터 내보내기/가져오기]로
 `.lslearn` 파일 하나로 다른 PC에 이식할 수 있습니다.
 
-GitHub Actions: **Actions 탭 → "Build C# Windows EXE" → Run workflow**,
+GitHub Actions: **Actions 탭 → "Build LaVIS Windows EXE (C#)" → Run workflow**,
 또는 `cs-v1.0.0` 형식 태그를 푸시하면 Release에 폴더 zip이 첨부됩니다.
 고급 설정(컬럼 매핑·중국 REF 매핑)은 설정 창의 "설정 폴더 열기"로 JSON을 직접
 편집합니다.

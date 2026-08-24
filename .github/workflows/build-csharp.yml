@@ -1,4 +1,4 @@
-name: Build C# Windows EXE
+name: Build LaVIS Windows EXE (C#)
 
 on:
   workflow_dispatch:
@@ -24,29 +24,29 @@ jobs:
         run: dotnet test csharp/tests/LabelSuite.Core.Tests -c Release --nologo
 
       # 단일 exe(자가 추출) 대신 체계적 폴더 배포:
-      #   LabelSuite/  ── LabelSuite.exe + 런타임 DLL + models/(ONNX) + README.txt
-      # 사용자 데이터(설정·학습·이력)는 %APPDATA%\LabelSuite 에 분리 저장된다.
+      #   LaVIS/  ── LaVIS.exe + 런타임 DLL + models/(ONNX) + README.txt
+      # 사용자 데이터(설정·학습·이력)는 %APPDATA%\LaVIS 에 분리 저장된다.
       - name: Publish self-contained folder
         run: >
           dotnet publish csharp/src/LabelSuite.App -c Release -r win-x64
           --self-contained true
-          -o publish/LabelSuite
+          -o publish/LaVIS
 
       - name: Add distribution README
         shell: pwsh
         run: |
           @"
-          LabelSuite - 라벨 검사 프로그램
+          LaVIS - 라벨 검증·검사 시스템 (Label Verification & Inspection System)
           ================================
-          실행: LabelSuite.exe
+          실행: LaVIS.exe
 
           [폴더 구성]
-            LabelSuite.exe   프로그램 본체
+            LaVIS.exe        프로그램 본체
             *.dll            .NET 런타임/라이브러리 (삭제·이동 금지)
             models\          로컬 ONNX OCR 모델
 
           [사용자 데이터 - 프로그램 폴더와 분리 저장]
-            %APPDATA%\LabelSuite\
+            %APPDATA%\LaVIS\
               settings.json / standards.json / column_maps.json  설정
               glyphs.json           학습된 글자 패턴
               ocr_corrections.json  OCR 교정 사전
@@ -56,24 +56,25 @@ jobs:
           [업데이트]
             이 폴더 전체를 새 버전으로 교체하면 됩니다.
             사용자 데이터는 %APPDATA%에 있으므로 그대로 유지됩니다.
+            (구 LabelSuite 데이터는 첫 실행 시 자동으로 이전됩니다.)
 
           [다른 PC로 학습 데이터 이식]
             설정 → OCR 설정 → [학습 데이터 내보내기]로 만든 .lslearn 파일을
-            새 PC에서 [학습 데이터 가져오기]로 불러오세요.
-          "@ | Out-File -FilePath publish/LabelSuite/README.txt -Encoding utf8BOM
+            새 PC의 LaVIS에서 [학습 데이터 가져오기]로 불러오세요.
+          "@ | Out-File -FilePath publish/LaVIS/README.txt -Encoding utf8BOM
 
       - name: Smoke check
         shell: pwsh
         run: |
-          if (-not (Test-Path "publish/LabelSuite/LabelSuite.exe")) {
-            Write-Error "LabelSuite.exe가 생성되지 않았습니다."
+          if (-not (Test-Path "publish/LaVIS/LaVIS.exe")) {
+            Write-Error "LaVIS.exe가 생성되지 않았습니다."
             exit 1
           }
-          if (-not (Test-Path "publish/LabelSuite/models")) {
+          if (-not (Test-Path "publish/LaVIS/models")) {
             Write-Error "models 폴더(ONNX 모델)가 없습니다."
             exit 1
           }
-          $total = (Get-ChildItem publish/LabelSuite -Recurse | Measure-Object Length -Sum).Sum
+          $total = (Get-ChildItem publish/LaVIS -Recurse | Measure-Object Length -Sum).Sum
           "폴더 전체 {0:N1} MB" -f ($total / 1MB)
 
       - name: Resolve version label
@@ -90,19 +91,19 @@ jobs:
       - name: Package zip
         shell: pwsh
         run: >
-          Compress-Archive -Path publish/LabelSuite
-          -DestinationPath "LabelSuite-csharp-${{ steps.version.outputs.label }}.zip"
+          Compress-Archive -Path publish/LaVIS
+          -DestinationPath "LaVIS-${{ steps.version.outputs.label }}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: LabelSuite-csharp-${{ steps.version.outputs.label }}
-          path: LabelSuite-csharp-${{ steps.version.outputs.label }}.zip
+          name: LaVIS-${{ steps.version.outputs.label }}
+          path: LaVIS-${{ steps.version.outputs.label }}.zip
           retention-days: 30
 
       - name: Create GitHub Release (tags only)
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: LabelSuite-csharp-${{ steps.version.outputs.label }}.zip
+          files: LaVIS-${{ steps.version.outputs.label }}.zip
           generate_release_notes: true
