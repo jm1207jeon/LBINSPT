@@ -68,6 +68,15 @@ public class AppConfig
                 Settings[key] = value?.DeepClone();
                 changed = true;
             }
+            // 섹션 안에 새 하위 키가 추가된 경우 (예: fields.charsets) 보충
+            else if (value is JsonObject defaultSection
+                     && Settings[key] is JsonObject userSection)
+                foreach (var (subKey, subValue) in defaultSection)
+                    if (!userSection.ContainsKey(subKey))
+                    {
+                        userSection[subKey] = subValue?.DeepClone();
+                        changed = true;
+                    }
         }
         if (changed) SaveSettings();
 

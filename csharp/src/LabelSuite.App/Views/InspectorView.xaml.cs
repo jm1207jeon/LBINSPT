@@ -138,12 +138,21 @@ public partial class InspectorView : UserControl
                     obj["expected"] is { } exp
                         && exp.AsValue().TryGetValue<int>(out var count) ? count : null));
             }
+        var charsetRules = new List<FieldCharsetRule>();
+        if (fields["charsets"] is System.Text.Json.Nodes.JsonArray charsetArray)
+            foreach (var node in charsetArray)
+                if (node is System.Text.Json.Nodes.JsonObject obj)
+                    charsetRules.Add(new FieldCharsetRule(
+                        obj["field"]?.GetValue<string>() ?? "",
+                        obj["allowed"]?.GetValue<string>() ?? "",
+                        obj["denied"]?.GetValue<string>() ?? ""));
         return new InspectionEngine(_standards, new InspectionOptions
         {
             DisabledFields = disabled,
             CustomFields = custom,
             AllowConfusables = _config.SectionBool("ocr", "allow_confusables", true),
             Corrections = _corrections,
+            Charsets = new FieldCharsets(charsetRules),
         });
     }
 

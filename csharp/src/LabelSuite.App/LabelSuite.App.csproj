@@ -9,6 +9,7 @@
     <LangVersion>12</LangVersion>
     <AssemblyName>LabelSuite</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <Version>1.0.0</Version>
     <!-- 리눅스 CI에서도 컴파일 검증 가능 (실행은 Windows 전용) -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
@@ -27,6 +28,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LabelSuite.Core\LabelSuite.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 창 타이틀바/작업표시줄 아이콘용 리소스 (exe 아이콘은 ApplicationIcon) -->
+    <Resource Include="Assets\app.ico" />
   </ItemGroup>
 
 </Project>

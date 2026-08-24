@@ -74,6 +74,27 @@ public sealed class OcrCorrections
         Save();
     }
 
+    /// <summary>가져온 학습 데이터의 교정 항목을 병합한다 (같은 오인식 값은 교체).
+    /// 반환: 반영된 항목 수.</summary>
+    public int ImportFrom(IEnumerable<CorrectionEntry> entries)
+    {
+        var added = 0;
+        lock (_lock)
+        {
+            foreach (var e in entries)
+            {
+                if (e.Wrong.Trim().Length == 0 || e.Right.Trim().Length == 0
+                    || e.Wrong == e.Right) continue;
+                _entries.RemoveAll(x => x.Wrong == e.Wrong);
+                _entries.Add(e);
+                LearnConfusablesFrom(e.Wrong, e.Right);
+                added++;
+            }
+        }
+        if (added > 0) Save();
+        return added;
+    }
+
     /// <summary>같은 길이의 교정에서 서로 다른 문자쌍을 혼동 규칙으로 학습한다.</summary>
     private void LearnConfusablesFrom(string wrong, string right)
     {

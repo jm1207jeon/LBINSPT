@@ -9,7 +9,12 @@ using SkiaSharp;
 
 namespace LabelSuite.Core;
 
-public sealed record GlyphTemplate(float[] Vector, float Aspect);
+/// <summary>글리프 템플릿 — 정규화 픽셀 벡터 + 형태 특징.
+/// VOffset: 행 안에서 글리프 세로 중심 위치(0=상단, 1=하단),
+/// RelHeight: 행 높이 대비 글리프 높이. 하이픈(-)·어퍼스트로피(')·마침표(.)처럼
+/// 크기 정규화 후 모양이 비슷해지는 소형 특수문자를 위치·크기로 구분한다.</summary>
+public sealed record GlyphTemplate(float[] Vector, float Aspect,
+                                   float VOffset = 0.5f, float RelHeight = 1f);
 
 /// <summary>문자 → 정규화 템플릿(20x28 그레이 + 종횡비) 사전. JSON으로 영속.</summary>
 public sealed class GlyphLibrary
@@ -19,6 +24,9 @@ public sealed class GlyphLibrary
     private const int MaxTemplatesPerChar = 6;
     private const double DuplicateNcc = 0.985;
     private const double AspectRatioLimit = 1.8;   // 종횡비가 이보다 다르면 다른 글자
+    private const double RelHeightRatioLimit = 1.9; // 행 대비 크기가 이보다 다르면 다른 글자
+    private const double SmallGlyph = 0.55;        // 행 높이의 55% 미만 = 소형(첨자/문장부호)
+    private const double SmallVOffsetTolerance = 0.28; // 소형 글리프 세로 위치 허용 오차
 
     private readonly Dictionary<char, List<GlyphTemplate>> _templates = [];
     private readonly object _lock = new();
@@ -73,6 +81,16 @@ public sealed class GlyphLibrary
                     var ratio = Math.Max(candidate.Aspect, template.Aspect)
                               / Math.Max(0.01f, Math.Min(candidate.Aspect, template.Aspect));
                     if (ratio > AspectRatioLimit) continue;
+                    // 행 대비 크기: 소형 특수문자·첨자와 일반 글자를 구분
+                    var heightRatio =
+                        Math.Max(candidate.RelHeight, template.RelHeight)
+                        / Math.Max(0.05f, Math.Min(candidate.RelHeight, template.RelHeight));
+                    if (heightRatio > RelHeightRatioLimit) continue;
+                    // 둘 다 소형이면 세로 위치까지 일치해야 함 (' 상단 vs , 하단 vs - 중단)
+                    if (candidate.RelHeight < SmallGlyph && template.RelHeight < SmallGlyph
+                        && Math.Abs(candidate.VOffset - template.VOffset)
+                           > SmallVOffsetTolerance)
+                        continue;
                     var score = Ncc(template.Vector, candidate.Vector);
                     if (score > bestScore)
                     {
@@ -105,26 +123,33 @@ public sealed class GlyphLibrary
 
     public void Save()
     {
-        if (Path is null) return;
+        if (Path is not null) SaveTo(Path);
+    }
+
+    /// <summary>지정 경로로 저장 (학습 데이터 내보내기에 사용).</summary>
+    public void SaveTo(string path)
+    {
         try
         {
             Directory.CreateDirectory(System.IO.Directory.GetParent(
-                System.IO.Path.GetFullPath(Path))!.FullName);
+                System.IO.Path.GetFullPath(path))!.FullName);
             Dictionary<string, List<string>> dto;
             lock (_lock)
                 dto = _templates.ToDictionary(
                     pair => pair.Key.ToString(),
                     pair => pair.Value.Select(t =>
                     {
-                        // [aspect][vector...] 순서의 float 블롭
-                        var all = new float[t.Vector.Length + 1];
+                        // [aspect][voffset][relheight][vector...] 순서의 float 블롭
+                        var all = new float[t.Vector.Length + 3];
                         all[0] = t.Aspect;
-                        t.Vector.CopyTo(all, 1);
+                        all[1] = t.VOffset;
+                        all[2] = t.RelHeight;
+                        t.Vector.CopyTo(all, 3);
                         var bytes = new byte[all.Length * 4];
                         Buffer.BlockCopy(all, 0, bytes, 0, bytes.Length);
                         return Convert.ToBase64String(bytes);
                     }).ToList());
-            File.WriteAllText(Path, JsonSerializer.Serialize(dto));
+            File.WriteAllText(path, JsonSerializer.Serialize(dto));
         }
         catch (IOException) { }
     }
@@ -146,11 +171,29 @@ public sealed class GlyphLibrary
                     Buffer.BlockCopy(bytes, 0, all, 0, bytes.Length);
                     if (all.Length < 2) continue;
                     _templates.TryAdd(key[0], []);
-                    _templates[key[0]].Add(new GlyphTemplate(all[1..], all[0]));
+                    // 구버전 블롭([aspect][vector])은 위치 특징 기본값으로 로드
+                    _templates[key[0]].Add(all.Length == GlyphWidth * GlyphHeight + 3
+                        ? new GlyphTemplate(all[3..], all[0], all[1], all[2])
+                        : new GlyphTemplate(all[1..], all[0]));
                 }
             }
         }
         catch (Exception e) when (e is IOException or JsonException or FormatException) { }
+    }
+
+    /// <summary>다른 라이브러리(가져온 학습 데이터)의 템플릿을 병합. 반환: 추가 수.</summary>
+    public int MergeFrom(GlyphLibrary other)
+    {
+        Dictionary<char, List<GlyphTemplate>> snapshot;
+        lock (other._lock)
+            snapshot = other._templates.ToDictionary(
+                pair => pair.Key, pair => pair.Value.ToList());
+        var added = 0;
+        foreach (var (character, list) in snapshot)
+            foreach (var template in list)
+                if (AddTemplate(character, template)) added++;
+        if (added > 0) Save();
+        return added;
     }
 }
 
@@ -176,10 +219,12 @@ public sealed class GlyphOcrEngine(GlyphLibrary library) : IOcrEngine
             var text = word.Text.Replace(" ", "");
             if (text.Length == 0 || word.Confidence < 90) continue;
             var glyphs = SegmentGlyphs(gray, word.Bbox);
+            // ™·@처럼 획이 나뉘는 복합 글리프: 근접 쌍을 병합해 글자 수에 맞춘다
+            glyphs = MergeNearestPairs(glyphs, text.Length);
             if (glyphs.Count != text.Length) continue;   // 분할 수 불일치 → 학습 보류
             for (var i = 0; i < glyphs.Count; i++)
             {
-                var template = ExtractTemplate(gray, glyphs[i]);
+                var template = ExtractTemplate(gray, glyphs[i], word.Bbox);
                 if (template is not null && Library.AddTemplate(text[i], template)) added++;
             }
         }
@@ -232,19 +277,93 @@ public sealed class GlyphOcrEngine(GlyphLibrary library) : IOcrEngine
             }
 
             (int X, int Y, int W, int H)? previous = null;
-            foreach (var glyph in glyphs)
+            var narrowLimit = Math.Max(2, medianWidth / 2);
+            for (var i = 0; i < glyphs.Count; i++)
             {
-                if (previous is { } prev && glyph.X - (prev.X + prev.W) > gapThreshold)
-                    Flush();
-                var template = ExtractTemplate(gray, glyph);
+                var glyph = glyphs[i];
+                if (previous is { } prev)
+                {
+                    // 문장부호(-·.·')처럼 좁은 글리프 주변은 잉크 간격이 커 보이므로
+                    // 더 큰 간격에서만 단어를 나눈다
+                    var splitThreshold = prev.W < narrowLimit || glyph.W < narrowLimit
+                        ? Math.Max(gapThreshold, medianWidth) : gapThreshold;
+                    if (glyph.X - (prev.X + prev.W) > splitThreshold) Flush();
+                }
+                var template = ExtractTemplate(gray, glyph, row);
                 if (template is null) { previous = glyph; continue; }
                 var (character, score) = Library.Match(template);
+                // 저신뢰면 다음 글리프와 병합 재시도 (™·@처럼 획이 나뉜 복합 글리프)
+                if (score < MinScore && i + 1 < glyphs.Count)
+                {
+                    var next = glyphs[i + 1];
+                    var gap = next.X - (glyph.X + glyph.W);
+                    var mergedWidth = next.X + next.W - glyph.X;
+                    if (gap >= 0 && gap <= Math.Max(1, medianWidth / 4)
+                        && mergedWidth <= medianWidth * 8 / 5)
+                    {
+                        var mergedBox = Union(glyph, next);
+                        var mergedTemplate = ExtractTemplate(gray, mergedBox, row);
+                        if (mergedTemplate is not null)
+                        {
+                            var (mergedChar, mergedScore) = Library.Match(mergedTemplate);
+                            if (mergedScore >= MinScore && mergedScore > score)
+                            {
+                                current.Add((mergedBox, mergedChar, mergedScore));
+                                previous = mergedBox;
+                                i++;
+                                continue;
+                            }
+                        }
+                    }
+                }
                 current.Add((glyph, score >= MinScore ? character : '?', Math.Max(0, score)));
                 previous = glyph;
             }
             Flush();
         }
         return words;
+    }
+
+    private static (int X, int Y, int W, int H) Union(
+        (int X, int Y, int W, int H) a, (int X, int Y, int W, int H) b)
+    {
+        var x0 = Math.Min(a.X, b.X);
+        var y0 = Math.Min(a.Y, b.Y);
+        var x1 = Math.Max(a.X + a.W, b.X + b.W);
+        var y1 = Math.Max(a.Y + a.H, b.Y + b.H);
+        return (x0, y0, x1 - x0, y1 - y0);
+    }
+
+    /// <summary>글리프 수가 목표보다 많을 때 가장 가까운 인접 쌍부터 병합해
+    /// 수를 맞춘다 (™·@처럼 한 글자가 여러 획으로 분할되는 경우).</summary>
+    private static List<(int X, int Y, int W, int H)> MergeNearestPairs(
+        List<(int X, int Y, int W, int H)> glyphs, int targetCount)
+    {
+        if (glyphs.Count <= targetCount || glyphs.Count == 0) return glyphs;
+        var medianWidth = glyphs.Select(g => g.W).OrderBy(w => w)
+            .ElementAt(glyphs.Count / 2);
+        var maxMergeGap = Math.Max(1, medianWidth / 4);
+        var maxMergedWidth = medianWidth * 3 / 2;   // 정상 글자 두 개를 붙이는 것 방지
+        var merged = new List<(int X, int Y, int W, int H)>(glyphs);
+        while (merged.Count > targetCount)
+        {
+            var bestIndex = -1;
+            var bestGap = int.MaxValue;
+            for (var i = 0; i + 1 < merged.Count; i++)
+            {
+                var gap = merged[i + 1].X - (merged[i].X + merged[i].W);
+                var width = merged[i + 1].X + merged[i + 1].W - merged[i].X;
+                if (gap < bestGap && width <= maxMergedWidth)
+                {
+                    bestGap = gap;
+                    bestIndex = i;
+                }
+            }
+            if (bestIndex < 0 || bestGap > maxMergeGap) break;   // 더 못 붙임 → 포기
+            merged[bestIndex] = Union(merged[bestIndex], merged[bestIndex + 1]);
+            merged.RemoveAt(bestIndex + 1);
+        }
+        return merged;
     }
 
     // ================= 이미지 유틸 =================
@@ -344,11 +463,13 @@ public sealed class GlyphOcrEngine(GlyphLibrary library) : IOcrEngine
     }
 
     /// <summary>글리프 영역을 종횡비 보존 20x28 캔버스로 리샘플해 정규화 템플릿 생성.
-    /// 이진값 대신 연속 잉크 강도를 써서 획 굵기·곡률 정보를 보존한다.</summary>
+    /// 이진값 대신 연속 잉크 강도를 써서 획 굵기·곡률 정보를 보존하고,
+    /// 행(row) 기준 세로 위치·상대 높이를 특징으로 기록한다.</summary>
     private static GlyphTemplate? ExtractTemplate(GrayImage gray,
-                                                  (int X, int Y, int W, int H) glyph)
+                                                  (int X, int Y, int W, int H) glyph,
+                                                  (int X, int Y, int W, int H) row)
     {
-        if (glyph.W < 2 || glyph.H < 3) return null;
+        if (glyph.W < 2 || glyph.H < 2) return null;
         const int GW = GlyphLibrary.GlyphWidth;
         const int GH = GlyphLibrary.GlyphHeight;
         // 종횡비 보존: 글리프를 캔버스 안에 맞춰 중앙 배치
@@ -380,7 +501,11 @@ public sealed class GlyphOcrEngine(GlyphLibrary library) : IOcrEngine
                 pixels[(ty + offsetY) * GW + (tx + offsetX)] =
                     count > 0 ? (float)(sum / count) : 0;
             }
+        var rowHeight = Math.Max(1, row.H);
+        var vOffset = (glyph.Y + glyph.H / 2.0 - row.Y) / rowHeight;
         return new GlyphTemplate(GlyphLibrary.NormalizeVector(pixels),
-                                 (float)glyph.W / glyph.H);
+                                 (float)glyph.W / glyph.H,
+                                 (float)Math.Clamp(vOffset, 0, 1),
+                                 (float)Math.Min(1, (double)glyph.H / rowHeight));
     }
 }

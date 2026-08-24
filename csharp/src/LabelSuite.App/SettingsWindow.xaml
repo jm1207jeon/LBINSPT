@@ -53,6 +53,12 @@
                             <Button Content="패턴 초기화" Click="OnClearGlyphs"
                                     ToolTip="학습된 글자 패턴을 모두 삭제합니다"/>
                         </WrapPanel>
+                        <WrapPanel Margin="0,0,0,4">
+                            <Button Content="학습 데이터 내보내기" Click="OnExportLearning"
+                                    ToolTip="글자 패턴 + 교정 사전을 파일 하나로 내보냅니다 (다른 PC 이식용)"/>
+                            <Button Content="학습 데이터 가져오기" Click="OnImportLearning"
+                                    ToolTip="다른 PC에서 내보낸 학습 데이터를 현재 데이터에 병합합니다"/>
+                        </WrapPanel>
                         <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
                                    Margin="0,0,0,6"
                                    Text="패턴 학습: AWS로 검사할 때 글자 모양을 자동 학습 → 이후 무료·오프라인·초고속 인식. ONNX: 학습 없이 바로 쓰는 범용 로컬 OCR."/>
@@ -96,6 +102,21 @@
                         </DataGrid>
                         <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
                                    Text="예: 이름=CE마크, 패턴=CE0123 / 기대횟수를 비우면 판정에 반영하지 않고 검출 수만 표시합니다."/>
+                        <TextBlock Text="필드별 문자 제약 (이 필드에서 나올 수 없는 문자를 미리 지정):"
+                                   Margin="0,8,0,2"/>
+                        <DataGrid x:Name="CharsetsGrid" IsReadOnly="False"
+                                  AutoGenerateColumns="False" CanUserAddRows="True"
+                                  Height="150" FontFamily="Consolas">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="필드" Binding="{Binding Field}" Width="110"/>
+                                <DataGridTextColumn Header="허용 문자 (이 문자만 가능)"
+                                                    Binding="{Binding Allowed}" Width="*"/>
+                                <DataGridTextColumn Header="금지 문자 (나올 수 없음)"
+                                                    Binding="{Binding Denied}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                                   Text="예: LOT 허용=0123456789 → OCR이 O를 읽으면 자동으로 0으로 복원 (O↔0, I↔1, S↔5 등 혼동 그룹 기준). 복원 불가능한 문자는 불일치로 검출됩니다. 두 칸 모두 비우면 제약 없음."/>
                     </StackPanel>
                 </GroupBox>
 

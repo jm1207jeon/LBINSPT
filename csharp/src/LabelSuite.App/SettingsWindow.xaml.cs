@@ -44,9 +44,17 @@ public partial class SettingsWindow : Window
         public string LearnedAt { get; set; } = "";
     }
 
+    public sealed class CharsetVm
+    {
+        public string Field { get; set; } = "";
+        public string Allowed { get; set; } = "";
+        public string Denied { get; set; } = "";
+    }
+
     private readonly ObservableCollection<CustomFieldVm> _customFields = [];
     private readonly ObservableCollection<ColorVm> _fieldColors = [];
     private readonly ObservableCollection<CorrectionVm> _correctionRows = [];
+    private readonly ObservableCollection<CharsetVm> _charsetRows = [];
     private readonly Dictionary<string, CheckBox> _disableChecks = [];
 
     private readonly GlyphLibrary _glyphs;
@@ -72,6 +80,64 @@ public partial class SettingsWindow : Window
             != MessageBoxResult.Yes) return;
         _glyphs.Clear();
         UpdateGlyphStatus();
+    }
+
+    private void OnExportLearning(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "학습 데이터 내보내기",
+            FileName = $"LabelSuite-학습데이터-{DateTime.Now:yyyyMMdd}{LearningBundle.Extension}",
+            Filter = $"LabelSuite 학습 데이터 (*{LearningBundle.Extension})|*{LearningBundle.Extension}",
+        };
+        if (dialog.ShowDialog() != true) return;
+        try
+        {
+            var info = LearningBundle.Export(dialog.FileName, _glyphs, _corrections);
+            MessageBox.Show(
+                $"내보내기 완료\n글자 패턴: {info.GlyphChars}종 / 템플릿 {info.GlyphTemplates}개\n" +
+                $"교정 사전: {info.Corrections}건\n\n이 파일을 다른 PC의 LabelSuite에서 " +
+                "[학습 데이터 가져오기]로 불러오면 동일한 인식 성능을 사용할 수 있습니다.",
+                "학습 데이터 내보내기", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show($"내보내기 실패: {ex.Message}", "학습 데이터 내보내기",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void OnImportLearning(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "학습 데이터 가져오기",
+            Filter = $"LabelSuite 학습 데이터 (*{LearningBundle.Extension})|*{LearningBundle.Extension}|" +
+                     "모든 파일 (*.*)|*.*",
+        };
+        if (dialog.ShowDialog() != true) return;
+        try
+        {
+            var info = LearningBundle.Import(dialog.FileName, _glyphs, _corrections);
+            UpdateGlyphStatus();
+            _correctionRows.Clear();
+            foreach (var entry in _corrections.Entries)
+                _correctionRows.Add(new CorrectionVm
+                {
+                    Wrong = entry.Wrong, Right = entry.Right,
+                    Field = entry.Field ?? "", LearnedAt = entry.LearnedAt ?? "",
+                });
+            MessageBox.Show(
+                $"가져오기 완료\n새 글자 템플릿 {info.GlyphTemplates}개 병합 " +
+                $"(이미 있는 패턴은 유지)\n교정 사전 {info.Corrections}건 반영",
+                "학습 데이터 가져오기", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is System.IO.IOException
+            or System.IO.InvalidDataException or UnauthorizedAccessException)
+        {
+            MessageBox.Show($"가져오기 실패: {ex.Message}", "학습 데이터 가져오기",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private void LoadValues()
@@ -124,6 +190,16 @@ public partial class SettingsWindow : Window
                             && exp.AsValue().TryGetValue<int>(out var v) ? v.ToString() : "",
                     });
         CustomFieldsGrid.ItemsSource = _customFields;
+        if (_config.Section("fields")["charsets"] is JsonArray charsetArray)
+            foreach (var node in charsetArray)
+                if (node is JsonObject obj)
+                    _charsetRows.Add(new CharsetVm
+                    {
+                        Field = obj["field"]?.GetValue<string>() ?? "",
+                        Allowed = obj["allowed"]?.GetValue<string>() ?? "",
+                        Denied = obj["denied"]?.GetValue<string>() ?? "",
+                    });
+        CharsetsGrid.ItemsSource = _charsetRows;
 
         // 바운딩 박스
         OverlayThicknessBox.Text = _config.SectionInt("overlay", "thickness", 2).ToString();
@@ -207,7 +283,7 @@ public partial class SettingsWindow : Window
     private void OnSave(object sender, RoutedEventArgs e)
     {
         foreach (var grid in new[] { CustomFieldsGrid, FieldColorsGrid, CorrectionsGrid,
-                                     CountsGrid })
+                                     CountsGrid, CharsetsGrid })
             grid.CommitEdit(DataGridEditingUnit.Row, true);
 
         var settings = _config.Settings;
@@ -248,6 +324,14 @@ public partial class SettingsWindow : Window
                 ["is_regex"] = vm.IsRegex,
                 ["expected"] = int.TryParse(vm.Expected, out var count)
                     ? JsonValue.Create(count) : null,
+            }).ToArray());
+        fields["charsets"] = new JsonArray(_charsetRows
+            .Where(vm => vm.Field.Trim().Length > 0)
+            .Select(vm => (JsonNode)new JsonObject
+            {
+                ["field"] = vm.Field.Trim(),
+                ["allowed"] = vm.Allowed.Trim(),
+                ["denied"] = vm.Denied.Trim(),
             }).ToArray());
 
         // 바운딩 박스

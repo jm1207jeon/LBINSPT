@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:LabelSuite.App.Views"
         Title="LabelSuite — 라벨 검사 Suite" Height="880" Width="1500"
+        Icon="/Assets/app.ico"
         WindowStartupLocation="CenterScreen">
     <DockPanel>
         <!-- ===================== 상태바 (verifier 스타일) ===================== -->

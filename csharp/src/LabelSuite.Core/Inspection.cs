@@ -49,6 +49,8 @@ public sealed class InspectionOptions
     /// <summary>OCR 혼동 문자(O↔0 등) 차이를 무시하고 매칭할지.</summary>
     public bool AllowConfusables { get; init; }
     public OcrCorrections? Corrections { get; init; }
+    /// <summary>필드별 문자 제약 (나올 수 없는 문자 지정 → 자동 복원·에러 검출).</summary>
+    public FieldCharsets Charsets { get; init; } = new();
 }
 
 public sealed class InspectionEngine(StandardsBundle standards,
@@ -100,9 +102,10 @@ public sealed class InspectionEngine(StandardsBundle standards,
             && corrections.ConfusableContains(text, term);
     }
 
-    private bool TextCounts(string term, OcrWord word)
+    private bool TextCounts(string fieldName, string term, OcrWord word)
     {
-        var text = word.Text.Trim();
+        // 필드 문자 제약이 있으면 위반 문자를 먼저 복원 (예: 날짜의 O→0)
+        var text = Options.Charsets.Repair(fieldName, word.Text.Trim());
         return !text.Contains("(01)")
             && ContainsTerm(text, term)
             && !FieldNameWords.Contains(text.ToUpperInvariant())
@@ -113,7 +116,7 @@ public sealed class InspectionEngine(StandardsBundle standards,
 
     private bool GtinCounts(string gtin14, OcrWord word)
     {
-        var text = word.Text.Trim();
+        var text = Options.Charsets.Repair("GTIN", word.Text.Trim());
         if (Options.AllowConfusables && Options.Corrections is { } corrections)
             text = corrections.Canonicalize(text);
         var match = GtinAi.Match(text);
@@ -123,7 +126,8 @@ public sealed class InspectionEngine(StandardsBundle standards,
     public List<TextMatch> CountField(string fieldName, string term, IReadOnlyList<OcrWord> words)
     {
         if (term.Length == 0) return [];
-        Func<string, OcrWord, bool> matcher = fieldName == "GTIN" ? GtinCounts : TextCounts;
+        Func<string, OcrWord, bool> matcher = fieldName == "GTIN"
+            ? GtinCounts : (t, w) => TextCounts(fieldName, t, w);
         return words.Where(w => matcher(term, w))
                     .Select(w => new TextMatch(fieldName, w, term)).ToList();
     }
@@ -133,7 +137,7 @@ public sealed class InspectionEngine(StandardsBundle standards,
     {
         if (def.Pattern.Length == 0) return [];
         if (!def.IsRegex)
-            return words.Where(w => TextCounts(def.Pattern, w))
+            return words.Where(w => TextCounts(def.Name, def.Pattern, w))
                         .Select(w => new TextMatch(def.Name, w, def.Pattern)).ToList();
         Regex regex;
         try { regex = new Regex(def.Pattern, RegexOptions.IgnoreCase); }
@@ -201,12 +205,10 @@ public sealed class InspectionEngine(StandardsBundle standards,
     ];
 
     public List<OcrWord> ExtractLotCandidates(IReadOnlyList<OcrWord> words) =>
-        words.Where(w =>
-        {
-            var text = w.Text.Trim();
-            return text.Length >= 4 && w.Confidence >= 30
-                && LotPatterns.Any(p => p.IsMatch(text));
-        }).ToList();
+        words.Select(w => w with { Text = Options.Charsets.Repair("LOT", w.Text.Trim()) })
+             .Where(w => w.Text.Length >= 4 && w.Confidence >= 30
+                 && LotPatterns.Any(p => p.IsMatch(w.Text)))
+             .ToList();
 
     public LotMatchResult? MatchLot(IReadOnlyList<OcrWord> words,
                                     IReadOnlyList<LabelRecord> records)

@@ -95,6 +95,53 @@ public class GlyphOcrTests
     }
 
     [Fact]
+    public async Task PunctuationAndSpecialsRoundTrip()
+    {
+        // 하이픈·마침표·어퍼스트로피는 크기 정규화 후 모양이 비슷해 오인식되기 쉽다.
+        // 세로 위치/상대 크기 특징으로 구분되는지 검증.
+        var library = new GlyphLibrary();
+        var engine = new GlyphOcrEngine(library);
+        var (trainImage, trainWords) = Render(
+            "0123456789 2024.05.10", "AB-CD'EF 25-08'10.3");
+        var added = engine.LearnFrom(trainImage, trainWords);
+        Assert.True(added > 10, $"학습된 템플릿이 너무 적음: {added}");
+
+        var (testImage, _) = Render("2024-08.25'01");
+        var detected = await engine.DetectWordsAsync(testImage);
+        Assert.Contains("2024-08.25'01", detected.Select(w => w.Text));
+        trainImage.Dispose();
+        testImage.Dispose();
+    }
+
+    [Fact]
+    public void LegacyTemplateFormatStillLoads()
+    {
+        // 구버전 파일([aspect][vector] 블롭)도 로드되고, 저장 시 신형 포맷으로 갱신
+        var pixels = new float[GlyphLibrary.GlyphWidth * GlyphLibrary.GlyphHeight];
+        for (var i = 0; i < pixels.Length; i += 3) pixels[i] = 1f;
+        var vector = GlyphLibrary.NormalizeVector(pixels);
+        var legacy = new float[vector.Length + 1];
+        legacy[0] = 0.7f;
+        vector.CopyTo(legacy, 1);
+        var bytes = new byte[legacy.Length * 4];
+        Buffer.BlockCopy(legacy, 0, bytes, 0, bytes.Length);
+        var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".json");
+        try
+        {
+            File.WriteAllText(path,
+                $"{{\"A\":[\"{Convert.ToBase64String(bytes)}\"]}}");
+            var library = new GlyphLibrary(path);
+            Assert.Equal(1, library.CharCount);
+            Assert.Equal(1, library.TemplateCount);
+
+            library.Save();   // 신형 포맷([aspect][voffset][relheight][vector])으로 재저장
+            var reloaded = new GlyphLibrary(path);
+            Assert.Equal(1, reloaded.TemplateCount);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public void MismatchedSegmentationIsNotLearned()
     {
         // 단어 텍스트 길이와 분할 글자 수가 다르면 잘못 학습하지 않아야 한다

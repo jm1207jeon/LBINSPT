@@ -40,6 +40,14 @@
   },
   "fields": {
     "disabled": [],
-    "custom": []
+    "custom": [],
+    "charsets": [
+      { "field": "LOT", "allowed": "", "denied": "" },
+      { "field": "PN", "allowed": "", "denied": "" },
+      { "field": "REF", "allowed": "", "denied": "" },
+      { "field": "MFG DATE", "allowed": "0123456789-./", "denied": "" },
+      { "field": "EXP DATE", "allowed": "0123456789-./", "denied": "" },
+      { "field": "GTIN", "allowed": "0123456789()", "denied": "" }
+    ]
   }
 }

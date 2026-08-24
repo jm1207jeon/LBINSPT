@@ -23,23 +23,58 @@ jobs:
       - name: Run core tests
         run: dotnet test csharp/tests/LabelSuite.Core.Tests -c Release --nologo
 
-      - name: Publish self-contained single-file exe
+      # 단일 exe(자가 추출) 대신 체계적 폴더 배포:
+      #   LabelSuite/  ── LabelSuite.exe + 런타임 DLL + models/(ONNX) + README.txt
+      # 사용자 데이터(설정·학습·이력)는 %APPDATA%\LabelSuite 에 분리 저장된다.
+      - name: Publish self-contained folder
         run: >
           dotnet publish csharp/src/LabelSuite.App -c Release -r win-x64
           --self-contained true
-          -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:EnableCompressionInSingleFile=true
-          -o publish
+          -o publish/LabelSuite
+
+      - name: Add distribution README
+        shell: pwsh
+        run: |
+          @"
+          LabelSuite - 라벨 검사 프로그램
+          ================================
+          실행: LabelSuite.exe
+
+          [폴더 구성]
+            LabelSuite.exe   프로그램 본체
+            *.dll            .NET 런타임/라이브러리 (삭제·이동 금지)
+            models\          로컬 ONNX OCR 모델
+
+          [사용자 데이터 - 프로그램 폴더와 분리 저장]
+            %APPDATA%\LabelSuite\
+              settings.json / standards.json / column_maps.json  설정
+              glyphs.json           학습된 글자 패턴
+              ocr_corrections.json  OCR 교정 사전
+              history.sqlite3       검사 이력/기준정보 DB
+              ocr_cache\            OCR 결과 캐시
+
+          [업데이트]
+            이 폴더 전체를 새 버전으로 교체하면 됩니다.
+            사용자 데이터는 %APPDATA%에 있으므로 그대로 유지됩니다.
+
+          [다른 PC로 학습 데이터 이식]
+            설정 → OCR 설정 → [학습 데이터 내보내기]로 만든 .lslearn 파일을
+            새 PC에서 [학습 데이터 가져오기]로 불러오세요.
+          "@ | Out-File -FilePath publish/LabelSuite/README.txt -Encoding utf8BOM
 
       - name: Smoke check
         shell: pwsh
         run: |
-          if (-not (Test-Path "publish/LabelSuite.exe")) {
+          if (-not (Test-Path "publish/LabelSuite/LabelSuite.exe")) {
             Write-Error "LabelSuite.exe가 생성되지 않았습니다."
             exit 1
           }
-          "{0:N1} MB" -f ((Get-Item publish/LabelSuite.exe).Length / 1MB)
+          if (-not (Test-Path "publish/LabelSuite/models")) {
+            Write-Error "models 폴더(ONNX 모델)가 없습니다."
+            exit 1
+          }
+          $total = (Get-ChildItem publish/LabelSuite -Recurse | Measure-Object Length -Sum).Sum
+          "폴더 전체 {0:N1} MB" -f ($total / 1MB)
 
       - name: Resolve version label
         id: version
@@ -55,7 +90,7 @@ jobs:
       - name: Package zip
         shell: pwsh
         run: >
-          Compress-Archive -Path publish/*
+          Compress-Archive -Path publish/LabelSuite
           -DestinationPath "LabelSuite-csharp-${{ steps.version.outputs.label }}.zip"
 
       - name: Upload artifact
