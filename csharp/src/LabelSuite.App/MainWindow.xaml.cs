@@ -8,15 +8,18 @@ public partial class MainWindow : Window
 {
     public AppConfig Config { get; }
     public HistoryDb History { get; }
+    public OcrCorrections Corrections { get; }
 
     public MainWindow()
     {
         InitializeComponent();
         Config = new AppConfig();
         History = new HistoryDb(Path.Combine(AppConfig.DataDir(), "history.sqlite3"));
+        Corrections = new OcrCorrections(
+            Path.Combine(AppConfig.DataDir(), "ocr_corrections.json"));
 
         Generator.Initialize(Config);
-        Inspector.Initialize(Config, History);
+        Inspector.Initialize(Config, History, Corrections);
         HistoryPage.Initialize(Config, History);
 
         Generator.StatusMessage += ShowStatus;
@@ -53,7 +56,7 @@ public partial class MainWindow : Window
 
     private void OnOpenSettings(object sender, RoutedEventArgs e)
     {
-        var dialog = new SettingsWindow(Config) { Owner = this };
+        var dialog = new SettingsWindow(Config, Corrections) { Owner = this };
         if (dialog.ShowDialog() == true)
         {
             Inspector.ApplyConfig();

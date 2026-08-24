@@ -41,14 +41,17 @@ public partial class InspectorView : UserControl
     public event Action<string>? StatusMessage;
     public event Action<bool, string>? AwsStatusChanged;
 
+    private OcrCorrections _corrections = null!;
+
     public InspectorView() => InitializeComponent();
 
-    public void Initialize(AppConfig config, HistoryDb history)
+    public void Initialize(AppConfig config, HistoryDb history, OcrCorrections corrections)
     {
         _config = config;
         _history = history;
+        _corrections = corrections;
         _standards = StandardsBundle.Load(config);
-        _engine = new InspectionEngine(_standards);
+        _engine = BuildEngine();
         _textract = MakeTextract();
         _cache = new OcrCache(Path.Combine(AppConfig.DataDir(), "ocr_cache"),
                               _config.GetInt("ocr_cache_max_entries", 500));
@@ -58,9 +61,27 @@ public partial class InspectorView : UserControl
 
         _worker = new PrefetchWorker(async image =>
         {
-            var words = await _textract.DetectWordsAsync(image);
-            var barcodes = BarcodeDetector.Detect(image);
-            return new PageAnalysis { Words = words, Barcodes = barcodes };
+            // 이미지 보정 옵션 (저대비 인쇄 대응) — OCR/바코드 분석에만 적용, 표시는 원본
+            SKBitmap analysisImage = image;
+            var stretched = false;
+            if (_config.SectionBool("ocr", "contrast_stretch", false))
+            {
+                analysisImage = ImagePreprocess.StretchContrast(image);
+                stretched = true;
+            }
+            try
+            {
+                var words = await _textract.DetectWordsAsync(analysisImage);
+                var barcodes = BarcodeDetector.Detect(analysisImage)
+                    .Select(hit => hit with
+                    { Grade = BarcodeGrader.Grade(image, hit.Bbox).Display })
+                    .ToList();
+                return new PageAnalysis { Words = words, Barcodes = barcodes };
+            }
+            finally
+            {
+                if (stretched) analysisImage.Dispose();
+            }
         });
         _worker.PageDone += (gen, page, key, analysis) =>
             Dispatcher.Invoke(() => OnPageDone(gen, page, key, analysis));
@@ -76,17 +97,64 @@ public partial class InspectorView : UserControl
         var aws = _config.Settings["aws"]?.AsObject();
         return new TextractClient(
             aws?["region"]?.GetValue<string>() ?? "ap-northeast-2",
-            aws?["profile"]?.GetValue<string>() is { Length: > 0 } profile ? profile : null);
+            aws?["profile"]?.GetValue<string>() is { Length: > 0 } profile ? profile : null)
+        {
+            MaxDimension = _config.SectionInt("ocr", "max_dimension", 2000),
+            JpegQuality = _config.SectionInt("ocr", "jpeg_quality", 85),
+            MinConfidence = _config.SectionInt("ocr", "min_confidence", 0),
+        };
     }
+
+    /// <summary>설정(제외 필드/커스텀 필드/혼동 매칭/교정 사전)을 반영한 엔진 생성.</summary>
+    private InspectionEngine BuildEngine()
+    {
+        var fields = _config.Section("fields");
+        var disabled = new HashSet<string>();
+        if (fields["disabled"] is System.Text.Json.Nodes.JsonArray disabledArray)
+            foreach (var node in disabledArray)
+                if (node?.GetValue<string>() is { Length: > 0 } name) disabled.Add(name);
+        var custom = new List<CustomFieldDef>();
+        if (fields["custom"] is System.Text.Json.Nodes.JsonArray customArray)
+            foreach (var node in customArray)
+            {
+                if (node is not System.Text.Json.Nodes.JsonObject obj) continue;
+                custom.Add(new CustomFieldDef(
+                    obj["name"]?.GetValue<string>() ?? "",
+                    obj["pattern"]?.GetValue<string>() ?? "",
+                    obj["is_regex"]?.GetValue<bool>() ?? false,
+                    obj["expected"] is { } exp
+                        && exp.AsValue().TryGetValue<int>(out var count) ? count : null));
+            }
+        return new InspectionEngine(_standards, new InspectionOptions
+        {
+            DisabledFields = disabled,
+            CustomFields = custom,
+            AllowConfusables = _config.SectionBool("ocr", "allow_confusables", true),
+            Corrections = _corrections,
+        });
+    }
+
+    private OverlayStyle CurrentOverlayStyle() => new(
+        Thickness: _config.SectionInt("overlay", "thickness", 2),
+        FillAlpha: (byte)Math.Clamp(_config.SectionInt("overlay", "fill_alpha", 90), 0, 255),
+        ShowNumbers: _config.SectionBool("overlay", "show_numbers", false));
 
     public void ApplyConfig()
     {
         _standards = StandardsBundle.Load(_config);
-        _engine = new InspectionEngine(_standards);
+        _engine = BuildEngine();
         _textract = MakeTextract();
         _pdf.RenderZoom = _config.GetDouble("pdf_render_zoom", 4.0);
         PopulateStandardButtons();
         _ = CheckAwsAsync();
+        ReinspectCurrent();
+    }
+
+    /// <summary>교정 사전이 바뀐 뒤 재검사 (설정 창/교정 등록에서 호출).</summary>
+    public void ReloadEngineAndReinspect()
+    {
+        _engine = BuildEngine();
+        ReinspectCurrent();
     }
 
     public void Shutdown()
@@ -166,6 +234,9 @@ public partial class InspectorView : UserControl
         _suppressEvents = false;
         ListStatus.Text = $"{records.Count}건 로드됨";
         ListStatus.Foreground = (Brush)FindResource("SuccessBrush");
+        // 기준정보(마스터 DB) 자동 축적 — 사전 등록값은 보존된다
+        if (_history is not null)
+            foreach (var record in records) _history.UpsertMasterFromRecord(record);
         ReinspectCurrent();
     }
 
@@ -259,6 +330,8 @@ public partial class InspectorView : UserControl
             button.IsEnabled = true;
         PdfNameLabel.Text = $"{Path.GetFileName(path)} · {_pdf.PageCount}페이지";
         StatusMessage?.Invoke($"PDF 로드: {Path.GetFileName(path)} ({_pdf.PageCount}페이지)");
+        UpdateDashboard();
+        UpdatePageSlots();
         ShowPage(0, fit: true);
         SubmitPrefetchJobs();
     }
@@ -343,6 +416,7 @@ public partial class InspectorView : UserControl
             _worker.Prioritize(page);
         }
         UpdatePrefetchLabel();
+        UpdatePageSlots();
     }
 
     private void OnPageDone(int generation, int page, string key, PageAnalysis analysis)
@@ -377,7 +451,11 @@ public partial class InspectorView : UserControl
     // ---------------- 검사 ----------------
 
     private sealed record FieldRowVm(string Field, string Term, string Count, string State);
-    private sealed record BarcodeRowVm(string Source, string Field, string Value, string State);
+    private sealed record BarcodeRowVm(string Source, string Field, string Value,
+                                       string Grade, string State);
+    private sealed record PageSlotVm(int PageIndex, string Number, string Tip,
+                                     Brush Fill, Brush Stroke, Thickness StrokeThickness,
+                                     Brush TextBrush);
 
     private void RunInspection(int page, PageAnalysis analysis, SKBitmap image,
                                bool fit = false)
@@ -431,19 +509,25 @@ public partial class InspectorView : UserControl
 
         var standardName = _selectedStandard ?? _standards.Standards.Keys.First();
         var barcodeChecks = BarcodeDetector.CrossCheckHits(analysis.Barcodes, record);
+        // 사전 등록 기준정보(마스터 DB) 대조
+        if (_history?.GetMaster(record.Pn) is { } master)
+            barcodeChecks.AddRange(MasterCheck.Check(master, record, analysis.Barcodes));
         var outcome = _engine.Inspect(record, standardName, analysis.Words,
                                       barcodeChecks, SearchBox.Text);
         _outcomes[page] = outcome;
-        ShowOutcome(outcome);
+        ShowOutcome(outcome, analysis);
         using var annotated = Annotate.RenderOverlays(
-            image, outcome.AllMatches, _standards.FieldColors);
+            image, outcome.AllMatches, _standards.FieldColors, CurrentOverlayStyle());
         SetViewerImage(annotated, fit);
+        UpdateDashboard();
+        UpdatePageSlots();
         if (AutoSaveCheck.IsChecked == true)
             SaveOutcome(page, outcome, image, notify: false);
     }
 
-    private void ShowOutcome(InspectionOutcome outcome)
+    private void ShowOutcome(InspectionOutcome outcome, PageAnalysis? analysis = null)
     {
+        _lastAnalysisShown = analysis;
         if (outcome.Passed)
         {
             StatusBadgeText.Text = $"✓ 합격 (PASSED) · 규격 {outcome.Standard.DisplayName}";
@@ -462,13 +546,20 @@ public partial class InspectorView : UserControl
                 f.Field, f.Term.Length > 0 ? f.Term : "-",
                 f.Expected is { } expected ? $"{f.Found}/{expected}" : f.Found.ToString(),
                 f.Expected is null ? "info" : f.Passed ? "pass" : "fail")).ToList();
+        // 검출 바코드별 손상 등급 매핑 (같은 심볼로지 첫 검출의 등급 표시)
+        string GradeFor(string source) =>
+            _lastAnalysisShown?.Barcodes
+                .FirstOrDefault(b => b.Symbology == source)?.Grade ?? "";
         BarcodeGrid.ItemsSource = outcome.BarcodeChecks.Count > 0
             ? outcome.BarcodeChecks.Select(c => new BarcodeRowVm(
                 c.Source, c.Field,
                 c.Matched ? c.BarcodeValue : $"{c.BarcodeValue} (기대: {c.ExpectedValue})",
+                GradeFor(c.Source),
                 c.Matched ? "일치" : "불일치")).ToList()
-            : [new BarcodeRowVm("", "", "검출된 GS1 바코드 없음", "")];
+            : [new BarcodeRowVm("", "", "검출된 GS1 바코드 없음", "", "")];
     }
+
+    private PageAnalysis? _lastAnalysisShown;
 
     private void ClearResultPanel(string message)
     {
@@ -568,6 +659,148 @@ public partial class InspectorView : UserControl
         ViewerScroll.Cursor = Cursors.Arrow;
     }
 
+    // ---------------- 대시보드 / 페이지 슬롯 / CSV ----------------
+
+    private void UpdateDashboard()
+    {
+        var passed = _outcomes.Values.Count(o => o.Passed);
+        var check = _outcomes.Count - passed;
+        PassCountText.Text = passed.ToString();
+        CheckCountText.Text = check.ToString();
+        ProgressCountText.Text = _pdf.IsOpen
+            ? $"검사 {_outcomes.Count} / {_pdf.PageCount} 페이지" : "검사 0 / 0 페이지";
+    }
+
+    private void UpdatePageSlots()
+    {
+        if (!_pdf.IsOpen || _pdf.PageCount <= 1)
+        {
+            PageSlots.ItemsSource = null;
+            return;
+        }
+        var gray = new SolidColorBrush(Color.FromRgb(0xEF, 0xEF, 0xEF));
+        var green = new SolidColorBrush(Color.FromRgb(0xD7, 0xEF, 0xD7));  // verifier SN 슬롯 녹색
+        var orange = new SolidColorBrush(Color.FromRgb(0xFD, 0xEB, 0xD0));
+        var currentStroke = (Brush)FindResource("AccentBrush");
+        var normalStroke = new SolidColorBrush(Color.FromRgb(0xCF, 0xCF, 0xCF));
+        var slots = new List<PageSlotVm>();
+        for (var page = 0; page < _pdf.PageCount; page++)
+        {
+            var hasOutcome = _outcomes.TryGetValue(page, out var outcome);
+            var fill = !hasOutcome ? gray : outcome!.Passed ? green : orange;
+            var tip = !hasOutcome
+                ? (_analyses.ContainsKey(page) ? $"{page + 1}페이지: 검사 대기"
+                                               : $"{page + 1}페이지: OCR 대기")
+                : outcome!.Passed ? $"{page + 1}페이지: 합격 ({outcome.Record.Lot})"
+                                  : $"{page + 1}페이지: 확인 필요 ({outcome.Record.Lot})";
+            var isCurrent = page == _currentPage;
+            slots.Add(new PageSlotVm(
+                page, (page + 1).ToString(), tip, fill,
+                isCurrent ? currentStroke : normalStroke,
+                new Thickness(isCurrent ? 2 : 1),
+                new SolidColorBrush(hasOutcome
+                    ? Colors.Black : Color.FromRgb(0x9A, 0x9A, 0x9A))));
+        }
+        PageSlots.ItemsSource = slots;
+    }
+
+    private void OnPageSlotClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: int page }) Navigate(page);
+    }
+
+    private void OnExportCsv(object sender, RoutedEventArgs e)
+    {
+        if (_outcomes.Count == 0)
+        {
+            MessageBox.Show("내보낼 검사 결과가 없습니다.", "CSV",
+                            MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var dialog = new SaveFileDialog
+        {
+            Title = "검사 결과 CSV", Filter = "CSV 파일|*.csv",
+            FileName = $"검사결과_{DateTime.Now:yyyyMMdd_HHmm}.csv",
+        };
+        if (dialog.ShowDialog() != true) return;
+        var lines = new List<string>
+        { "페이지,LOT,REF,규격,판정,필드요약,바코드요약" };
+        foreach (var (page, outcome) in _outcomes.OrderBy(p => p.Key))
+        {
+            var fieldSummary = string.Join(" / ", outcome.Fields.Values
+                .Where(f => f.Expected is not null)
+                .Select(f => $"{f.Field} {f.Found}:{f.Expected}"));
+            var barcodeSummary = string.Join(" / ", outcome.BarcodeChecks
+                .Select(c => $"{c.Field} {(c.Matched ? "OK" : "NG")}"));
+            static string Escape(string value) =>
+                value.Contains(',') || value.Contains('"')
+                    ? "\"" + value.Replace("\"", "\"\"") + "\"" : value;
+            lines.Add(string.Join(",",
+                (page + 1).ToString(), Escape(outcome.Record.Lot),
+                Escape(outcome.Record.Ref), Escape(outcome.Standard.DisplayName),
+                outcome.Passed ? "합격" : "확인필요",
+                Escape(fieldSummary), Escape(barcodeSummary)));
+        }
+        File.WriteAllText(dialog.FileName, string.Join("\r\n", lines),
+                          System.Text.Encoding.UTF8);
+        StatusMessage?.Invoke($"CSV 저장됨: {dialog.FileName}");
+    }
+
+    // ---------------- OCR 교정 등록 ----------------
+
+    private void OnFieldDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (FieldGrid.SelectedItem is not FieldRowVm row || row.Term is "-" or "") return;
+        if (!_analyses.TryGetValue(_currentPage, out var analysis)) return;
+
+        // 기대값과 '비슷하지만 불일치'한 OCR 단어 후보 (혼동 정규형 거리 기반)
+        var term = row.Term;
+        var candidates = analysis.Words
+            .Select(w => w.Text.Trim())
+            .Distinct()
+            .Where(text => !text.Contains(term, StringComparison.OrdinalIgnoreCase))
+            .Select(text => (Text: text, Distance: BoundedDistance(
+                _corrections.Canonicalize(text).ToUpperInvariant(),
+                _corrections.Canonicalize(term).ToUpperInvariant(), 3)))
+            .Where(c => c.Distance >= 0 && c.Distance <= 2)
+            .OrderBy(c => c.Distance)
+            .Select(c => c.Text)
+            .Take(12)
+            .ToList();
+
+        var dialog = new CorrectionDialog(row.Field, term, candidates, _corrections)
+        { Owner = Window.GetWindow(this) };
+        if (dialog.ShowDialog() == true)
+        {
+            ReloadEngineAndReinspect();
+            StatusMessage?.Invoke("교정이 등록되었습니다 — 이후 검사부터 자동 적용됩니다.");
+        }
+    }
+
+    /// <summary>제한 거리 이하일 때만 편집 거리 반환 (초과 시 -1).</summary>
+    private static int BoundedDistance(string a, string b, int limit)
+    {
+        if (Math.Abs(a.Length - b.Length) > limit) return -1;
+        var previous = new int[b.Length + 1];
+        var current = new int[b.Length + 1];
+        for (var j = 0; j <= b.Length; j++) previous[j] = j;
+        for (var i = 1; i <= a.Length; i++)
+        {
+            current[0] = i;
+            var rowMin = i;
+            for (var j = 1; j <= b.Length; j++)
+            {
+                var cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                current[j] = Math.Min(Math.Min(current[j - 1] + 1, previous[j] + 1),
+                                      previous[j - 1] + cost);
+                rowMin = Math.Min(rowMin, current[j]);
+            }
+            if (rowMin > limit) return -1;
+            (previous, current) = (current, previous);
+        }
+        return previous[b.Length] <= limit ? previous[b.Length] : -1;
+    }
+
     // ---------------- 저장 ----------------
 
     private string SaveDir()
@@ -609,7 +842,8 @@ public partial class InspectorView : UserControl
         {
             Annotate.SaveAnnotatedJpeg(image, outcome, _standards.FieldColors, path,
                                        _config.GetDouble("save_scale", 0.5),
-                                       _config.GetInt("jpeg_quality", 90));
+                                       _config.GetInt("jpeg_quality", 90),
+                                       CurrentOverlayStyle());
         }
         catch (Exception ex)
         {

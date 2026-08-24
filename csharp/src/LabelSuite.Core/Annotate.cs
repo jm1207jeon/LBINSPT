@@ -3,6 +3,16 @@ using SkiaSharp;
 
 namespace LabelSuite.Core;
 
+/// <summary>바운딩 박스 표시 스타일 (설정에서 주입).</summary>
+public sealed record OverlayStyle(
+    float Thickness = 2f,
+    byte FillAlpha = 90,
+    bool ShowNumbers = false,
+    float NumberFontSize = 22f)
+{
+    public static readonly OverlayStyle Default = new();
+}
+
 public static class Annotate
 {
     private static readonly (byte R, byte G, byte B, byte A) FallbackColor = (128, 128, 128, 100);
@@ -10,24 +20,46 @@ public static class Annotate
     /// <summary>매칭 단어 위에 반투명 색 박스를 그린 사본을 반환한다.</summary>
     public static SKBitmap RenderOverlays(
         SKBitmap image, IEnumerable<TextMatch> matches,
-        IReadOnlyDictionary<string, (byte R, byte G, byte B, byte A)> colors)
+        IReadOnlyDictionary<string, (byte R, byte G, byte B, byte A)> colors,
+        OverlayStyle? style = null)
     {
+        style ??= OverlayStyle.Default;
         var annotated = image.Copy();
         using var canvas = new SKCanvas(annotated);
+        using var numberFont = new SKFont(SKTypeface.Default, style.NumberFontSize);
+        using var measure = new SKPaint { TextSize = style.NumberFontSize };
+        var number = 0;
         foreach (var match in matches)
         {
+            number++;
             var (x, y, w, h) = match.Word.Bbox;
             var color = colors.TryGetValue(match.Field, out var c) ? c : FallbackColor;
             using var fill = new SKPaint
-            { Color = new SKColor(color.R, color.G, color.B, 90), Style = SKPaintStyle.Fill };
+            {
+                Color = new SKColor(color.R, color.G, color.B, style.FillAlpha),
+                Style = SKPaintStyle.Fill,
+            };
             using var stroke = new SKPaint
             {
                 Color = new SKColor(color.R, color.G, color.B, 255),
-                Style = SKPaintStyle.Stroke, StrokeWidth = 2,
+                Style = SKPaintStyle.Stroke, StrokeWidth = style.Thickness,
             };
             var rect = new SKRect(x, y, x + w, y + h);
             canvas.DrawRect(rect, fill);
             canvas.DrawRect(rect, stroke);
+            if (style.ShowNumbers)
+            {
+                var label = number.ToString();
+                var width = measure.MeasureText(label) + 8;
+                var height = style.NumberFontSize + 6;
+                var badge = new SKRect(x, Math.Max(0, y - height), x + width,
+                                       Math.Max(height, y));
+                using var badgeFill = new SKPaint
+                { Color = new SKColor(color.R, color.G, color.B, 230), Style = SKPaintStyle.Fill };
+                using var text = new SKPaint { Color = SKColors.White, IsAntialias = true };
+                canvas.DrawRect(badge, badgeFill);
+                canvas.DrawText(label, badge.Left + 4, badge.Bottom - 5, numberFont, text);
+            }
         }
         return annotated;
     }
@@ -68,9 +100,9 @@ public static class Annotate
     public static void SaveAnnotatedJpeg(
         SKBitmap image, InspectionOutcome outcome,
         IReadOnlyDictionary<string, (byte R, byte G, byte B, byte A)> colors,
-        string path, double scale = 0.5, int quality = 90)
+        string path, double scale = 0.5, int quality = 90, OverlayStyle? style = null)
     {
-        using var annotated = RenderOverlays(image, outcome.AllMatches, colors);
+        using var annotated = RenderOverlays(image, outcome.AllMatches, colors, style);
         DrawSummaryBox(annotated, outcome);
         SKBitmap final = annotated;
         if (scale is > 0 and < 1)

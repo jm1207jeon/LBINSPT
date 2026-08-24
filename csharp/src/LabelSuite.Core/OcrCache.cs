@@ -6,7 +6,27 @@ using System.Text.Json;
 namespace LabelSuite.Core;
 
 public sealed record BarcodeHit(
-    string Symbology, string Text, (int X, int Y, int W, int H) Bbox, bool IsGs1);
+    string Symbology, string Text, (int X, int Y, int W, int H) Bbox, bool IsGs1,
+    string? Grade = null);
+
+public static class BarcodeSymbology
+{
+    /// <summary>디코더 포맷명 → 사용자 표기 (GS1 여부로 GS1-128 구분).</summary>
+    public static string Normalize(string rawFormat, bool isGs1)
+    {
+        var format = rawFormat.Replace(" ", "").Replace("_", "").ToUpperInvariant();
+        return format switch
+        {
+            "DATAMATRIX" => isGs1 ? "GS1 DataMatrix" : "DataMatrix",
+            "CODE128" => isGs1 ? "GS1-128" : "Code128",
+            "QRCODE" => isGs1 ? "GS1 QR" : "QR",
+            "EAN13" => "EAN-13",
+            "ITF" => "ITF-14",
+            "CODE39" => "Code39",
+            _ => rawFormat.Replace("_", " "),
+        };
+    }
+}
 
 public sealed class PageAnalysis
 {
@@ -38,9 +58,10 @@ public sealed class OcrCache(string? directory, int maxEntries = 500)
             .ToLowerInvariant();
     }
 
-    // ---- JSON 직렬화 형태 (파이썬 버전과 호환) ----
+    // ---- JSON 직렬화 형태 (파이썬 버전과 호환, grade는 선택 필드) ----
     private sealed record WordDto(string text, int[] bbox, int confidence);
-    private sealed record BarcodeDto(string symbology, string text, int[] bbox, bool is_gs1);
+    private sealed record BarcodeDto(string symbology, string text, int[] bbox, bool is_gs1,
+                                     string? grade = null);
     private sealed record PageDto(List<WordDto> words, List<BarcodeDto> barcodes);
 
     public PageAnalysis? Get(string key)
@@ -67,7 +88,7 @@ public sealed class OcrCache(string? directory, int maxEntries = 500)
                     w.text, (w.bbox[0], w.bbox[1], w.bbox[2], w.bbox[3]), w.confidence)).ToList(),
                 Barcodes = dto.barcodes.Select(b => new BarcodeHit(
                     b.symbology, b.text, (b.bbox[0], b.bbox[1], b.bbox[2], b.bbox[3]),
-                    b.is_gs1)).ToList(),
+                    b.is_gs1, b.grade)).ToList(),
             };
             Remember(key, analysis);
             return analysis;
@@ -86,7 +107,7 @@ public sealed class OcrCache(string? directory, int maxEntries = 500)
                     w.Text, [w.Bbox.X, w.Bbox.Y, w.Bbox.W, w.Bbox.H], w.Confidence)).ToList(),
                 analysis.Barcodes.Select(b => new BarcodeDto(
                     b.Symbology, b.Text, [b.Bbox.X, b.Bbox.Y, b.Bbox.W, b.Bbox.H],
-                    b.IsGs1)).ToList());
+                    b.IsGs1, b.Grade)).ToList());
             File.WriteAllText(Path.Combine(Directory, $"{key}.json"),
                               JsonSerializer.Serialize(dto));
             PruneDisk();

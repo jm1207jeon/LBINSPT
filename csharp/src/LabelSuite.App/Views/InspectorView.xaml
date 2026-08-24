@@ -17,6 +17,7 @@
             </Grid.RowDefinitions>
 
             <GroupBox Grid.Row="0" Header="라벨 PDF">
+                <StackPanel>
                 <WrapPanel>
                     <Button Content="PDF 열기" Style="{StaticResource AccentButton}"
                             Click="OnOpenPdf"
@@ -49,7 +50,31 @@
                               ToolTip="페이지 검사가 끝날 때마다 결과 이미지를 저장합니다"/>
                     <Button Content="결과 저장" FontWeight="Bold" Click="OnSaveCurrent"/>
                     <Button Content="저장 경로" Click="OnPickSaveDir"/>
+                    <Button Content="CSV 내보내기" Click="OnExportCsv"
+                            ToolTip="페이지별 판정 결과를 CSV로 내보냅니다"/>
                 </WrapPanel>
+                <!-- 페이지 상태 슬롯: 회색=대기 / 녹색=합격 / 주황=확인 필요, 클릭=이동 -->
+                <ItemsControl x:Name="PageSlots" Margin="2,4,2,0">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Rows="1"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{Binding Fill}" BorderBrush="{Binding Stroke}"
+                                    BorderThickness="{Binding StrokeThickness}" Height="24"
+                                    Margin="1,0" Cursor="Hand"
+                                    MouseLeftButtonDown="OnPageSlotClick"
+                                    Tag="{Binding PageIndex}" ToolTip="{Binding Tip}">
+                                <TextBlock Text="{Binding Number}" HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{Binding TextBrush}"/>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                </StackPanel>
             </GroupBox>
 
             <GroupBox Grid.Row="1" Header="검사 화면 (녹색=합격 필드 / 주황=확인 필요)">
@@ -78,11 +103,31 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="2*"/>
                 <RowDefinition Height="3*"/>
             </Grid.RowDefinitions>
 
-            <GroupBox Grid.Row="0" Header="검사 목록 / 규격">
+            <!-- 대시보드: verifier 멀티스캔의 대형 카운터 스타일 -->
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="6,2,6,0">
+                <TextBlock x:Name="PassCountText" Text="0" FontSize="42" FontWeight="Bold"
+                           Foreground="{StaticResource SuccessBrush}"
+                           VerticalAlignment="Center"/>
+                <TextBlock Text="합격" FontSize="13" FontWeight="Bold"
+                           Foreground="{StaticResource SuccessBrush}"
+                           VerticalAlignment="Bottom" Margin="6,0,20,8"/>
+                <TextBlock x:Name="CheckCountText" Text="0" FontSize="42" FontWeight="Bold"
+                           Foreground="{StaticResource WarnBrush}"
+                           VerticalAlignment="Center"/>
+                <TextBlock Text="확인 필요" FontSize="13" FontWeight="Bold"
+                           Foreground="{StaticResource WarnBrush}"
+                           VerticalAlignment="Bottom" Margin="6,0,20,8"/>
+                <TextBlock x:Name="ProgressCountText" Text="검사 0 / 0 페이지"
+                           FontSize="15" FontWeight="Bold" Foreground="#FF666666"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <GroupBox Grid.Row="1" Header="검사 목록 / 규격">
                 <StackPanel>
                     <DockPanel>
                         <Button DockPanel.Dock="Left" Content="목록 열기" Click="OnOpenList"/>
@@ -115,14 +160,14 @@
             </GroupBox>
 
             <!-- 판정 배지: verifier의 대형 판독값 박스 스타일 -->
-            <Border Grid.Row="1" x:Name="StatusBadge" Style="{StaticResource BadgeBorder}"
+            <Border Grid.Row="2" x:Name="StatusBadge" Style="{StaticResource BadgeBorder}"
                     Margin="4,2,4,2">
                 <TextBlock x:Name="StatusBadgeText" Text="검사 대기" FontSize="17"
                            FontWeight="Bold" Foreground="Gray" TextWrapping="Wrap"/>
             </Border>
 
-            <GroupBox Grid.Row="2" Header="필드별 검출 (검출/기준)">
-                <DataGrid x:Name="FieldGrid">
+            <GroupBox Grid.Row="3" Header="필드별 검출 (더블클릭: OCR 오인식 교정 등록)">
+                <DataGrid x:Name="FieldGrid" MouseDoubleClick="OnFieldDoubleClick">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="항목" Binding="{Binding Field}" Width="85"/>
                         <DataGridTextColumn Header="검사 값" Binding="{Binding Term}" Width="*"/>
@@ -145,13 +190,14 @@
                 </DataGrid>
             </GroupBox>
 
-            <GroupBox Grid.Row="3" Header="바코드 검증 (데이터매트릭스 GS1 교차 확인)">
+            <GroupBox Grid.Row="4" Header="바코드 검증 (GS1 교차 확인 · 기준DB 대조 · 손상 등급)">
                 <DataGrid x:Name="BarcodeGrid">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="심볼로지" Binding="{Binding Source}" Width="85"/>
-                        <DataGridTextColumn Header="항목" Binding="{Binding Field}" Width="70"/>
+                        <DataGridTextColumn Header="구분" Binding="{Binding Source}" Width="100"/>
+                        <DataGridTextColumn Header="항목" Binding="{Binding Field}" Width="66"/>
                         <DataGridTextColumn Header="값" Binding="{Binding Value}" Width="*"/>
-                        <DataGridTextColumn Header="일치" Binding="{Binding State}" Width="55"/>
+                        <DataGridTextColumn Header="등급" Binding="{Binding Grade}" Width="56"/>
+                        <DataGridTextColumn Header="일치" Binding="{Binding State}" Width="52"/>
                     </DataGrid.Columns>
                     <DataGrid.RowStyle>
                         <Style TargetType="DataGridRow">

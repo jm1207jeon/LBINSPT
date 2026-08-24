@@ -128,6 +128,25 @@ public class AppConfig
     public bool GetBool(string key, bool fallback) =>
         Settings[key] is { } node && node.AsValue().TryGetValue<bool>(out var v) ? v : fallback;
 
+    /// <summary>중첩 설정 섹션 접근 (없으면 생성).</summary>
+    public JsonObject Section(string name)
+    {
+        if (Settings[name] is not JsonObject section)
+        {
+            section = new JsonObject();
+            Settings[name] = section;
+        }
+        return section;
+    }
+
+    public int SectionInt(string section, string key, int fallback) =>
+        Section(section)[key] is { } node && node.AsValue().TryGetValue<int>(out var v)
+            ? v : fallback;
+
+    public bool SectionBool(string section, string key, bool fallback) =>
+        Section(section)[key] is { } node && node.AsValue().TryGetValue<bool>(out var v)
+            ? v : fallback;
+
     public Dictionary<string, string> CountryStandardMap()
     {
         var result = new Dictionary<string, string>();

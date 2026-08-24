@@ -19,8 +19,12 @@
                 <ComboBoxItem Content="확인 필요"/>
             </ComboBox>
             <Button Content="새로고침" Margin="10,0,0,0" Click="OnRefresh"/>
-            <Button Content="LOT 리포트 내보내기" DockPanel.Dock="Right"
-                    HorizontalAlignment="Right" Click="OnExportReport"/>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                        HorizontalAlignment="Right">
+                <Button Content="기준정보 DB" Click="OnOpenMasterDb"
+                        ToolTip="PN별 라벨 기준정보(REF/GTIN/기대 심볼로지)를 등록·수정합니다"/>
+                <Button Content="LOT 리포트 내보내기" Click="OnExportReport"/>
+            </StackPanel>
         </DockPanel>
 
         <DataGrid Grid.Row="1" x:Name="Table" MouseDoubleClick="OnRowDoubleClick">

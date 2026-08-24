@@ -17,7 +17,13 @@ public sealed record CredentialStatus(bool Ok, string? IdentityArn = null, strin
 
 public sealed class TextractClient(string region = "ap-northeast-2", string? profile = null)
 {
-    public const int MaxDimension = 2000;
+    /// <summary>전송 전 리사이즈 상한 (px). 크면 정밀·느림/작으면 빠름.</summary>
+    public int MaxDimension { get; set; } = 2000;
+    /// <summary>전송 JPEG 품질 (1~100).</summary>
+    public int JpegQuality { get; set; } = 85;
+    /// <summary>이 신뢰도(%) 미만 단어는 버린다 (0 = 전부 유지).</summary>
+    public int MinConfidence { get; set; }
+
     private static readonly Regex NonGtinAi =
         new(@"\((17|10|240|30|21)\)", RegexOptions.Compiled);
 
@@ -109,20 +115,22 @@ public sealed class TextractClient(string region = "ap-northeast-2", string? pro
     }
 
     /// <summary>Textract 권장 크기로 리사이즈 후 JPEG 인코딩.</summary>
-    public static byte[] EncodeJpeg(SKBitmap image)
+    public static byte[] EncodeJpeg(SKBitmap image, int maxDimension = 2000,
+                                    int jpegQuality = 85)
     {
         var width = image.Width;
         var height = image.Height;
         SKBitmap toEncode = image;
-        if (width > MaxDimension || height > MaxDimension)
+        if (width > maxDimension || height > maxDimension)
         {
-            var scale = Math.Min((double)MaxDimension / width, (double)MaxDimension / height);
+            var scale = Math.Min((double)maxDimension / width, (double)maxDimension / height);
             toEncode = image.Resize(
                 new SKImageInfo((int)(width * scale), (int)(height * scale)),
                 SKFilterQuality.High) ?? image;
         }
         using var skImage = SKImage.FromBitmap(toEncode);
-        using var data = skImage.Encode(SKEncodedImageFormat.Jpeg, 85);
+        using var data = skImage.Encode(SKEncodedImageFormat.Jpeg,
+                                        Math.Clamp(jpegQuality, 1, 100));
         if (!ReferenceEquals(toEncode, image)) toEncode.Dispose();
         return data.ToArray();
     }
@@ -132,7 +140,7 @@ public sealed class TextractClient(string region = "ap-northeast-2", string? pro
     {
         if (image.Width == 0 || image.Height == 0)
             throw new OcrException("OCR할 이미지가 없습니다.");
-        var payload = EncodeJpeg(image);
+        var payload = EncodeJpeg(image, MaxDimension, JpegQuality);
 
         DetectDocumentTextResponse response;
         try
@@ -155,6 +163,7 @@ public sealed class TextractClient(string region = "ap-northeast-2", string? pro
         {
             if (block.BlockType != BlockType.WORD || string.IsNullOrWhiteSpace(block.Text))
                 continue;
+            if (MinConfidence > 0 && block.Confidence < MinConfidence) continue;
             var text = block.Text.Trim()
                 .Replace('—', '-').Replace('–', '-').Replace("©", "(C)");
             // 단독 비-GTIN AI 조각 제외 — (01) 포함 문자열은 GTIN 검사용으로 유지

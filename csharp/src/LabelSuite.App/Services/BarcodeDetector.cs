@@ -39,11 +39,12 @@ public static class BarcodeDetector
             var ys = result.ResultPoints?.Select(p => (int)p.Y).ToList() ?? [0];
             var x = xs.Min();
             var y = ys.Min();
+            var isGs1 = LooksGs1(result.Text);
             hits.Add(new BarcodeHit(
-                result.BarcodeFormat.ToString(),
+                BarcodeSymbology.Normalize(result.BarcodeFormat.ToString(), isGs1),
                 result.Text,
                 (x, y, Math.Max(1, xs.Max() - x), Math.Max(1, ys.Max() - y)),
-                LooksGs1(result.Text)));
+                isGs1));
         }
         return hits;
     }

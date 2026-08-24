@@ -36,9 +36,26 @@ public sealed class InspectionOutcome
 public sealed record LotMatchResult(
     string Lot, string Candidate, string MatchType, int Confidence, double Score = 0);
 
-public sealed class InspectionEngine(StandardsBundle standards)
+/// <summary>사용자 정의 OCR 대상 필드 — 고정 문자열 또는 정규식.</summary>
+public sealed record CustomFieldDef(string Name, string Pattern, bool IsRegex,
+                                    int? Expected);
+
+/// <summary>검사 동작 옵션 (설정에서 주입).</summary>
+public sealed class InspectionOptions
+{
+    /// <summary>검사에서 제외할 내장 필드 (LOT은 제외 불가 — 매칭 기준).</summary>
+    public HashSet<string> DisabledFields { get; init; } = [];
+    public List<CustomFieldDef> CustomFields { get; init; } = [];
+    /// <summary>OCR 혼동 문자(O↔0 등) 차이를 무시하고 매칭할지.</summary>
+    public bool AllowConfusables { get; init; }
+    public OcrCorrections? Corrections { get; init; }
+}
+
+public sealed class InspectionEngine(StandardsBundle standards,
+                                     InspectionOptions? options = null)
 {
     public StandardsBundle Standards { get; } = standards;
+    public InspectionOptions Options { get; } = options ?? new InspectionOptions();
 
     private static readonly string[] FieldNameWords =
         ["LOT", "PN", "REF", "MFG DATE", "EXP DATE", "PRODUCTS"];
@@ -76,20 +93,30 @@ public sealed class InspectionEngine(StandardsBundle standards)
         return terms;
     }
 
-    private static bool TextCounts(string term, OcrWord word)
+    private bool ContainsTerm(string text, string term)
+    {
+        if (text.Contains(term, StringComparison.OrdinalIgnoreCase)) return true;
+        return Options.AllowConfusables && Options.Corrections is { } corrections
+            && corrections.ConfusableContains(text, term);
+    }
+
+    private bool TextCounts(string term, OcrWord word)
     {
         var text = word.Text.Trim();
         return !text.Contains("(01)")
-            && text.Contains(term, StringComparison.OrdinalIgnoreCase)
+            && ContainsTerm(text, term)
             && !FieldNameWords.Contains(text.ToUpperInvariant())
             && !text.ToUpperInvariant().EndsWith(':')
             && text.Length > 2
             && !ExcludedWords.Any(w => text.Contains(w, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static bool GtinCounts(string gtin14, OcrWord word)
+    private bool GtinCounts(string gtin14, OcrWord word)
     {
-        var match = GtinAi.Match(word.Text.Trim());
+        var text = word.Text.Trim();
+        if (Options.AllowConfusables && Options.Corrections is { } corrections)
+            text = corrections.Canonicalize(text);
+        var match = GtinAi.Match(text);
         return match.Success && match.Groups[1].Value == gtin14;
     }
 
@@ -101,11 +128,29 @@ public sealed class InspectionEngine(StandardsBundle standards)
                     .Select(w => new TextMatch(fieldName, w, term)).ToList();
     }
 
+    /// <summary>커스텀 필드 카운트 — 정규식이면 단어 전체 매칭, 아니면 부분 문자열 규칙.</summary>
+    public List<TextMatch> CountCustomField(CustomFieldDef def, IReadOnlyList<OcrWord> words)
+    {
+        if (def.Pattern.Length == 0) return [];
+        if (!def.IsRegex)
+            return words.Where(w => TextCounts(def.Pattern, w))
+                        .Select(w => new TextMatch(def.Name, w, def.Pattern)).ToList();
+        Regex regex;
+        try { regex = new Regex(def.Pattern, RegexOptions.IgnoreCase); }
+        catch (ArgumentException) { return []; }
+        return words.Where(w => regex.IsMatch(w.Text.Trim()))
+                    .Select(w => new TextMatch(def.Name, w, def.Pattern)).ToList();
+    }
+
     public InspectionOutcome Inspect(LabelRecord record, string standardName,
                                      IReadOnlyList<OcrWord> words,
                                      IReadOnlyList<CrossCheckResult>? barcodeChecks = null,
                                      string extraSearch = "")
     {
+        // 교정 사전 적용 (오인식 단어 치환)
+        IReadOnlyList<OcrWord> effective = Options.Corrections is { } corrections
+            ? corrections.Apply(words) : words;
+
         var standard = Standards.Spec(standardName);
         var terms = BuildSearchTerms(record, standard);
         var outcome = new InspectionOutcome
@@ -115,12 +160,24 @@ public sealed class InspectionEngine(StandardsBundle standards)
         };
         foreach (var (fieldName, term) in terms)
         {
+            if (fieldName != "LOT" && Options.DisabledFields.Contains(fieldName))
+                continue;   // 사용자가 제외한 필드 (LOT은 매칭 기준이라 항상 유지)
             int? expected = standard.Counts.TryGetValue(fieldName, out var count)
                 ? count : null;
             outcome.Fields[fieldName] = new FieldResult
             {
                 Field = fieldName, Term = term, Expected = expected,
-                Matches = CountField(fieldName, term, words),
+                Matches = CountField(fieldName, term, effective),
+            };
+        }
+        foreach (var custom in Options.CustomFields)
+        {
+            if (custom.Name.Trim().Length == 0) continue;
+            outcome.Fields[custom.Name] = new FieldResult
+            {
+                Field = custom.Name, Term = custom.Pattern,
+                Expected = custom.Expected,
+                Matches = CountCustomField(custom, effective),
             };
         }
         var search = extraSearch.Trim();
@@ -128,7 +185,7 @@ public sealed class InspectionEngine(StandardsBundle standards)
             outcome.Fields["SEARCH"] = new FieldResult
             {
                 Field = "SEARCH", Term = search, Expected = null,
-                Matches = CountField("SEARCH", search, words),
+                Matches = CountField("SEARCH", search, effective),
             };
         return outcome;
     }

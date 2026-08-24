@@ -31,6 +31,13 @@ public sealed class HistoryDb : IDisposable
           source TEXT, field TEXT, barcode_value TEXT, expected_value TEXT, matched INTEGER
         );
         CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS label_master (
+          pn TEXT PRIMARY KEY,
+          products TEXT, ref TEXT, gtin TEXT,
+          expected_symbologies TEXT,   -- 쉼표 구분 (예: 'GS1 DataMatrix,GS1-128')
+          note TEXT,
+          updated_at TEXT
+        );
         CREATE INDEX IF NOT EXISTS idx_inspections_lot ON inspections(lot);
         CREATE INDEX IF NOT EXISTS idx_inspections_ts ON inspections(ts);
         """;
@@ -210,5 +217,112 @@ public sealed class HistoryDb : IDisposable
         return lots;
     }
 
+    // ---------- 라벨 기준정보(마스터) DB ----------
+
+    /// <summary>목록 로드 시 PN별 기준정보를 자동 축적한다.
+    /// 이미 등록된 PN의 REF/GTIN은 덮어쓰지 않는다 (사전 등록값이 기준).</summary>
+    public void UpsertMasterFromRecord(LabelRecord record)
+    {
+        if (record.Pn.Trim().Length == 0) return;
+        Execute("""
+            INSERT INTO label_master (pn, products, ref, gtin, updated_at)
+            VALUES ($pn, $products, $ref, $gtin, $ts)
+            ON CONFLICT(pn) DO UPDATE SET
+              products = CASE WHEN label_master.products IS NULL OR label_master.products = ''
+                              THEN excluded.products ELSE label_master.products END,
+              ref = CASE WHEN label_master.ref IS NULL OR label_master.ref = ''
+                         THEN excluded.ref ELSE label_master.ref END,
+              gtin = CASE WHEN label_master.gtin IS NULL OR label_master.gtin = ''
+                          THEN excluded.gtin ELSE label_master.gtin END
+            """,
+            ("$pn", record.Pn.Trim()), ("$products", record.Products),
+            ("$ref", record.Ref), ("$gtin", record.Gtin),
+            ("$ts", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")));
+    }
+
+    public void SaveMasterRow(MasterRow row)
+    {
+        if (row.Pn.Trim().Length == 0) return;
+        Execute("""
+            INSERT INTO label_master (pn, products, ref, gtin, expected_symbologies,
+                                      note, updated_at)
+            VALUES ($pn, $products, $ref, $gtin, $syms, $note, $ts)
+            ON CONFLICT(pn) DO UPDATE SET
+              products = excluded.products, ref = excluded.ref, gtin = excluded.gtin,
+              expected_symbologies = excluded.expected_symbologies,
+              note = excluded.note, updated_at = excluded.updated_at
+            """,
+            ("$pn", row.Pn.Trim()), ("$products", row.Products), ("$ref", row.Ref),
+            ("$gtin", row.Gtin), ("$syms", row.ExpectedSymbologies), ("$note", row.Note),
+            ("$ts", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")));
+    }
+
+    public void DeleteMaster(string pn) =>
+        Execute("DELETE FROM label_master WHERE pn = $pn", ("$pn", pn));
+
+    public MasterRow? GetMaster(string pn)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT pn, products, ref, gtin, expected_symbologies," +
+                              " note FROM label_master WHERE pn = $pn";
+        command.Parameters.AddWithValue("$pn", pn.Trim());
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadMasterRow(reader) : null;
+    }
+
+    public List<MasterRow> AllMaster()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT pn, products, ref, gtin, expected_symbologies," +
+                              " note FROM label_master ORDER BY pn";
+        using var reader = command.ExecuteReader();
+        var rows = new List<MasterRow>();
+        while (reader.Read()) rows.Add(ReadMasterRow(reader));
+        return rows;
+    }
+
+    private static MasterRow ReadMasterRow(SqliteDataReader reader) => new(
+        reader.GetString(0),
+        reader.IsDBNull(1) ? "" : reader.GetString(1),
+        reader.IsDBNull(2) ? "" : reader.GetString(2),
+        reader.IsDBNull(3) ? "" : reader.GetString(3),
+        reader.IsDBNull(4) ? "" : reader.GetString(4),
+        reader.IsDBNull(5) ? "" : reader.GetString(5));
+
     public void Dispose() => _connection.Dispose();
+}
+
+public sealed record MasterRow(string Pn, string Products, string Ref, string Gtin,
+                               string ExpectedSymbologies, string Note);
+
+/// <summary>사전 등록된 마스터 기준정보와 검사 대상/검출 결과를 대조한다.</summary>
+public static class MasterCheck
+{
+    public const string Source = "기준DB";
+
+    /// <summary>목록 레코드가 마스터와 일치하는지 + 기대 심볼로지가 검출됐는지.</summary>
+    public static List<CrossCheckResult> Check(MasterRow master, LabelRecord record,
+                                               IReadOnlyList<BarcodeHit> detected)
+    {
+        var checks = new List<CrossCheckResult>();
+        if (master.Ref.Trim().Length > 0)
+            checks.Add(new CrossCheckResult(Source, "REF", record.Ref, master.Ref,
+                record.Ref.Trim() == master.Ref.Trim()));
+        if (master.Gtin.Trim().Length > 0)
+        {
+            var expected = Schema.NormalizeGtin14(master.Gtin);
+            var actual = record.Gtin.Length > 0 ? Schema.NormalizeGtin14(record.Gtin) : "";
+            checks.Add(new CrossCheckResult(Source, "GTIN", actual, expected,
+                                            actual == expected));
+        }
+        foreach (var symbology in master.ExpectedSymbologies.Split(',',
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var found = detected.Any(h => string.Equals(
+                h.Symbology, symbology, StringComparison.OrdinalIgnoreCase));
+            checks.Add(new CrossCheckResult(Source, "심볼로지",
+                found ? symbology : "미검출", symbology, found));
+        }
+        return checks;
+    }
 }

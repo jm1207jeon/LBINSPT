@@ -52,6 +52,12 @@ public partial class HistoryView : UserControl
 
     private void OnRefresh(object sender, RoutedEventArgs e) => Refresh();
 
+    private void OnOpenMasterDb(object sender, RoutedEventArgs e)
+    {
+        if (_db is null) return;
+        new MasterDbWindow(_db) { Owner = Window.GetWindow(this) }.ShowDialog();
+    }
+
     private void OnRowDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (Table.SelectedItem is not RowVm row) return;
