@@ -16,7 +16,11 @@ public class OcrException(string message, Exception? inner = null)
 public sealed record CredentialStatus(bool Ok, string? IdentityArn = null, string? Error = null);
 
 public sealed class TextractClient(string region = "ap-northeast-2", string? profile = null)
+    : IOcrEngine
 {
+    public string Id => "aws";
+    public string DisplayName => "AWS Textract";
+
     /// <summary>전송 전 리사이즈 상한 (px). 크면 정밀·느림/작으면 빠름.</summary>
     public int MaxDimension { get; set; } = 2000;
     /// <summary>전송 JPEG 품질 (1~100).</summary>
@@ -126,7 +130,7 @@ public sealed class TextractClient(string region = "ap-northeast-2", string? pro
             var scale = Math.Min((double)maxDimension / width, (double)maxDimension / height);
             toEncode = image.Resize(
                 new SKImageInfo((int)(width * scale), (int)(height * scale)),
-                SKFilterQuality.High) ?? image;
+                new SKSamplingOptions(SKCubicResampler.Mitchell)) ?? image;
         }
         using var skImage = SKImage.FromBitmap(toEncode);
         using var data = skImage.Encode(SKEncodedImageFormat.Jpeg,

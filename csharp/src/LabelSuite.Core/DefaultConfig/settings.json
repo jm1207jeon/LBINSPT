@@ -30,7 +30,8 @@
     "jpeg_quality": 85,
     "min_confidence": 0,
     "contrast_stretch": false,
-    "allow_confusables": true
+    "allow_confusables": true,
+    "engine": "aws"
   },
   "overlay": {
     "thickness": 2,

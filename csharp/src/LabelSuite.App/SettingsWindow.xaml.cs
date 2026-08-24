@@ -49,12 +49,29 @@ public partial class SettingsWindow : Window
     private readonly ObservableCollection<CorrectionVm> _correctionRows = [];
     private readonly Dictionary<string, CheckBox> _disableChecks = [];
 
-    public SettingsWindow(AppConfig config, OcrCorrections corrections)
+    private readonly GlyphLibrary _glyphs;
+
+    public SettingsWindow(AppConfig config, OcrCorrections corrections,
+                          GlyphLibrary glyphs)
     {
         InitializeComponent();
         _config = config;
         _corrections = corrections;
+        _glyphs = glyphs;
         LoadValues();
+    }
+
+    private void UpdateGlyphStatus() =>
+        GlyphStatusText.Text =
+            $"학습: {_glyphs.CharCount}종 글자 / 템플릿 {_glyphs.TemplateCount}개";
+
+    private void OnClearGlyphs(object sender, RoutedEventArgs e)
+    {
+        if (MessageBox.Show("학습된 글자 패턴을 모두 삭제할까요?", "패턴 초기화",
+                MessageBoxButton.YesNo, MessageBoxImage.Question)
+            != MessageBoxResult.Yes) return;
+        _glyphs.Clear();
+        UpdateGlyphStatus();
     }
 
     private void LoadValues()
@@ -71,6 +88,10 @@ public partial class SettingsWindow : Window
         };
 
         // OCR
+        OcrEngineCombo.SelectedIndex = _config.Section("ocr")["engine"]
+            ?.GetValue<string>() switch
+        { "pattern" => 1, "onnx" => 2, _ => 0 };
+        UpdateGlyphStatus();
         RenderZoomBox.Text = _config.GetDouble("pdf_render_zoom", 4.0).ToString("F1");
         OcrMaxDimBox.Text = _config.SectionInt("ocr", "max_dimension", 2000).ToString();
         OcrJpegQualityBox.Text = _config.SectionInt("ocr", "jpeg_quality", 85).ToString();
@@ -205,6 +226,8 @@ public partial class SettingsWindow : Window
 
         // OCR
         var ocr = _config.Section("ocr");
+        ocr["engine"] = OcrEngineCombo.SelectedIndex switch
+        { 1 => "pattern", 2 => "onnx", _ => "aws" };
         ocr["max_dimension"] = ParseInt(OcrMaxDimBox.Text, 2000, 500, 4000);
         ocr["jpeg_quality"] = ParseInt(OcrJpegQualityBox.Text, 85, 30, 100);
         ocr["min_confidence"] = ParseInt(OcrMinConfBox.Text, 0, 0, 100);

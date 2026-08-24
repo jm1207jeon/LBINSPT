@@ -42,14 +42,20 @@ public partial class InspectorView : UserControl
     public event Action<bool, string>? AwsStatusChanged;
 
     private OcrCorrections _corrections = null!;
+    private GlyphLibrary _glyphLibrary = null!;
+    private GlyphOcrEngine _glyphEngine = null!;
+    private static readonly Lazy<OnnxOcrEngine> OnnxEngine = new(() => new OnnxOcrEngine());
 
     public InspectorView() => InitializeComponent();
 
-    public void Initialize(AppConfig config, HistoryDb history, OcrCorrections corrections)
+    public void Initialize(AppConfig config, HistoryDb history,
+                           OcrCorrections corrections, GlyphLibrary glyphs)
     {
         _config = config;
         _history = history;
         _corrections = corrections;
+        _glyphLibrary = glyphs;
+        _glyphEngine = new GlyphOcrEngine(_glyphLibrary);
         _standards = StandardsBundle.Load(config);
         _engine = BuildEngine();
         _textract = MakeTextract();
@@ -71,7 +77,14 @@ public partial class InspectorView : UserControl
             }
             try
             {
-                var words = await _textract.DetectWordsAsync(analysisImage);
+                var engine = CurrentOcrEngine();
+                var words = await engine.DetectWordsAsync(analysisImage);
+                // AWS 결과는 신뢰 학습원 — 패턴 라이브러리 자동 축적
+                if (engine.Id == "aws" && words.Count > 0)
+                {
+                    try { _glyphEngine.LearnFrom(analysisImage, words); }
+                    catch (Exception) { /* 학습 실패는 검사에 영향 없음 */ }
+                }
                 var barcodes = BarcodeDetector.Detect(analysisImage)
                     .Select(hit => hit with
                     { Grade = BarcodeGrader.Grade(image, hit.Bbox).Display })
@@ -163,8 +176,24 @@ public partial class InspectorView : UserControl
         _pdf.Dispose();
     }
 
+    /// <summary>설정된 OCR 엔진 인스턴스.</summary>
+    private IOcrEngine CurrentOcrEngine() =>
+        _config.Section("ocr")["engine"]?.GetValue<string>() switch
+        {
+            "pattern" => _glyphEngine,
+            "onnx" => OnnxEngine.Value,
+            _ => _textract,
+        };
+
     private async Task CheckAwsAsync()
     {
+        var engine = CurrentOcrEngine();
+        if (engine.Id != "aws")
+        {
+            // 로컬 엔진 — AWS 인증 불필요
+            AwsStatusChanged?.Invoke(true, $"OCR: {engine.DisplayName}");
+            return;
+        }
         var status = await _textract.ValidateCredentialsAsync();
         AwsStatusChanged?.Invoke(status.Ok,
             status.Ok ? "AWS 인증 확인됨" : $"AWS 인증 실패: {status.Error}");
@@ -337,7 +366,10 @@ public partial class InspectorView : UserControl
     }
 
     private string CacheKeyForPage(int page) =>
-        OcrCache.PageKey(_pdf.Path ?? "", _pdf.Mtime, page, _pdf.RenderZoom, PreprocessSig);
+        OcrCache.PageKey(_pdf.Path ?? "", _pdf.Mtime, page, _pdf.RenderZoom,
+            // 엔진·보정 옵션이 다르면 다른 캐시 (엔진 전환 시 재분석)
+            $"{PreprocessSig}|eng={CurrentOcrEngine().Id}" +
+            $"|cs={_config.SectionBool("ocr", "contrast_stretch", false)}");
 
     private void SubmitPrefetchJobs()
     {

@@ -27,7 +27,6 @@ public static class Annotate
         var annotated = image.Copy();
         using var canvas = new SKCanvas(annotated);
         using var numberFont = new SKFont(SKTypeface.Default, style.NumberFontSize);
-        using var measure = new SKPaint { TextSize = style.NumberFontSize };
         var number = 0;
         foreach (var match in matches)
         {
@@ -50,7 +49,7 @@ public static class Annotate
             if (style.ShowNumbers)
             {
                 var label = number.ToString();
-                var width = measure.MeasureText(label) + 8;
+                var width = numberFont.MeasureText(label) + 8;
                 var height = style.NumberFontSize + 6;
                 var badge = new SKRect(x, Math.Max(0, y - height), x + width,
                                        Math.Max(height, y));
@@ -108,7 +107,7 @@ public static class Annotate
         if (scale is > 0 and < 1)
             final = annotated.Resize(
                 new SKImageInfo((int)(annotated.Width * scale), (int)(annotated.Height * scale)),
-                SKFilterQuality.Medium) ?? annotated;
+                new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear)) ?? annotated;
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         using var skImage = SKImage.FromBitmap(final);
         using var data = skImage.Encode(SKEncodedImageFormat.Jpeg, quality);
