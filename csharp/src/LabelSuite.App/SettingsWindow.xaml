@@ -117,6 +117,27 @@
                         </DataGrid>
                         <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
                                    Text="예: LOT 허용=0123456789 → OCR이 O를 읽으면 자동으로 0으로 복원 (O↔0, I↔1, S↔5 등 혼동 그룹 기준). 복원 불가능한 문자는 불일치로 검출됩니다. 두 칸 모두 비우면 제약 없음."/>
+                        <TextBlock Text="동일값 패턴 (라벨 안 여러 위치의 같은 값 상호 비교 — 위치 이동 자동 추적):"
+                                   Margin="0,8,0,2"/>
+                        <DataGrid x:Name="SameValueGrid" IsReadOnly="False"
+                                  AutoGenerateColumns="False" CanUserAddRows="True"
+                                  Height="100" FontFamily="Consolas">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="이름" Binding="{Binding Name}" Width="110"/>
+                                <DataGridTextColumn Header="패턴 (정규식)" Binding="{Binding Pattern}" Width="*"/>
+                                <DataGridTextColumn Header="최소 개수" Binding="{Binding Min}" Width="70"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                                   Text="예: 이름=LOT 3회, 패턴=^\d{8}$, 최소 개수=3 → 8자리 숫자 객체를 전부 찾아 서로 값이 같은지 비교하고, 합격 라벨의 배치를 기준으로 학습해 다음 라벨부터는 스캔·출력 위치 이동을 보정한 뒤 기준 위치마다 값이 있는지 추적합니다. 결과는 검사 탭 바코드 검증 표에 '동일값' 행으로 표시됩니다."/>
+                        <WrapPanel Margin="0,8,0,0">
+                            <CheckBox x:Name="TypeLearningCheck"
+                                      Content="라벨 유형 학습·이상 알람"/>
+                            <TextBlock Text="   판정 시작 표본 수:" VerticalAlignment="Center"/>
+                            <TextBox x:Name="TypeMinSamplesBox" Width="46"/>
+                        </WrapPanel>
+                        <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                                   Text="검사할 때마다 라벨 전체 OCR 문구를 유형(PN+규격)별로 축적하고, 표본이 쌓인 뒤 기존 유형과 다른 라벨(고정 문구 누락·처음 보는 문구 다수)이 나오면 알람을 띄웁니다."/>
                     </StackPanel>
                 </GroupBox>
 

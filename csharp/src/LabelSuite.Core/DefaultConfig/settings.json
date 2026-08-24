@@ -48,6 +48,11 @@
       { "field": "MFG DATE", "allowed": "0123456789-./", "denied": "" },
       { "field": "EXP DATE", "allowed": "0123456789-./", "denied": "" },
       { "field": "GTIN", "allowed": "0123456789()", "denied": "" }
-    ]
+    ],
+    "same_value": []
+  },
+  "type_learning": {
+    "enabled": true,
+    "min_samples": 5
   }
 }

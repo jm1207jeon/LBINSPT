@@ -51,10 +51,18 @@ public partial class SettingsWindow : Window
         public string Denied { get; set; } = "";
     }
 
+    public sealed class SameValueVm
+    {
+        public string Name { get; set; } = "";
+        public string Pattern { get; set; } = "";
+        public string Min { get; set; } = "2";
+    }
+
     private readonly ObservableCollection<CustomFieldVm> _customFields = [];
     private readonly ObservableCollection<ColorVm> _fieldColors = [];
     private readonly ObservableCollection<CorrectionVm> _correctionRows = [];
     private readonly ObservableCollection<CharsetVm> _charsetRows = [];
+    private readonly ObservableCollection<SameValueVm> _sameValueRows = [];
     private readonly Dictionary<string, CheckBox> _disableChecks = [];
 
     private readonly GlyphLibrary _glyphs;
@@ -200,6 +208,19 @@ public partial class SettingsWindow : Window
                         Denied = obj["denied"]?.GetValue<string>() ?? "",
                     });
         CharsetsGrid.ItemsSource = _charsetRows;
+        if (_config.Section("fields")["same_value"] is JsonArray sameValueArray)
+            foreach (var node in sameValueArray)
+                if (node is JsonObject obj)
+                    _sameValueRows.Add(new SameValueVm
+                    {
+                        Name = obj["name"]?.GetValue<string>() ?? "",
+                        Pattern = obj["pattern"]?.GetValue<string>() ?? "",
+                        Min = obj["min_instances"] is { } min
+                            && min.AsValue().TryGetValue<int>(out var v) ? v.ToString() : "2",
+                    });
+        SameValueGrid.ItemsSource = _sameValueRows;
+        TypeLearningCheck.IsChecked = _config.SectionBool("type_learning", "enabled", true);
+        TypeMinSamplesBox.Text = _config.SectionInt("type_learning", "min_samples", 5).ToString();
 
         // 바운딩 박스
         OverlayThicknessBox.Text = _config.SectionInt("overlay", "thickness", 2).ToString();
@@ -283,7 +304,7 @@ public partial class SettingsWindow : Window
     private void OnSave(object sender, RoutedEventArgs e)
     {
         foreach (var grid in new[] { CustomFieldsGrid, FieldColorsGrid, CorrectionsGrid,
-                                     CountsGrid, CharsetsGrid })
+                                     CountsGrid, CharsetsGrid, SameValueGrid })
             grid.CommitEdit(DataGridEditingUnit.Row, true);
 
         var settings = _config.Settings;
@@ -333,6 +354,17 @@ public partial class SettingsWindow : Window
                 ["allowed"] = vm.Allowed.Trim(),
                 ["denied"] = vm.Denied.Trim(),
             }).ToArray());
+        fields["same_value"] = new JsonArray(_sameValueRows
+            .Where(vm => vm.Name.Trim().Length > 0 && vm.Pattern.Trim().Length > 0)
+            .Select(vm => (JsonNode)new JsonObject
+            {
+                ["name"] = vm.Name.Trim(),
+                ["pattern"] = vm.Pattern.Trim(),
+                ["min_instances"] = ParseInt(vm.Min, 2, 1, 20),
+            }).ToArray());
+        var typeLearning = _config.Section("type_learning");
+        typeLearning["enabled"] = TypeLearningCheck.IsChecked == true;
+        typeLearning["min_samples"] = ParseInt(TypeMinSamplesBox.Text, 5, 2, 100);
 
         // 바운딩 박스
         var overlay = _config.Section("overlay");

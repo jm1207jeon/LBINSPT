@@ -46,6 +46,12 @@ public partial class InspectorView : UserControl
     private GlyphOcrEngine _glyphEngine = null!;
     private static readonly Lazy<OnnxOcrEngine> OnnxEngine = new(() => new OnnxOcrEngine());
 
+    private SameValueChecker _sameValue = null!;
+    private List<SameValueRule> _sameValueRules = [];
+    private LabelTypeProfiler _profiler = null!;
+    private readonly HashSet<int> _typeLearnedPages = [];   // 페이지당 1회만 표본 축적
+    private readonly HashSet<int> _typeAlarmPages = [];     // 페이지당 1회만 알람
+
     public InspectorView() => InitializeComponent();
 
     public void Initialize(AppConfig config, HistoryDb history,
@@ -59,6 +65,12 @@ public partial class InspectorView : UserControl
         _standards = StandardsBundle.Load(config);
         _engine = BuildEngine();
         _textract = MakeTextract();
+        _sameValue = new SameValueChecker(
+            Path.Combine(AppConfig.DataDir(), "same_value_layouts.json"), corrections);
+        _sameValueRules = LoadSameValueRules();
+        _profiler = new LabelTypeProfiler(
+            Path.Combine(AppConfig.DataDir(), "label_profiles.json"))
+        { MinSamples = _config.SectionInt("type_learning", "min_samples", 5) };
         _cache = new OcrCache(Path.Combine(AppConfig.DataDir(), "ocr_cache"),
                               _config.GetInt("ocr_cache_max_entries", 500));
         _pdf.RenderZoom = _config.GetDouble("pdf_render_zoom", 4.0);
@@ -156,6 +168,21 @@ public partial class InspectorView : UserControl
         });
     }
 
+    /// <summary>설정의 동일값 패턴 규칙 (fields.same_value).</summary>
+    private List<SameValueRule> LoadSameValueRules()
+    {
+        var rules = new List<SameValueRule>();
+        if (_config.Section("fields")["same_value"] is System.Text.Json.Nodes.JsonArray array)
+            foreach (var node in array)
+                if (node is System.Text.Json.Nodes.JsonObject obj)
+                    rules.Add(new SameValueRule(
+                        obj["name"]?.GetValue<string>() ?? "",
+                        obj["pattern"]?.GetValue<string>() ?? "",
+                        obj["min_instances"] is { } min
+                            && min.AsValue().TryGetValue<int>(out var v) ? v : 2));
+        return rules;
+    }
+
     private OverlayStyle CurrentOverlayStyle() => new(
         Thickness: _config.SectionInt("overlay", "thickness", 2),
         FillAlpha: (byte)Math.Clamp(_config.SectionInt("overlay", "fill_alpha", 90), 0, 255),
@@ -166,6 +193,8 @@ public partial class InspectorView : UserControl
         _standards = StandardsBundle.Load(_config);
         _engine = BuildEngine();
         _textract = MakeTextract();
+        _sameValueRules = LoadSameValueRules();
+        _profiler.MinSamples = _config.SectionInt("type_learning", "min_samples", 5);
         _pdf.RenderZoom = _config.GetDouble("pdf_render_zoom", 4.0);
         PopulateStandardButtons();
         _ = CheckAwsAsync();
@@ -363,6 +392,8 @@ public partial class InspectorView : UserControl
         _outcomes.Clear();
         _manualLotPages.Clear();
         _pageLotChoice.Clear();
+        _typeLearnedPages.Clear();
+        _typeAlarmPages.Clear();
         _worker.NewGeneration();
         foreach (var button in new[] { FirstButton, PrevButton, NextButton, LastButton })
             button.IsEnabled = true;
@@ -553,9 +584,18 @@ public partial class InspectorView : UserControl
         // 사전 등록 기준정보(마스터 DB) 대조
         if (_history?.GetMaster(record.Pn) is { } master)
             barcodeChecks.AddRange(MasterCheck.Check(master, record, analysis.Barcodes));
+        // 동일값 패턴 검사 — 위치 이동을 보정해 객체별 값 상호 비교
+        var formatKey = $"{record.Pn}|{standardName}";
+        if (_sameValueRules.Count > 0)
+        {
+            var sameValueResults = _sameValue.Check(formatKey, _sameValueRules,
+                _corrections.Apply(analysis.Words), (image.Width, image.Height));
+            barcodeChecks.AddRange(SameValueChecker.ToCrossChecks(sameValueResults));
+        }
         var outcome = _engine.Inspect(record, standardName, analysis.Words,
                                       barcodeChecks, SearchBox.Text);
         _outcomes[page] = outcome;
+        CheckLabelType(page, formatKey, analysis, record, outcome);
         ShowOutcome(outcome, analysis);
         using var annotated = Annotate.RenderOverlays(
             image, outcome.AllMatches, _standards.FieldColors, CurrentOverlayStyle());
@@ -564,6 +604,43 @@ public partial class InspectorView : UserControl
         UpdatePageSlots();
         if (AutoSaveCheck.IsChecked == true)
             SaveOutcome(page, outcome, image, notify: false);
+    }
+
+    /// <summary>라벨 유형 학습·이상 알람 — 전체 OCR 토큰을 유형별로 축적하다가
+    /// 기존과 다른 유형(고정 문구 누락·처음 보는 문구 다수)이 나오면 알린다.</summary>
+    private void CheckLabelType(int page, string formatKey, PageAnalysis analysis,
+                                LabelRecord record, InspectionOutcome outcome)
+    {
+        if (!_config.SectionBool("type_learning", "enabled", true)) return;
+        var report = _profiler.Check(formatKey, analysis.Words, record);
+        if (report.IsAnomaly)
+        {
+            StatusMessage?.Invoke($"⚠ 유형 이상 (p{page + 1}): {report.Summary}");
+            if (!_typeAlarmPages.Add(page)) return;   // 같은 페이지 중복 알람 방지
+            var detail =
+                (report.MissingTokens.Count > 0
+                    ? $"\n누락된 고정 문구: {string.Join(", ", report.MissingTokens.Take(6))}"
+                      + (report.MissingTokens.Count > 6 ? " …" : "")
+                    : "") +
+                (report.NewTokens.Count > 0
+                    ? $"\n처음 보는 문구: {string.Join(", ", report.NewTokens.Take(6))}"
+                      + (report.NewTokens.Count > 6 ? " …" : "")
+                    : "");
+            var answer = MessageBox.Show(
+                $"이 라벨이 지금까지 학습된 유형과 다릅니다.\n\n{report.Summary}{detail}\n\n" +
+                "라벨 개정 등 정상적인 변경이면 [예]를 눌러 이 라벨을 새 유형으로 " +
+                "학습하세요. 인쇄 오류가 의심되면 [아니오]를 누르고 라벨을 확인하세요.",
+                "라벨 유형 이상 감지", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (answer == MessageBoxResult.Yes && _typeLearnedPages.Add(page))
+                _profiler.Learn(formatKey, analysis.Words, record);
+        }
+        else if (outcome.Passed && _typeLearnedPages.Add(page))
+        {
+            _profiler.Learn(formatKey, analysis.Words, record);
+            if (report.SampleCount < _profiler.MinSamples)
+                StatusMessage?.Invoke(
+                    $"라벨 유형 학습 중 ({report.SampleCount + 1}/{_profiler.MinSamples})");
+        }
     }
 
     private void ShowOutcome(InspectionOutcome outcome, PageAnalysis? analysis = null)
