@@ -86,11 +86,9 @@ public static class Annotate
         foreach (var hit in hits)
         {
             var (x, y, w, h) = hit.Bbox;
-            // ZXing 검출점은 파인더 패턴 중심이라 실제 심볼보다 작다 — 여유 확장
-            var padX = Math.Max(6f, w * 0.10f);
-            var padY = Math.Max(6f, h * 0.10f);
-            if (h < w / 4) padY = Math.Max(padY, w * 0.12f);   // 1D 바코드 세로 확장
-            var rect = new SKRect(x - padX, y - padY, x + w + padX, y + h + padY);
+            // 박스는 검출 시 심볼 영역으로 정밀화되어 있음 — 표시 여백만 소폭
+            const float Pad = 4f;
+            var rect = new SKRect(x - Pad, y - Pad, x + w + Pad, y + h + Pad);
             canvas.DrawRect(rect, stroke);
             var label = hit.Symbology;
             var labelWidth = font.MeasureText(label) + 10;

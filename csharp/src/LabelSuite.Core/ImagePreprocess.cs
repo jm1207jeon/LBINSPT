@@ -13,7 +13,7 @@ public static class ImagePreprocess
 
     /// <summary>휘도(0~255) 버퍼. BGRA/RGBA 8888이면 포인터로 고속 계산,
     /// 그 외 색 형식은 GetPixel 폴백.</summary>
-    internal static byte[] LumaBuffer(SKBitmap bmp)
+    public static byte[] LumaBuffer(SKBitmap bmp)
     {
         var width = bmp.Width;
         var height = bmp.Height;
