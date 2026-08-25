@@ -37,6 +37,11 @@ public partial class MainWindow : Window
         {
             if (Tabs.SelectedIndex == 2) HistoryPage.Refresh();
         };
+        // 검사 탭 전역 단축키: ←/→ 페이지, WASD 이동, Q/E 줌 (텍스트 입력 중 제외)
+        PreviewKeyDown += (_, e) =>
+        {
+            if (Tabs.SelectedIndex == 1) Inspector.HandleGlobalKey(e);
+        };
         Closed += (_, _) =>
         {
             Inspector.Shutdown();

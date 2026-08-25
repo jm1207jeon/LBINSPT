@@ -36,9 +36,15 @@ public sealed class InspectionOutcome
 public sealed record LotMatchResult(
     string Lot, string Candidate, string MatchType, int Confidence, double Score = 0);
 
-/// <summary>사용자 정의 OCR 대상 필드 — 고정 문자열 또는 정규식.</summary>
+/// <summary>사용자 정의 OCR 대상 필드 — 고정 문자열 또는 정규식.
+/// Standard가 지정되면 라벨에서 이 값이 검출될 때 해당 규격을 자동 선택한다.</summary>
 public sealed record CustomFieldDef(string Name, string Pattern, bool IsRegex,
-                                    int? Expected);
+                                    int? Expected, string? Standard = null);
+
+/// <summary>필드 검출 허용 영역 (페이지 비율 사각형). Standard가 비어 있으면
+/// 모든 규격에 적용. 영역이 등록된 필드는 영역 안의 검출만 인정한다.</summary>
+public sealed record FieldZone(string Field, string Standard,
+                               (double X, double Y, double W, double H) Region);
 
 /// <summary>검사 동작 옵션 (설정에서 주입).</summary>
 public sealed class InspectionOptions
@@ -51,6 +57,8 @@ public sealed class InspectionOptions
     public OcrCorrections? Corrections { get; init; }
     /// <summary>필드별 문자 제약 (나올 수 없는 문자 지정 → 자동 복원·에러 검출).</summary>
     public FieldCharsets Charsets { get; init; } = new();
+    /// <summary>필드별 검출 허용 영역 — 등록된 필드는 영역 밖 검출을 무시한다.</summary>
+    public List<FieldZone> Zones { get; init; } = [];
 }
 
 public sealed class InspectionEngine(StandardsBundle standards,
@@ -149,7 +157,8 @@ public sealed class InspectionEngine(StandardsBundle standards,
     public InspectionOutcome Inspect(LabelRecord record, string standardName,
                                      IReadOnlyList<OcrWord> words,
                                      IReadOnlyList<CrossCheckResult>? barcodeChecks = null,
-                                     string extraSearch = "")
+                                     string extraSearch = "",
+                                     (int W, int H)? pageSize = null)
     {
         // 교정 사전 적용 (오인식 단어 치환)
         IReadOnlyList<OcrWord> effective = Options.Corrections is { } corrections
@@ -171,7 +180,8 @@ public sealed class InspectionEngine(StandardsBundle standards,
             outcome.Fields[fieldName] = new FieldResult
             {
                 Field = fieldName, Term = term, Expected = expected,
-                Matches = CountField(fieldName, term, effective),
+                Matches = ApplyZones(fieldName, standardName, pageSize,
+                                     CountField(fieldName, term, effective)),
             };
         }
         foreach (var custom in Options.CustomFields)
@@ -181,7 +191,8 @@ public sealed class InspectionEngine(StandardsBundle standards,
             {
                 Field = custom.Name, Term = custom.Pattern,
                 Expected = custom.Expected,
-                Matches = CountCustomField(custom, effective),
+                Matches = ApplyZones(custom.Name, standardName, pageSize,
+                                     CountCustomField(custom, effective)),
             };
         }
         var search = extraSearch.Trim();
@@ -192,6 +203,30 @@ public sealed class InspectionEngine(StandardsBundle standards,
                 Matches = CountField("SEARCH", search, effective),
             };
         return outcome;
+    }
+
+    /// <summary>필드에 검출 허용 영역이 등록돼 있으면 영역 안의 검출만 남긴다
+    /// (미세한 위치 이동 허용을 위해 페이지의 4% 마진 적용).</summary>
+    private List<TextMatch> ApplyZones(string fieldName, string standardName,
+                                       (int W, int H)? pageSize,
+                                       List<TextMatch> matches)
+    {
+        if (pageSize is not { } size || matches.Count == 0) return matches;
+        const double Margin = 0.04;
+        var zones = Options.Zones.Where(z =>
+            z.Field.Equals(fieldName, StringComparison.OrdinalIgnoreCase)
+            && (z.Standard.Length == 0
+                || z.Standard.Equals(standardName, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        if (zones.Count == 0) return matches;
+        return matches.Where(m =>
+        {
+            var cx = (m.Word.Bbox.X + m.Word.Bbox.W / 2.0) / Math.Max(1, size.W);
+            var cy = (m.Word.Bbox.Y + m.Word.Bbox.H / 2.0) / Math.Max(1, size.H);
+            return zones.Any(z =>
+                cx >= z.Region.X - Margin && cx <= z.Region.X + z.Region.W + Margin
+                && cy >= z.Region.Y - Margin && cy <= z.Region.Y + z.Region.H + Margin);
+        }).ToList();
     }
 
     // ---------- LOT 자동 매칭 ----------

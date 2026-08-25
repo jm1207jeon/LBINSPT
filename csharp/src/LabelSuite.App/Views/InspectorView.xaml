@@ -38,6 +38,9 @@
                                VerticalAlignment="Center" Margin="6,0"/>
                     <TextBlock x:Name="PrefetchLabel" VerticalAlignment="Center"
                                Margin="10,0" Foreground="Gray"/>
+                    <TextBlock x:Name="AlignLabel" VerticalAlignment="Center"
+                               Margin="4,0" Foreground="Gray" FontSize="11"
+                               ToolTip="라벨 정렬: 하늘색 이형지 기준 크롭·기울기 보정 상태"/>
                     <Separator Width="10" Visibility="Hidden"/>
                     <TextBlock Text="배율:" VerticalAlignment="Center"/>
                     <Slider x:Name="ZoomSlider" Width="140" Minimum="10" Maximum="500"
@@ -46,6 +49,9 @@
                     <TextBlock x:Name="ZoomLabel" Text="100%" MinWidth="42"
                                VerticalAlignment="Center"/>
                     <Separator Width="10" Visibility="Hidden"/>
+                    <ToggleButton x:Name="ZoneModeButton" Content="필드 영역 등록"
+                                  ToolTip="켠 상태에서 라벨 위를 드래그(영역) 또는 클릭(객체)하면 그 위치를 필드 검출 영역으로 등록합니다"/>
+                    <Separator Width="6" Visibility="Hidden"/>
                     <CheckBox x:Name="AutoSaveCheck" Content="자동 저장"
                               ToolTip="페이지 검사가 끝날 때마다 결과 이미지를 저장합니다"/>
                     <Button Content="결과 저장" FontWeight="Bold" Click="OnSaveCurrent"/>
@@ -86,8 +92,16 @@
                                   PreviewMouseDown="OnViewerMouseDown"
                                   PreviewMouseMove="OnViewerMouseMove"
                                   PreviewMouseUp="OnViewerMouseUp">
-                        <Image x:Name="ViewerImage" Stretch="None"
-                               RenderOptions.BitmapScalingMode="HighQuality"/>
+                        <Grid>
+                            <Image x:Name="ViewerImage" Stretch="None"
+                                   HorizontalAlignment="Left" VerticalAlignment="Top"
+                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                            <Canvas x:Name="ViewerOverlayCanvas" IsHitTestVisible="False">
+                                <Rectangle x:Name="RubberBand" Stroke="Red"
+                                           StrokeThickness="2" StrokeDashArray="4 2"
+                                           Fill="#22FF0000" Visibility="Collapsed"/>
+                            </Canvas>
+                        </Grid>
                     </ScrollViewer>
                     <TextBlock x:Name="ViewerPlaceholder"
                                Text="PDF를 열거나 이 창에 끌어다 놓으면 검사가 시작됩니다"
@@ -201,13 +215,13 @@
                 </DataGrid>
             </GroupBox>
 
-            <GroupBox Grid.Row="4" Header="바코드 검증 (GS1 교차 확인 · 기준DB 대조 · 손상 등급)">
+            <GroupBox Grid.Row="4" Header="바코드 검증 (라벨 위→아래 순 · 종류/등급/값/일치)">
                 <DataGrid x:Name="BarcodeGrid">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="구분" Binding="{Binding Source}" Width="100"/>
-                        <DataGridTextColumn Header="항목" Binding="{Binding Field}" Width="66"/>
-                        <DataGridTextColumn Header="값" Binding="{Binding Value}" Width="*"/>
+                        <DataGridTextColumn Header="No." Binding="{Binding Order}" Width="38"/>
+                        <DataGridTextColumn Header="종류" Binding="{Binding Symbology}" Width="105"/>
                         <DataGridTextColumn Header="등급" Binding="{Binding Grade}" Width="56"/>
+                        <DataGridTextColumn Header="값" Binding="{Binding Value}" Width="*"/>
                         <DataGridTextColumn Header="일치" Binding="{Binding State}" Width="52"/>
                     </DataGrid.Columns>
                     <DataGrid.RowStyle>

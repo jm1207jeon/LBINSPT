@@ -49,7 +49,7 @@ public static class BarcodeDetector
         return hits;
     }
 
-    private static bool LooksGs1(string text) =>
+    public static bool LooksGs1(string text) =>
         text.Contains('\x1d') || text.StartsWith("(01)") ||
         (text.Length >= 16 && text.StartsWith("01") && text[2..16].All(char.IsDigit));
 

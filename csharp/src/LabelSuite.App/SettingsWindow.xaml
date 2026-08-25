@@ -77,6 +77,9 @@
                                       Content="이미지 대비 보정 (저대비·흐린 인쇄 대응)"/>
                             <CheckBox x:Name="ConfusablesCheck" Margin="16,2,0,2"
                                       Content="혼동 문자 허용 매칭 (O↔0, I↔1 등)"/>
+                            <CheckBox x:Name="CropLabelCheck" Margin="16,2,0,2"
+                                      Content="라벨 정렬 (하늘색 이형지 기준 크롭 + 기울기 보정)"
+                                      ToolTip="이형지 바깥 흰 배경을 잘라내고 기울기를 보정해 라벨 위치·크기·각도를 일정하게 맞춥니다"/>
                         </WrapPanel>
                         <WrapPanel Margin="0,4,0,0">
                             <CheckBox x:Name="QualityAlarmCheck"
@@ -108,10 +111,27 @@
                                                     Binding="{Binding Pattern}" Width="*"/>
                                 <DataGridCheckBoxColumn Header="정규식" Binding="{Binding IsRegex}" Width="54"/>
                                 <DataGridTextColumn Header="기대횟수" Binding="{Binding Expected}" Width="64"/>
+                                <DataGridTextColumn Header="규격 자동" Binding="{Binding Standard}" Width="66"/>
                             </DataGrid.Columns>
                         </DataGrid>
                         <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
-                                   Text="예: 이름=CE마크, 패턴=CE0123 / 기대횟수를 비우면 판정에 반영하지 않고 검출 수만 표시합니다."/>
+                                   Text="예: 이름=CE마크, 패턴=CE0123 / 기대횟수를 비우면 판정에 반영하지 않고 검출 수만 표시합니다. '규격 자동'에 규격 키(MDR/MDD/BSC/A00/A02/중국)를 넣으면 이 값이 라벨에서 검출될 때 그 규격이 자동 선택됩니다 (예: 패턴 Rev.A00 → 규격 A00). 수동으로 규격 버튼을 누르면 그 페이지는 수동 선택이 우선합니다."/>
+                        <TextBlock Text="필드 검출 영역 (등록 필드는 영역 안 검출만 인정 — 검사 화면 [필드 영역 등록] 버튼으로 드래그/클릭 등록):"
+                                   Margin="0,8,0,2"/>
+                        <DataGrid x:Name="ZonesGrid" IsReadOnly="False"
+                                  AutoGenerateColumns="False" CanUserAddRows="True"
+                                  Height="100" FontFamily="Consolas">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="필드" Binding="{Binding Field}" Width="110"/>
+                                <DataGridTextColumn Header="규격(비우면 전체)" Binding="{Binding Standard}" Width="110"/>
+                                <DataGridTextColumn Header="X%" Binding="{Binding X}" Width="52"/>
+                                <DataGridTextColumn Header="Y%" Binding="{Binding Y}" Width="52"/>
+                                <DataGridTextColumn Header="W%" Binding="{Binding W}" Width="52"/>
+                                <DataGridTextColumn Header="H%" Binding="{Binding H}" Width="52"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                                   Text="영역이 등록된 필드는 라벨의 다른 위치에서 우연히 매칭되는 값을 바운딩 박스/판정에서 제외합니다 (±4% 이동 허용). 행을 지우면 영역 제한이 해제됩니다."/>
                         <TextBlock Text="필드별 문자 제약 (이 필드에서 나올 수 없는 문자를 미리 지정):"
                                    Margin="0,8,0,2"/>
                         <DataGrid x:Name="CharsetsGrid" IsReadOnly="False"

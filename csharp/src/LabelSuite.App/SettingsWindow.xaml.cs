@@ -26,6 +26,17 @@ public partial class SettingsWindow : Window
         public string Pattern { get; set; } = "";
         public bool IsRegex { get; set; }
         public string Expected { get; set; } = "";
+        public string Standard { get; set; } = "";
+    }
+
+    public sealed class ZoneVm
+    {
+        public string Field { get; set; } = "";
+        public string Standard { get; set; } = "";
+        public string X { get; set; } = "0";
+        public string Y { get; set; } = "0";
+        public string W { get; set; } = "20";
+        public string H { get; set; } = "10";
     }
 
     public sealed class ColorVm
@@ -76,6 +87,7 @@ public partial class SettingsWindow : Window
     private readonly ObservableCollection<CharsetVm> _charsetRows = [];
     private readonly ObservableCollection<SameValueVm> _sameValueRows = [];
     private readonly ObservableCollection<FormRuleVm> _formRuleRows = [];
+    private readonly ObservableCollection<ZoneVm> _zoneRows = [];
     private readonly Dictionary<string, CheckBox> _disableChecks = [];
 
     private readonly GlyphLibrary _glyphs;
@@ -117,7 +129,7 @@ public partial class SettingsWindow : Window
             var info = LearningBundle.Export(dialog.FileName, _glyphs, _corrections);
             MessageBox.Show(
                 $"내보내기 완료\n글자 패턴: {info.GlyphChars}종 / 템플릿 {info.GlyphTemplates}개\n" +
-                $"교정 사전: {info.Corrections}건\n\n이 파일을 다른 PC의 LabelSuite에서 " +
+                $"교정 사전: {info.Corrections}건\n\n이 파일을 다른 PC의 LaVIS에서 " +
                 "[학습 데이터 가져오기]로 불러오면 동일한 인식 성능을 사용할 수 있습니다.",
                 "학습 데이터 내보내기", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -185,6 +197,7 @@ public partial class SettingsWindow : Window
         OcrMinConfBox.Text = _config.SectionInt("ocr", "min_confidence", 0).ToString();
         ContrastStretchCheck.IsChecked = _config.SectionBool("ocr", "contrast_stretch", false);
         ConfusablesCheck.IsChecked = _config.SectionBool("ocr", "allow_confusables", true);
+        CropLabelCheck.IsChecked = _config.SectionBool("preprocess", "crop_label", true);
         QualityAlarmCheck.IsChecked = _config.SectionBool("ocr", "quality_alarm", true);
         LowWordConfBox.Text = _config.SectionInt("ocr", "low_word_confidence", 70).ToString();
         LowAvgConfBox.Text = _config.SectionInt("ocr", "low_avg_confidence", 80).ToString();
@@ -212,8 +225,24 @@ public partial class SettingsWindow : Window
                         IsRegex = obj["is_regex"]?.GetValue<bool>() ?? false,
                         Expected = obj["expected"] is { } exp
                             && exp.AsValue().TryGetValue<int>(out var v) ? v.ToString() : "",
+                        Standard = obj["standard"]?.GetValue<string>() ?? "",
                     });
         CustomFieldsGrid.ItemsSource = _customFields;
+        if (_config.Section("fields")["zones"] is JsonArray zonesArray)
+            foreach (var node in zonesArray)
+                if (node is JsonObject obj)
+                {
+                    string At(int i) => obj["region"] is JsonArray r && r.Count == 4
+                        && r[i]!.AsValue().TryGetValue<double>(out var zv)
+                        ? zv.ToString("0.#") : "0";
+                    _zoneRows.Add(new ZoneVm
+                    {
+                        Field = obj["field"]?.GetValue<string>() ?? "",
+                        Standard = obj["standard"]?.GetValue<string>() ?? "",
+                        X = At(0), Y = At(1), W = At(2), H = At(3),
+                    });
+                }
+        ZonesGrid.ItemsSource = _zoneRows;
         if (_config.Section("fields")["charsets"] is JsonArray charsetArray)
             foreach (var node in charsetArray)
                 if (node is JsonObject obj)
@@ -340,7 +369,7 @@ public partial class SettingsWindow : Window
     {
         foreach (var grid in new[] { CustomFieldsGrid, FieldColorsGrid, CorrectionsGrid,
                                      CountsGrid, CharsetsGrid, SameValueGrid,
-                                     FormRulesGrid })
+                                     FormRulesGrid, ZonesGrid })
             grid.CommitEdit(DataGridEditingUnit.Row, true);
 
         var settings = _config.Settings;
@@ -384,7 +413,22 @@ public partial class SettingsWindow : Window
                 ["is_regex"] = vm.IsRegex,
                 ["expected"] = int.TryParse(vm.Expected, out var count)
                     ? JsonValue.Create(count) : null,
+                ["standard"] = vm.Standard.Trim(),
             }).ToArray());
+        static double Pct(string text) =>
+            double.TryParse(text, out var v) ? Math.Clamp(v, 0, 100) : 0;
+        fields["zones"] = new JsonArray(_zoneRows
+            .Where(vm => vm.Field.Trim().Length > 0)
+            .Select(vm => (JsonNode)new JsonObject
+            {
+                ["field"] = vm.Field.Trim(),
+                ["standard"] = vm.Standard.Trim(),
+                ["region"] = new JsonArray(
+                    JsonValue.Create(Pct(vm.X)), JsonValue.Create(Pct(vm.Y)),
+                    JsonValue.Create(Math.Max(1, Pct(vm.W))),
+                    JsonValue.Create(Math.Max(1, Pct(vm.H)))),
+            }).ToArray());
+        _config.Section("preprocess")["crop_label"] = CropLabelCheck.IsChecked == true;
         fields["charsets"] = new JsonArray(_charsetRows
             .Where(vm => vm.Field.Trim().Length > 0)
             .Select(vm => (JsonNode)new JsonObject

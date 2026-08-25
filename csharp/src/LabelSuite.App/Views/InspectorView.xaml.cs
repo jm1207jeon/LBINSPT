@@ -14,7 +14,10 @@ namespace LabelSuite.App.Views;
 
 public partial class InspectorView : UserControl
 {
-    private const string PreprocessSig = "none-v1";   // PDF 렌더는 축 정렬 — 스큐 보정 불필요
+    // 전처리 서명 — 라벨 정렬 옵션이 바뀌면 OCR 캐시를 분리한다
+    private string PreprocessSig =>
+        _config?.SectionBool("preprocess", "crop_label", true) == true
+            ? "crop-v1" : "none-v1";
 
     private AppConfig _config = null!;
     private HistoryDb? _history;
@@ -31,6 +34,13 @@ public partial class InspectorView : UserControl
     private readonly Dictionary<int, InspectionOutcome> _outcomes = [];
     private readonly HashSet<int> _manualLotPages = [];   // 사용자가 직접 LOT 고른 페이지
     private readonly Dictionary<int, int> _pageLotChoice = [];  // 페이지 → 수동 선택 인덱스
+    private readonly Dictionary<int, string> _manualStandardPages = [];  // 페이지 → 수동 규격
+
+    // 라벨 정렬(이형지 크롭·기울기 보정) 결과 캐시 — 반환 비트맵은 캐시 소유
+    private readonly object _procLock = new();
+    private readonly Dictionary<int, (SKBitmap Image, double Angle, bool Cropped,
+                                      bool Owned)> _processed = [];
+    private readonly LinkedList<int> _procOrder = [];
     private string? _selectedStandard;
     private bool _suppressEvents;
     private double _zoom = 1.0;
@@ -155,7 +165,21 @@ public partial class InspectorView : UserControl
                     obj["pattern"]?.GetValue<string>() ?? "",
                     obj["is_regex"]?.GetValue<bool>() ?? false,
                     obj["expected"] is { } exp
-                        && exp.AsValue().TryGetValue<int>(out var count) ? count : null));
+                        && exp.AsValue().TryGetValue<int>(out var count) ? count : null,
+                    obj["standard"]?.GetValue<string>()));
+            }
+        var zones = new List<FieldZone>();
+        if (fields["zones"] is System.Text.Json.Nodes.JsonArray zoneArray)
+            foreach (var node in zoneArray)
+            {
+                if (node is not System.Text.Json.Nodes.JsonObject obj) continue;
+                double At(int i) => obj["region"] is System.Text.Json.Nodes.JsonArray r
+                    && r.Count == 4 && r[i]!.AsValue().TryGetValue<double>(out var v)
+                    ? Math.Clamp(v / 100.0, 0, 1) : 0;
+                zones.Add(new FieldZone(
+                    obj["field"]?.GetValue<string>() ?? "",
+                    obj["standard"]?.GetValue<string>() ?? "",
+                    (At(0), At(1), Math.Max(0.01, At(2)), Math.Max(0.01, At(3)))));
             }
         var charsetRules = new List<FieldCharsetRule>();
         if (fields["charsets"] is System.Text.Json.Nodes.JsonArray charsetArray)
@@ -172,6 +196,7 @@ public partial class InspectorView : UserControl
             AllowConfusables = _config.SectionBool("ocr", "allow_confusables", true),
             Corrections = _corrections,
             Charsets = new FieldCharsets(charsetRules),
+            Zones = zones,
         });
     }
 
@@ -240,7 +265,7 @@ public partial class InspectorView : UserControl
         if (dialog.ShowDialog() != true || combo.SelectedIndex < 0) return;
 
         var rule = imageRules[combo.SelectedIndex];
-        var image = _pdf.RenderPage(_currentPage);   // PdfDoc 캐시 소유 — 해제 금지
+        var image = RenderProcessed(_currentPage);   // 캐시 소유 — 해제 금지
         if (_formDetector.LearnTemplate(rule, image))
         {
             StatusMessage?.Invoke(
@@ -284,6 +309,7 @@ public partial class InspectorView : UserControl
         FormRow.Visibility = _formRules.Count > 0 ? Visibility.Visible
                                                   : Visibility.Collapsed;
         _profiler.MinSamples = _config.SectionInt("type_learning", "min_samples", 5);
+        ClearProcessed();   // 라벨 정렬 옵션이 바뀌었을 수 있음
         _pdf.RenderZoom = _config.GetDouble("pdf_render_zoom", 4.0);
         PopulateStandardButtons();
         _ = CheckAwsAsync();
@@ -300,6 +326,7 @@ public partial class InspectorView : UserControl
     public void Shutdown()
     {
         _worker.Dispose();
+        ClearProcessed();
         _pdf.Dispose();
     }
 
@@ -347,6 +374,8 @@ public partial class InspectorView : UserControl
             {
                 if (_suppressEvents) return;
                 _selectedStandard = key;
+                // 수동 선택은 이 페이지에서 자동 매칭(레코드/양식/커스텀)보다 우선
+                if (_pdf.IsOpen) _manualStandardPages[_currentPage] = key;
                 ReinspectCurrent();
             };
             StandardPanel.Children.Add(button);
@@ -481,8 +510,10 @@ public partial class InspectorView : UserControl
         _outcomes.Clear();
         _manualLotPages.Clear();
         _pageLotChoice.Clear();
+        _manualStandardPages.Clear();
         _typeLearnedPages.Clear();
         _typeAlarmPages.Clear();
+        ClearProcessed();
         _worker.NewGeneration();
         foreach (var button in new[] { FirstButton, PrevButton, NextButton, LastButton })
             button.IsEnabled = true;
@@ -520,7 +551,7 @@ public partial class InspectorView : UserControl
             var cached = _cache.Get(key);
             if (cached is not null) { _analyses[page] = cached; continue; }
             var pageCopy = page;
-            _worker.Submit(page, key, () => _pdf.RenderPage(pageCopy),
+            _worker.Submit(page, key, () => RenderProcessed(pageCopy),
                            priority: page == _currentPage ? 0 : 1);
         }
         UpdatePrefetchLabel();
@@ -533,6 +564,7 @@ public partial class InspectorView : UserControl
         if (target == _currentPage) return;
         _currentPage = target;
         ShowPage(target);
+        SubmitPrefetchJobs();   // 이동할 때마다 앞 N페이지 버퍼 유지 (캐시는 재과금 없음)
     }
 
     private void OnFirstPage(object s, RoutedEventArgs e) => Navigate(0);
@@ -540,22 +572,49 @@ public partial class InspectorView : UserControl
     private void OnNextPage(object s, RoutedEventArgs e) => Navigate(_currentPage + 1);
     private void OnLastPage(object s, RoutedEventArgs e) => Navigate(_pdf.PageCount - 1);
 
-    private void OnKeyDown(object sender, KeyEventArgs e)
+    private void OnKeyDown(object sender, KeyEventArgs e) => HandleGlobalKey(e);
+
+    /// <summary>전역 키 입력 (MainWindow가 검사 탭 활성 시 라우팅) —
+    /// ←/→ 페이지 이동, WASD 이미지 이동, Q 확대 / E 축소.</summary>
+    public void HandleGlobalKey(KeyEventArgs e)
     {
+        // 텍스트 입력 중에는 개입하지 않는다
+        if (e.OriginalSource is System.Windows.Controls.Primitives.TextBoxBase
+            or PasswordBox or ComboBox or ComboBoxItem) return;
         if (!_pdf.IsOpen) return;
+        const double PanStep = 90;
         switch (e.Key)
         {
             case Key.Left: Navigate(_currentPage - 1); e.Handled = true; break;
             case Key.Right: Navigate(_currentPage + 1); e.Handled = true; break;
             case Key.Home: Navigate(0); e.Handled = true; break;
             case Key.End: Navigate(_pdf.PageCount - 1); e.Handled = true; break;
+            case Key.W:
+                ViewerScroll.ScrollToVerticalOffset(
+                    ViewerScroll.VerticalOffset - PanStep);
+                e.Handled = true; break;
+            case Key.S:
+                ViewerScroll.ScrollToVerticalOffset(
+                    ViewerScroll.VerticalOffset + PanStep);
+                e.Handled = true; break;
+            case Key.A:
+                ViewerScroll.ScrollToHorizontalOffset(
+                    ViewerScroll.HorizontalOffset - PanStep);
+                e.Handled = true; break;
+            case Key.D:
+                ViewerScroll.ScrollToHorizontalOffset(
+                    ViewerScroll.HorizontalOffset + PanStep);
+                e.Handled = true; break;
+            case Key.Q: ZoomBy(ZoomStep); e.Handled = true; break;
+            case Key.E: ZoomBy(1 / ZoomStep); e.Handled = true; break;
         }
     }
 
     private void ShowPage(int page, bool fit = false)
     {
         PageLabel.Text = $"{page + 1} / {_pdf.PageCount}";
-        var image = _pdf.RenderPage(page);
+        var image = RenderProcessed(page);
+        UpdateAlignLabel(page);
 
         if (!_analyses.TryGetValue(page, out var analysis))
         {
@@ -573,7 +632,7 @@ public partial class InspectorView : UserControl
             ClearResultPanel("OCR 진행 중…");
             var pageCopy = page;
             _worker.Submit(page, CacheKeyForPage(page),
-                           () => _pdf.RenderPage(pageCopy), priority: 0);
+                           () => RenderProcessed(pageCopy), priority: 0);
             _worker.Prioritize(page);
         }
         UpdatePrefetchLabel();
@@ -587,7 +646,7 @@ public partial class InspectorView : UserControl
         _analyses[page] = analysis;
         UpdatePrefetchLabel();
         if (page == _currentPage && _pdf.IsOpen)
-            RunInspection(page, analysis, _pdf.RenderPage(page));
+            RunInspection(page, analysis, RenderProcessed(page));
     }
 
     private void OnPageFailed(int generation, int page, string message)
@@ -612,8 +671,8 @@ public partial class InspectorView : UserControl
     // ---------------- 검사 ----------------
 
     private sealed record FieldRowVm(string Field, string Term, string Count, string State);
-    private sealed record BarcodeRowVm(string Source, string Field, string Value,
-                                       string Grade, string State);
+    private sealed record BarcodeRowVm(string Order, string Symbology, string Grade,
+                                       string Value, string State);
     private sealed record PageSlotVm(int PageIndex, string Number, string Tip,
                                      Brush Fill, Brush Stroke, Thickness StrokeThickness,
                                      Brush TextBrush);
@@ -621,6 +680,10 @@ public partial class InspectorView : UserControl
     private void RunInspection(int page, PageAnalysis analysis, SKBitmap image,
                                bool fit = false)
     {
+        // 이 페이지에서 사용자가 직접 고른 규격 — 모든 자동 선택보다 우선
+        var manualStandard = _manualStandardPages.TryGetValue(page, out var chosenStd)
+            && _standards.Standards.ContainsKey(chosenStd) ? chosenStd : null;
+
         // 페이지별 LOT 매칭 — 수동 선택 페이지는 그때의 선택을 복원하고,
         // 그 외 페이지는 매번 라벨의 LOT을 다시 읽어 자동 선택한다.
         if (_manualLotPages.Contains(page))
@@ -648,7 +711,8 @@ public partial class InspectorView : UserControl
                         LotCombo.SelectedIndex = index + 1;
                         _suppressEvents = false;
                     }
-                    if (_records[index].Standard is { } std) SelectStandard(std);
+                    if (manualStandard is null && _records[index].Standard is { } std)
+                        SelectStandard(std);
                 }
                 LotMatchLabel.Text = match.MatchType switch
                 {
@@ -659,6 +723,23 @@ public partial class InspectorView : UserControl
             // 이 페이지에서 LOT 후보를 못 찾으면 현재 선택 유지
         }
 
+        // 커스텀 필드 값 → 규격 자동 매칭 (예: 라벨에서 Rev.A00 검출 → 규격 A00)
+        if (manualStandard is null)
+            foreach (var def in _engine.Options.CustomFields)
+            {
+                if (def.Standard is not { Length: > 0 } mapped
+                    || !_standards.Standards.ContainsKey(mapped)) continue;
+                if (_engine.CountCustomField(def, analysis.Words).Count == 0) continue;
+                SelectStandard(mapped);
+                if (FormRow.Visibility == Visibility.Visible)
+                {
+                    FormMatchLabel.Text =
+                        $"{def.Name} → {_standards.Spec(mapped).DisplayName}";
+                    FormMatchLabel.Foreground = (Brush)FindResource("SuccessBrush");
+                }
+                break;
+            }
+
         // 라벨 양식 자동 감지 (설정된 위치의 텍스트/이미지 패턴) → 규격 자동 선택
         if (_formRules.Count > 0)
         {
@@ -668,7 +749,7 @@ public partial class InspectorView : UserControl
                 FormMatchLabel.Text =
                     $"{form.Name} ({form.Method} {form.Score * 100:F0}%)";
                 FormMatchLabel.Foreground = (Brush)FindResource("SuccessBrush");
-                if (form.Standard.Length > 0
+                if (manualStandard is null && form.Standard.Length > 0
                     && _standards.Standards.ContainsKey(form.Standard))
                     SelectStandard(form.Standard);
             }
@@ -678,6 +759,8 @@ public partial class InspectorView : UserControl
                 FormMatchLabel.Foreground = (Brush)FindResource("MutedBrush");
             }
         }
+
+        if (manualStandard is not null) SelectStandard(manualStandard);
 
         var record = CurrentRecord();
         if (record is null)
@@ -702,7 +785,8 @@ public partial class InspectorView : UserControl
             barcodeChecks.AddRange(SameValueChecker.ToCrossChecks(sameValueResults));
         }
         var outcome = _engine.Inspect(record, standardName, analysis.Words,
-                                      barcodeChecks, SearchBox.Text);
+                                      barcodeChecks, SearchBox.Text,
+                                      (image.Width, image.Height));
         _outcomes[page] = outcome;
         CheckLabelType(page, formatKey, analysis, record, outcome);
         ShowOutcome(outcome, analysis);
@@ -788,17 +872,58 @@ public partial class InspectorView : UserControl
                 f.Field, f.Term.Length > 0 ? f.Term : "-",
                 f.Expected is { } expected ? $"{f.Found}/{expected}" : f.Found.ToString(),
                 f.Expected is null ? "info" : f.Passed ? "pass" : "fail")).ToList();
-        // 검출 바코드별 손상 등급 매핑 (같은 심볼로지 첫 검출의 등급 표시)
-        string GradeFor(string source) =>
-            _lastAnalysisShown?.Barcodes
-                .FirstOrDefault(b => b.Symbology == source)?.Grade ?? "";
-        BarcodeGrid.ItemsSource = outcome.BarcodeChecks.Count > 0
-            ? outcome.BarcodeChecks.Select(c => new BarcodeRowVm(
-                c.Source, c.Field,
-                c.Matched ? c.BarcodeValue : $"{c.BarcodeValue} (기대: {c.ExpectedValue})",
-                GradeFor(c.Source),
-                c.Matched ? "일치" : "불일치")).ToList()
-            : [new BarcodeRowVm("", "", "검출된 GS1 바코드 없음", "", "")];
+        // 라벨에 등장하는 모든 바코드를 위→아래 순으로 나열 (종류/등급/값/일치)
+        var barcodeRows = new List<BarcodeRowVm>();
+        var hits = (_lastAnalysisShown?.Barcodes ?? [])
+            .OrderBy(b => b.Bbox.Y).ThenBy(b => b.Bbox.X).ToList();
+        for (var i = 0; i < hits.Count; i++)
+        {
+            var hit = hits[i];
+            string value;
+            string state;
+            if (hit.IsGs1 || BarcodeDetector.LooksGs1(hit.Text))
+            {
+                try
+                {
+                    var message = Gs1.Parse(hit.Text);
+                    value = string.Concat(message.Elements
+                        .Select(el => $"({el.Ai}){el.Value}"));
+                    var checks = BarcodeCrossCheck.Check(message, outcome.Record,
+                                                         hit.Symbology);
+                    if (checks.Count == 0) state = "-";
+                    else if (checks.All(c => c.Matched)) state = "일치";
+                    else
+                    {
+                        state = "불일치";
+                        value += "  ⚠ " + string.Join(", ", checks
+                            .Where(c => !c.Matched)
+                            .Select(c => $"{c.Field} 기대 {c.ExpectedValue}"));
+                    }
+                }
+                catch (Gs1ParseException)
+                {
+                    value = hit.Text.Replace('\x1d', '|');
+                    state = "-";
+                }
+            }
+            else
+            {
+                value = hit.Text;
+                state = "-";
+            }
+            barcodeRows.Add(new BarcodeRowVm($"#{i + 1}", hit.Symbology,
+                                             hit.Grade ?? "", value, state));
+        }
+        // 부가 검증 행 (동일값 패턴 · 기준정보 DB)
+        foreach (var check in outcome.BarcodeChecks
+                     .Where(c => c.Source is "동일값" or "기준DB"))
+            barcodeRows.Add(new BarcodeRowVm("", $"{check.Source}·{check.Field}", "",
+                check.Matched ? check.BarcodeValue
+                              : $"{check.BarcodeValue} (기대: {check.ExpectedValue})",
+                check.Matched ? "일치" : "불일치"));
+        if (barcodeRows.Count == 0)
+            barcodeRows.Add(new BarcodeRowVm("", "", "", "검출된 바코드 없음", ""));
+        BarcodeGrid.ItemsSource = barcodeRows;
     }
 
     private PageAnalysis? _lastAnalysisShown;
@@ -815,7 +940,76 @@ public partial class InspectorView : UserControl
     private void ReinspectCurrent()
     {
         if (_pdf.IsOpen && _analyses.TryGetValue(_currentPage, out var analysis))
-            RunInspection(_currentPage, analysis, _pdf.RenderPage(_currentPage));
+            RunInspection(_currentPage, analysis, RenderProcessed(_currentPage));
+    }
+
+    // ---------------- 렌더 + 라벨 정렬 ----------------
+
+    /// <summary>페이지 렌더 후 라벨 정렬(하늘색 이형지 기준 크롭·기울기 보정) 적용.
+    /// 반환 비트맵은 내부 캐시 소유 — 호출자는 해제하지 않는다.</summary>
+    private SKBitmap RenderProcessed(int page)
+    {
+        if (!_config.SectionBool("preprocess", "crop_label", true))
+            return _pdf.RenderPage(page);
+        lock (_procLock)
+            if (_processed.TryGetValue(page, out var hit))
+            {
+                _procOrder.Remove(page);
+                _procOrder.AddLast(page);
+                return hit.Image;
+            }
+        var raw = _pdf.RenderPage(page);
+        var aligned = ImagePreprocess.DeskewAndCropLiner(raw);
+        lock (_procLock)
+        {
+            if (_processed.TryGetValue(page, out var raced))
+            {
+                if (!ReferenceEquals(aligned.Image, raw)) aligned.Image.Dispose();
+                return raced.Image;
+            }
+            _processed[page] = (aligned.Image, aligned.AngleDegrees, aligned.Cropped,
+                                !ReferenceEquals(aligned.Image, raw));
+            _procOrder.AddLast(page);
+            while (_processed.Count > Math.Max(6, _pdf.CachePages)
+                   && _procOrder.First is { } oldest)
+            {
+                _procOrder.RemoveFirst();
+                var entry = _processed[oldest.Value];
+                if (entry.Owned) entry.Image.Dispose();
+                _processed.Remove(oldest.Value);
+            }
+            return aligned.Image;
+        }
+    }
+
+    private (double Angle, bool Cropped)? ProcessedInfo(int page)
+    {
+        lock (_procLock)
+            return _processed.TryGetValue(page, out var entry)
+                ? (entry.Angle, entry.Cropped) : null;
+    }
+
+    /// <summary>기울기 보정/크롭 상태 표시 (요청: 보정 완료된 페이지 표시).</summary>
+    private void UpdateAlignLabel(int page)
+    {
+        var info = ProcessedInfo(page);
+        AlignLabel.Text = info is { Cropped: true } aligned
+            ? Math.Abs(aligned.Angle) >= 0.3
+                ? $"정렬됨: 크롭 + {aligned.Angle:+0.0;-0.0}°"
+                : "정렬됨: 크롭"
+            : _config.SectionBool("preprocess", "crop_label", true)
+                ? "정렬: 이형지 미감지" : "";
+    }
+
+    private void ClearProcessed()
+    {
+        lock (_procLock)
+        {
+            foreach (var entry in _processed.Values)
+                if (entry.Owned) entry.Image.Dispose();
+            _processed.Clear();
+            _procOrder.Clear();
+        }
     }
 
     // ---------------- 뷰어 (줌/팬) ----------------
@@ -858,34 +1052,70 @@ public partial class InspectorView : UserControl
         ApplyZoom();
     }
 
-    private void OnViewerWheel(object sender, MouseWheelEventArgs e)
+    /// <summary>줌 단계 (세밀한 조절 — 휠 1노치 = 8%).</summary>
+    private const double ZoomStep = 1.08;
+
+    private void ZoomTo(double newZoom, Point anchor)
     {
         if (_displayed is null) return;
         var oldZoom = _zoom;
-        _zoom = Math.Clamp(_zoom + (e.Delta > 0 ? 0.3 : -0.3), 0.1, 5.0);
-        if (Math.Abs(_zoom - oldZoom) < 1e-6) { e.Handled = true; return; }
-        var mouse = e.GetPosition(ViewerScroll);
+        _zoom = Math.Clamp(newZoom, 0.05, 6.0);
+        if (Math.Abs(_zoom - oldZoom) < 1e-6) return;
         var ratio = _zoom / oldZoom;
         ApplyZoom();
         ViewerScroll.ScrollToHorizontalOffset(
-            (ViewerScroll.HorizontalOffset + mouse.X) * ratio - mouse.X);
+            (ViewerScroll.HorizontalOffset + anchor.X) * ratio - anchor.X);
         ViewerScroll.ScrollToVerticalOffset(
-            (ViewerScroll.VerticalOffset + mouse.Y) * ratio - mouse.Y);
+            (ViewerScroll.VerticalOffset + anchor.Y) * ratio - anchor.Y);
+    }
+
+    private void ZoomBy(double factor) => ZoomTo(_zoom * factor,
+        new Point(ViewerScroll.ViewportWidth / 2, ViewerScroll.ViewportHeight / 2));
+
+    private void OnViewerWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (_displayed is null) return;
+        ZoomTo(_zoom * (e.Delta > 0 ? ZoomStep : 1 / ZoomStep),
+               e.GetPosition(ViewerScroll));
         e.Handled = true;
     }
 
+    private bool _zoneDragging;
+    private Point _zoneStart;   // ViewerImage 표시 좌표
+
     private void OnViewerMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.LeftButton == MouseButtonState.Pressed && _displayed is not null)
+        if (e.LeftButton != MouseButtonState.Pressed || _displayed is null) return;
+        if (ZoneModeButton.IsChecked == true)
         {
-            _panning = true;
-            _panStart = e.GetPosition(ViewerScroll);
-            ViewerScroll.Cursor = Cursors.Hand;
+            // 필드 영역 등록 모드: 드래그 사각형 시작
+            _zoneDragging = true;
+            _zoneStart = e.GetPosition(ViewerImage);
+            Canvas.SetLeft(RubberBand, _zoneStart.X);
+            Canvas.SetTop(RubberBand, _zoneStart.Y);
+            RubberBand.Width = 0;
+            RubberBand.Height = 0;
+            RubberBand.Visibility = Visibility.Visible;
+            e.Handled = true;
+            return;
         }
+        _panning = true;
+        _panStart = e.GetPosition(ViewerScroll);
+        ViewerScroll.Cursor = Cursors.Hand;
     }
 
     private void OnViewerMouseMove(object sender, MouseEventArgs e)
     {
+        if (_zoneDragging)
+        {
+            var p = e.GetPosition(ViewerImage);
+            Canvas.SetLeft(RubberBand, Math.Min(p.X, _zoneStart.X));
+            Canvas.SetTop(RubberBand, Math.Min(p.Y, _zoneStart.Y));
+            RubberBand.Width = Math.Abs(p.X - _zoneStart.X);
+            RubberBand.Height = Math.Abs(p.Y - _zoneStart.Y);
+            e.Handled = true;
+            return;
+        }
         if (!_panning || e.LeftButton != MouseButtonState.Pressed) return;
         var position = e.GetPosition(ViewerScroll);
         ViewerScroll.ScrollToHorizontalOffset(
@@ -897,8 +1127,174 @@ public partial class InspectorView : UserControl
 
     private void OnViewerMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (_zoneDragging)
+        {
+            _zoneDragging = false;
+            RubberBand.Visibility = Visibility.Collapsed;
+            FinishZoneRegistration(_zoneStart, e.GetPosition(ViewerImage));
+            e.Handled = true;
+            return;
+        }
         _panning = false;
         ViewerScroll.Cursor = Cursors.Arrow;
+    }
+
+    // ---------------- 필드 영역 등록 (드래그/객체 클릭) ----------------
+
+    private static readonly string[] BuiltinZoneFields =
+        ["LOT", "PN", "REF", "MFG DATE", "EXP DATE", "GTIN", "CHINA"];
+
+    /// <summary>드래그(영역) 또는 클릭(객체 스냅)으로 필드 검출 영역을 등록한다.</summary>
+    private void FinishZoneRegistration(Point start, Point end)
+    {
+        if (_displayed is null) return;
+        var zoom = Math.Max(0.01, _zoom);
+        var x0 = Math.Min(start.X, end.X) / zoom;
+        var y0 = Math.Min(start.Y, end.Y) / zoom;
+        var x1 = Math.Max(start.X, end.X) / zoom;
+        var y1 = Math.Max(start.Y, end.Y) / zoom;
+        string? clickedText = null;
+
+        if (x1 - x0 < 8 && y1 - y0 < 8)
+        {
+            // 클릭 = 객체 선택: 커서 아래 OCR 단어의 상자를 영역으로 사용
+            if (!_analyses.TryGetValue(_currentPage, out var analysis))
+            {
+                StatusMessage?.Invoke("OCR이 끝난 뒤 객체를 선택할 수 있습니다.");
+                return;
+            }
+            var word = analysis.Words.FirstOrDefault(w =>
+                x0 >= w.Bbox.X - 4 && x0 <= w.Bbox.X + w.Bbox.W + 4
+                && y0 >= w.Bbox.Y - 4 && y0 <= w.Bbox.Y + w.Bbox.H + 4);
+            if (word is null)
+            {
+                MessageBox.Show("클릭 위치에서 인식된 객체가 없습니다.\n" +
+                                "드래그로 영역을 직접 지정할 수도 있습니다.", "필드 영역 등록");
+                return;
+            }
+            clickedText = word.Text.Trim();
+            x0 = word.Bbox.X - word.Bbox.W * 0.2;
+            y0 = word.Bbox.Y - word.Bbox.H * 0.5;
+            x1 = word.Bbox.X + word.Bbox.W * 1.2;
+            y1 = word.Bbox.Y + word.Bbox.H * 1.5;
+        }
+
+        var region = (
+            X: Math.Clamp(x0 / _displayed.Width, 0, 1) * 100,
+            Y: Math.Clamp(y0 / _displayed.Height, 0, 1) * 100,
+            W: Math.Clamp((x1 - x0) / _displayed.Width, 0.01, 1) * 100,
+            H: Math.Clamp((y1 - y0) / _displayed.Height, 0.01, 1) * 100);
+        ShowZoneDialog(clickedText, region);
+    }
+
+    private void ShowZoneDialog(string? clickedText,
+                                (double X, double Y, double W, double H) regionPercent)
+    {
+        const string NewCustom = "(새 커스텀 필드 만들기)";
+        var fieldNames = BuiltinZoneFields
+            .Concat(_engine.Options.CustomFields.Select(c => c.Name))
+            .Distinct().Append(NewCustom).ToList();
+        var fieldCombo = new ComboBox
+        { ItemsSource = fieldNames, SelectedIndex = 0, MinWidth = 220 };
+        var standardCombo = new ComboBox
+        {
+            ItemsSource = new List<string> { "전체" }
+                .Concat(_standards.Standards.Keys).ToList(),
+            MinWidth = 220,
+        };
+        standardCombo.SelectedItem = _selectedStandard ?? "전체";
+        var nameBox = new TextBox { MinWidth = 220, IsEnabled = false };
+        var patternBox = new TextBox
+        { MinWidth = 220, Text = clickedText ?? "", IsEnabled = false };
+        fieldCombo.SelectionChanged += (_, _) =>
+        {
+            var isNew = (string?)fieldCombo.SelectedItem == NewCustom;
+            nameBox.IsEnabled = isNew;
+            patternBox.IsEnabled = isNew;
+        };
+        var okButton = new Button
+        {
+            Content = "등록", MinWidth = 90, IsDefault = true,
+            HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 0),
+        };
+        var panel = new StackPanel { Margin = new Thickness(14) };
+        void AddRow(string label, UIElement input)
+        {
+            panel.Children.Add(new TextBlock
+            { Text = label, Margin = new Thickness(0, 6, 0, 2) });
+            panel.Children.Add(input);
+        }
+        panel.Children.Add(new TextBlock
+        {
+            Text = clickedText is null
+                ? $"선택 영역: X {regionPercent.X:F0}%, Y {regionPercent.Y:F0}%, " +
+                  $"{regionPercent.W:F0}×{regionPercent.H:F0}%"
+                : $"선택 객체: '{clickedText}'",
+            FontWeight = FontWeights.Bold,
+        });
+        AddRow("이 위치에서 검출할 필드:", fieldCombo);
+        AddRow("적용 규격 (전체 = 모든 규격):", standardCombo);
+        AddRow("새 커스텀 필드 이름:", nameBox);
+        AddRow("새 커스텀 필드 패턴 (찾을 값):", patternBox);
+        panel.Children.Add(okButton);
+        var dialog = new Window
+        {
+            Title = "필드 영역 등록", Content = panel,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            Owner = Window.GetWindow(this),
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+        };
+        okButton.Click += (_, _) => dialog.DialogResult = true;
+        if (dialog.ShowDialog() != true) { ZoneModeButton.IsChecked = false; return; }
+
+        var standard = (string?)standardCombo.SelectedItem is { } sel && sel != "전체"
+            ? sel : "";
+        var fields = _config.Section("fields");
+        string zoneField;
+        if ((string?)fieldCombo.SelectedItem == NewCustom)
+        {
+            var name = nameBox.Text.Trim();
+            var pattern = patternBox.Text.Trim();
+            if (name.Length == 0 || pattern.Length == 0)
+            {
+                MessageBox.Show("커스텀 필드 이름과 패턴을 입력하세요.", "필드 영역 등록");
+                return;
+            }
+            if (fields["custom"] is not System.Text.Json.Nodes.JsonArray customArray)
+            {
+                customArray = new System.Text.Json.Nodes.JsonArray();
+                fields["custom"] = customArray;
+            }
+            customArray.Add(new System.Text.Json.Nodes.JsonObject
+            {
+                ["name"] = name, ["pattern"] = pattern,
+                ["is_regex"] = false, ["expected"] = null, ["standard"] = "",
+            });
+            zoneField = name;
+        }
+        else zoneField = (string?)fieldCombo.SelectedItem ?? "";
+
+        if (fields["zones"] is not System.Text.Json.Nodes.JsonArray zoneArray)
+        {
+            zoneArray = new System.Text.Json.Nodes.JsonArray();
+            fields["zones"] = zoneArray;
+        }
+        zoneArray.Add(new System.Text.Json.Nodes.JsonObject
+        {
+            ["field"] = zoneField,
+            ["standard"] = standard,
+            ["region"] = new System.Text.Json.Nodes.JsonArray(
+                System.Text.Json.Nodes.JsonValue.Create(Math.Round(regionPercent.X, 1)),
+                System.Text.Json.Nodes.JsonValue.Create(Math.Round(regionPercent.Y, 1)),
+                System.Text.Json.Nodes.JsonValue.Create(Math.Round(regionPercent.W, 1)),
+                System.Text.Json.Nodes.JsonValue.Create(Math.Round(regionPercent.H, 1))),
+        });
+        _config.SaveSettings();
+        ZoneModeButton.IsChecked = false;
+        ReloadEngineAndReinspect();
+        StatusMessage?.Invoke(
+            $"'{zoneField}' 필드 영역 등록됨 — 이제 이 영역 안의 검출만 인정합니다.");
     }
 
     // ---------------- 대시보드 / 페이지 슬롯 / CSV ----------------
@@ -1010,6 +1406,31 @@ public partial class InspectorView : UserControl
             .Take(12)
             .ToList();
 
+        // 아예 검출되지 않아 가까운 후보조차 없으면: 원인 진단 + 인식 강화 제안
+        if (candidates.Count == 0)
+        {
+            candidates = analysis.Words
+                .Select(w => w.Text.Trim())
+                .Distinct()
+                .Where(t => t.Length >= 2
+                    && !t.Contains(term, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(t => InspectionEngine.SimilarityScore(t, term, 95))
+                .Take(12)
+                .ToList();
+            var choice = MessageBox.Show(
+                DiagnoseMissingField(row.Field, term, analysis) +
+                "\n\n[예] 인식 강화 파라미터(대비 보정 + 렌더 배율 5.0 + 최소 신뢰도 0)를 " +
+                "적용하고 이 PDF를 다시 OCR합니다.\n" +
+                "[아니오] 유사한 인식 결과 목록으로 오인식 교정 창을 엽니다.",
+                "미검출 진단", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+            if (choice == MessageBoxResult.Cancel) return;
+            if (choice == MessageBoxResult.Yes)
+            {
+                ApplyRecognitionBoost();
+                return;
+            }
+        }
+
         var dialog = new CorrectionDialog(row.Field, term, candidates, _corrections)
         { Owner = Window.GetWindow(this) };
         if (dialog.ShowDialog() == true)
@@ -1017,6 +1438,75 @@ public partial class InspectorView : UserControl
             ReloadEngineAndReinspect();
             StatusMessage?.Invoke("교정이 등록되었습니다 — 이후 검사부터 자동 적용됩니다.");
         }
+    }
+
+    /// <summary>필드가 전혀 검출되지 않은 원인 분석 문구.</summary>
+    private string DiagnoseMissingField(string field, string term,
+                                        PageAnalysis analysis)
+    {
+        var reasons = new List<string>();
+        var words = analysis.Words;
+        if (words.Count == 0)
+            reasons.Add("이 페이지에서 OCR 단어가 하나도 인식되지 않았습니다 — " +
+                        "이미지 품질 또는 OCR 엔진 설정을 확인하세요.");
+        else
+        {
+            var average = words.Average(w => (double)w.Confidence);
+            if (average < 80)
+                reasons.Add($"페이지 OCR 평균 신뢰도가 낮습니다 ({average:F0}%).");
+            var best = words
+                .OrderByDescending(w => InspectionEngine.SimilarityScore(
+                    w.Text.Trim(), term, w.Confidence))
+                .First();
+            var bestScore = InspectionEngine.SimilarityScore(
+                best.Text.Trim(), term, best.Confidence);
+            if (bestScore >= 55)
+                reasons.Add($"가장 유사한 인식 결과: '{best.Text.Trim()}' " +
+                            $"(유사도 {bestScore:F0}) — 교정 등록으로 해결할 수 있습니다.");
+            else
+                reasons.Add("기대값과 비슷한 인식 결과가 없습니다 — 값이 여러 단어로 " +
+                            "분리되었거나 렌더 해상도가 부족할 수 있습니다.");
+            if (field == "GTIN")
+            {
+                var joined = _corrections.Canonicalize(
+                    string.Concat(words.Select(w => w.Text.Trim())));
+                if (term.Length > 0 && joined.Contains(term, StringComparison.Ordinal))
+                    reasons.Add("GTIN 숫자열이 여러 단어로 나뉘어 인식됐습니다 — " +
+                                "렌더 배율을 높이면 붙여서 인식됩니다.");
+            }
+        }
+        var minConfidence = _config.SectionInt("ocr", "min_confidence", 0);
+        if (minConfidence > 0)
+            reasons.Add($"최소 신뢰도 필터가 {minConfidence}%라 저신뢰 단어가 " +
+                        "버려졌을 수 있습니다 (0 권장).");
+        if (!_config.SectionBool("ocr", "contrast_stretch", false))
+            reasons.Add("이미지 대비 보정이 꺼져 있습니다 (흐린 인쇄에 유리).");
+        return $"'{field}' 필드(기대값: {term})가 검출되지 않았습니다.\n\n[원인 분석]\n· "
+               + string.Join("\n· ", reasons);
+    }
+
+    /// <summary>인식 강화 파라미터 적용 후 현재 PDF 재-OCR.</summary>
+    private void ApplyRecognitionBoost()
+    {
+        var ocr = _config.Section("ocr");
+        ocr["contrast_stretch"] = true;
+        ocr["min_confidence"] = 0;
+        if (_config.GetDouble("pdf_render_zoom", 4.0) < 5.0)
+            _config.Settings["pdf_render_zoom"] = 5.0;
+        _config.SaveSettings();
+        ApplyConfig();
+        if (_pdf.IsOpen && _pdf.Path is { } pdfPath)
+        {
+            var page = _currentPage;
+            _pdf.Open(pdfPath);   // 렌더 배율 변경 반영 (비트맵 캐시 초기화)
+            ClearProcessed();
+            _analyses.Clear();
+            _worker.NewGeneration();
+            _currentPage = page;
+            ShowPage(page);
+            SubmitPrefetchJobs();
+        }
+        StatusMessage?.Invoke("인식 강화 파라미터 적용 — 페이지를 다시 OCR합니다.");
     }
 
     /// <summary>제한 거리 이하일 때만 편집 거리 반환 (초과 시 -1).</summary>
@@ -1070,7 +1560,7 @@ public partial class InspectorView : UserControl
                             MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        SaveOutcome(_currentPage, outcome, _pdf.RenderPage(_currentPage), notify: true);
+        SaveOutcome(_currentPage, outcome, RenderProcessed(_currentPage), notify: true);
     }
 
     private void SaveOutcome(int page, InspectionOutcome outcome, SKBitmap image,

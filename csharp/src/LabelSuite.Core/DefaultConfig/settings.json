@@ -52,7 +52,11 @@
       { "field": "EXP DATE", "allowed": "0123456789-./", "denied": "" },
       { "field": "GTIN", "allowed": "0123456789()", "denied": "" }
     ],
-    "same_value": []
+    "same_value": [],
+    "zones": []
+  },
+  "preprocess": {
+    "crop_label": true
   },
   "type_learning": {
     "enabled": true,
