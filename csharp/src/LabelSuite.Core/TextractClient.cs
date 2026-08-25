@@ -175,8 +175,10 @@ public sealed class TextractClient(string region = "ap-northeast-2", string? pro
             var box = block.Geometry?.BoundingBox;
             if (box is null) continue;
             words.Add(new OcrWord(text,
-                ((int)(box.Left * image.Width), (int)(box.Top * image.Height),
-                 (int)(box.Width * image.Width), (int)(box.Height * image.Height)),
+                ((int)Math.Round(box.Left * image.Width),
+                 (int)Math.Round(box.Top * image.Height),
+                 Math.Max(1, (int)Math.Round(box.Width * image.Width)),
+                 Math.Max(1, (int)Math.Round(box.Height * image.Height))),
                 (int)block.Confidence));
         }
         return words;

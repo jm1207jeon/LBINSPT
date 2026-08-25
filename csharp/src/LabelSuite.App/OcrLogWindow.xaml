@@ -22,13 +22,15 @@
             <Button DockPanel.Dock="Right" x:Name="RegisterButton"
                     Content="선택 단어로 교정 등록" FontWeight="Bold" MinWidth="150"
                     Click="OnRegister"/>
+            <Button DockPanel.Dock="Right" Content="선택 병합 학습" MinWidth="110"
+                    Margin="0,0,6,0" Click="OnLearnMerge"
+                    ToolTip="Ctrl 클릭으로 여러 단어를 선택한 뒤 누르면, 이후 검사에서 그 단어들이 하나의 문장으로 합쳐져 인식됩니다"/>
             <TextBlock DockPanel.Dock="Left" Text="올바른 값:"
                        VerticalAlignment="Center" Margin="0,0,4,0"/>
             <TextBox x:Name="RightBox" VerticalAlignment="Center"/>
         </DockPanel>
         <DataGrid x:Name="LogGrid" IsReadOnly="True" AutoGenerateColumns="False"
-                  FontFamily="Consolas" SelectionMode="Single"
-                  SelectionChanged="OnRowSelected">
+                  FontFamily="Consolas" SelectionMode="Extended">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="No." Binding="{Binding Order}" Width="42"/>
                 <DataGridTextColumn Header="인식된 텍스트" Binding="{Binding Text}" Width="*"/>

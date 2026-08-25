@@ -59,6 +59,8 @@ public sealed class InspectionOptions
     public FieldCharsets Charsets { get; init; } = new();
     /// <summary>필드별 검출 허용 영역 — 등록된 필드는 영역 밖 검출을 무시한다.</summary>
     public List<FieldZone> Zones { get; init; } = [];
+    /// <summary>단어 병합 규칙 (여러 OCR 단어 → 한 문장) — 교정 전에 적용.</summary>
+    public WordMergeRules? Merges { get; init; }
 }
 
 public sealed class InspectionEngine(StandardsBundle standards,
@@ -122,6 +124,29 @@ public sealed class InspectionEngine(StandardsBundle standards,
             && !ExcludedWords.Any(w => text.Contains(w, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>바코드 리딩 기반 GTIN 매칭 — 검출된 GS1 바코드의 AI(01) 값과
+    /// 대조한다. GS1 바코드가 하나라도 파싱되면 이것이 기준(OCR 폴백 안 함),
+    /// 없으면 null을 반환해 OCR 경로로 폴백한다.</summary>
+    private static List<TextMatch>? BarcodeGtinMatches(
+        string gtin14, IReadOnlyList<BarcodeHit>? barcodes)
+    {
+        if (barcodes is not { Count: > 0 }) return null;
+        var matches = new List<TextMatch>();
+        var sawGs1 = false;
+        foreach (var hit in barcodes)
+        {
+            Gs1Message message;
+            try { message = Gs1.Parse(hit.Text); }
+            catch (Gs1ParseException) { continue; }
+            if (message.Get("01") is not { } gtin) continue;
+            sawGs1 = true;
+            if (gtin == gtin14)
+                matches.Add(new TextMatch("GTIN",
+                    new OcrWord($"(01){gtin}", hit.Bbox, 100), gtin14));
+        }
+        return sawGs1 ? matches : null;
+    }
+
     /// <summary>GTIN 매칭 — UDI 문자열에서 AI(01) 구간만 찾아, 바운딩 박스도
     /// (01)+14자리 구간으로 잘라 반환한다 (뒤따르는 (10) 등 다른 AI는 제외).</summary>
     private TextMatch? GtinMatch(string gtin14, OcrWord word)
@@ -180,11 +205,13 @@ public sealed class InspectionEngine(StandardsBundle standards,
                                      IReadOnlyList<OcrWord> words,
                                      IReadOnlyList<CrossCheckResult>? barcodeChecks = null,
                                      string extraSearch = "",
-                                     (int W, int H)? pageSize = null)
+                                     (int W, int H)? pageSize = null,
+                                     IReadOnlyList<BarcodeHit>? barcodes = null)
     {
-        // 교정 사전 적용 (오인식 단어 치환)
+        // 단어 병합(문장 학습) → 교정 사전(오인식 치환) 순으로 적용
+        IReadOnlyList<OcrWord> mergedWords = Options.Merges?.Apply(words) ?? words.ToList();
         IReadOnlyList<OcrWord> effective = Options.Corrections is { } corrections
-            ? corrections.Apply(words) : words;
+            ? corrections.Apply(mergedWords) : mergedWords;
 
         var standard = Standards.Spec(standardName);
         var terms = BuildSearchTerms(record, standard);
@@ -199,11 +226,16 @@ public sealed class InspectionEngine(StandardsBundle standards,
                 continue;   // 사용자가 제외한 필드 (LOT은 매칭 기준이라 항상 유지)
             int? expected = standard.Counts.TryGetValue(fieldName, out var count)
                 ? count : null;
+            // GTIN은 바코드 리딩이 있으면 그것을 기준으로 (인쇄=바코드 가정, OCR보다 정확)
+            var matches = fieldName == "GTIN"
+                && BarcodeGtinMatches(term, barcodes) is { } fromBarcodes
+                ? fromBarcodes
+                : ApplyZones(fieldName, standardName, pageSize,
+                             CountField(fieldName, term, effective));
             outcome.Fields[fieldName] = new FieldResult
             {
                 Field = fieldName, Term = term, Expected = expected,
-                Matches = ApplyZones(fieldName, standardName, pageSize,
-                                     CountField(fieldName, term, effective)),
+                Matches = matches,
             };
         }
         foreach (var custom in Options.CustomFields)

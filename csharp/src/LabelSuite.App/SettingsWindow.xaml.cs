@@ -91,14 +91,23 @@ public partial class SettingsWindow : Window
     private readonly Dictionary<string, CheckBox> _disableChecks = [];
 
     private readonly GlyphLibrary _glyphs;
+    private readonly WordMergeRules _merges;
+
+    public sealed class MergeVm
+    {
+        public string Pattern { get; set; } = "";
+    }
+
+    private readonly ObservableCollection<MergeVm> _mergeRows = [];
 
     public SettingsWindow(AppConfig config, OcrCorrections corrections,
-                          GlyphLibrary glyphs)
+                          GlyphLibrary glyphs, WordMergeRules merges)
     {
         InitializeComponent();
         _config = config;
         _corrections = corrections;
         _glyphs = glyphs;
+        _merges = merges;
         LoadValues();
     }
 
@@ -312,6 +321,9 @@ public partial class SettingsWindow : Window
                 Field = entry.Field ?? "", LearnedAt = entry.LearnedAt ?? "",
             });
         CorrectionsGrid.ItemsSource = _correctionRows;
+        foreach (var rule in _merges.Rules)
+            _mergeRows.Add(new MergeVm { Pattern = string.Join(" ", rule) });
+        MergesGrid.ItemsSource = _mergeRows;
 
         // AWS
         var aws = _config.Settings["aws"]?.AsObject();
@@ -369,7 +381,7 @@ public partial class SettingsWindow : Window
     {
         foreach (var grid in new[] { CustomFieldsGrid, FieldColorsGrid, CorrectionsGrid,
                                      CountsGrid, CharsetsGrid, SameValueGrid,
-                                     FormRulesGrid, ZonesGrid })
+                                     FormRulesGrid, ZonesGrid, MergesGrid })
             grid.CommitEdit(DataGridEditingUnit.Row, true);
 
         var settings = _config.Settings;
@@ -483,6 +495,11 @@ public partial class SettingsWindow : Window
                     rgba[2] = ParseInt(vm.B, 128, 0, 255);
                 }
         }
+
+        // 단어 병합 패턴 (그리드 내용으로 전체 교체)
+        _merges.ReplaceAll(_mergeRows
+            .Select(vm => (IEnumerable<string>)vm.Pattern.Split(' ',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)));
 
         // 교정 사전 (그리드 내용으로 전체 교체)
         _corrections.ReplaceAll(_correctionRows

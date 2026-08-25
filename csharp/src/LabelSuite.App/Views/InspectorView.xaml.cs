@@ -15,9 +15,11 @@ namespace LabelSuite.App.Views;
 public partial class InspectorView : UserControl
 {
     // 전처리 서명 — 라벨 정렬 옵션이 바뀌면 OCR 캐시를 분리한다
+    // 주의: 정렬(크롭/기울기) 알고리즘이 바뀌면 버전을 올려야 한다 —
+    // 이전 알고리즘의 크롭 기준으로 저장된 OCR 좌표가 재사용되면 박스가 어긋난다.
     private string PreprocessSig =>
         _config?.SectionBool("preprocess", "crop_label", true) == true
-            ? "crop-v1" : "none-v1";
+            ? "crop-v2" : "none-v1";
 
     private AppConfig _config = null!;
     private HistoryDb? _history;
@@ -52,7 +54,7 @@ public partial class InspectorView : UserControl
     public event Action<bool, string>? AwsStatusChanged;
 
     private OcrCorrections _corrections = null!;
-    private GlyphLibrary _glyphLibrary = null!;
+    private WordMergeRules _merges = null!;
     private GlyphOcrEngine _glyphEngine = null!;
     private static readonly Lazy<OnnxOcrEngine> OnnxEngine = new(() => new OnnxOcrEngine());
 
@@ -67,13 +69,14 @@ public partial class InspectorView : UserControl
     public InspectorView() => InitializeComponent();
 
     public void Initialize(AppConfig config, HistoryDb history,
-                           OcrCorrections corrections, GlyphLibrary glyphs)
+                           OcrCorrections corrections, GlyphLibrary glyphs,
+                           WordMergeRules merges)
     {
         _config = config;
         _history = history;
         _corrections = corrections;
-        _glyphLibrary = glyphs;
-        _glyphEngine = new GlyphOcrEngine(_glyphLibrary);
+        _merges = merges;
+        _glyphEngine = new GlyphOcrEngine(glyphs);
         _standards = StandardsBundle.Load(config);
         _engine = BuildEngine();
         _textract = MakeTextract();
@@ -197,6 +200,7 @@ public partial class InspectorView : UserControl
             Corrections = _corrections,
             Charsets = new FieldCharsets(charsetRules),
             Zones = zones,
+            Merges = _merges,
         });
     }
 
@@ -582,7 +586,7 @@ public partial class InspectorView : UserControl
             var cached = _cache.Get(key);
             if (cached is not null) { _analyses[page] = cached; continue; }
             var pageCopy = page;
-            _worker.Submit(page, key, () => RenderProcessed(pageCopy),
+            _worker.Submit(page, key, () => RenderProcessedForAnalysis(pageCopy),
                            priority: page == _currentPage ? 0 : 1);
         }
         UpdatePrefetchLabel();
@@ -663,7 +667,7 @@ public partial class InspectorView : UserControl
             ClearResultPanel("OCR 진행 중…");
             var pageCopy = page;
             _worker.Submit(page, CacheKeyForPage(page),
-                           () => RenderProcessed(pageCopy), priority: 0);
+                           () => RenderProcessedForAnalysis(pageCopy), priority: 0);
             _worker.Prioritize(page);
         }
         UpdatePrefetchLabel();
@@ -817,12 +821,15 @@ public partial class InspectorView : UserControl
         }
         var outcome = _engine.Inspect(record, standardName, analysis.Words,
                                       barcodeChecks, SearchBox.Text,
-                                      (image.Width, image.Height));
+                                      (image.Width, image.Height),
+                                      analysis.Barcodes);
         _outcomes[page] = outcome;
         CheckLabelType(page, formatKey, analysis, record, outcome);
         ShowOutcome(outcome, analysis);
         using var annotated = Annotate.RenderOverlays(
             image, outcome.AllMatches, _standards.FieldColors, CurrentOverlayStyle());
+        // 검출된 바코드(DataMatrix·GS1-128 등)에도 박스 표시
+        Annotate.DrawBarcodeBoxes(annotated, analysis.Barcodes, CurrentOverlayStyle());
         // 저신뢰 OCR 알람 — 유의미하게 낮으면 해당 단어를 주황 파선으로 하이라이트
         if (_config.SectionBool("ocr", "quality_alarm", true))
         {
@@ -1011,6 +1018,18 @@ public partial class InspectorView : UserControl
             }
             return aligned.Image;
         }
+    }
+
+    /// <summary>백그라운드 분석용 소유 렌더 — 공유 캐시를 쓰지 않는다.
+    /// 캐시 비트맵은 LRU 축출로 분석 도중 해제될 수 있어(박스 좌표 오염·크래시)
+    /// 워커에는 항상 소유본을 주고 워커가 분석 후 해제한다.</summary>
+    private SKBitmap RenderProcessedForAnalysis(int page)
+    {
+        var raw = _pdf.RenderPageOwned(page);
+        if (!_config.SectionBool("preprocess", "crop_label", true)) return raw;
+        var aligned = ImagePreprocess.DeskewAndCropLiner(raw);
+        if (!ReferenceEquals(aligned.Image, raw)) raw.Dispose();
+        return aligned.Image;
     }
 
     private (double Angle, bool Cropped)? ProcessedInfo(int page)
@@ -1487,7 +1506,7 @@ public partial class InspectorView : UserControl
         }
         var log = new OcrLogWindow(analysis.Words,
                                    (_displayed.Width, _displayed.Height),
-                                   field, expectedTerm, _corrections)
+                                   field, expectedTerm, _corrections, _merges)
         { Owner = Window.GetWindow(this) };
         if (log.ShowDialog() == true)
         {

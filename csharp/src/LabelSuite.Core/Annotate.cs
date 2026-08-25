@@ -65,6 +65,42 @@ public static class Annotate
         return annotated;
     }
 
+    /// <summary>검출된 바코드(DataMatrix·GS1-128 등)에 청록 박스 + 종류 라벨을
+    /// 그린다. 1D 바코드는 검출점이 선 형태라 세로로 부풀려 표시한다.</summary>
+    public static void DrawBarcodeBoxes(SKBitmap image,
+                                        IEnumerable<BarcodeHit> hits,
+                                        OverlayStyle? style = null)
+    {
+        style ??= OverlayStyle.Default;
+        using var canvas = new SKCanvas(image);
+        var teal = new SKColor(0, 128, 128);
+        using var stroke = new SKPaint
+        {
+            Color = teal, Style = SKPaintStyle.Stroke,
+            StrokeWidth = Math.Max(2, style.Thickness),
+        };
+        using var font = new SKFont(SKTypeface.Default, 18);
+        using var textPaint = new SKPaint { Color = SKColors.White, IsAntialias = true };
+        using var badgeFill = new SKPaint
+        { Color = teal.WithAlpha(220), Style = SKPaintStyle.Fill };
+        foreach (var hit in hits)
+        {
+            var (x, y, w, h) = hit.Bbox;
+            // ZXing 검출점은 파인더 패턴 중심이라 실제 심볼보다 작다 — 여유 확장
+            var padX = Math.Max(6f, w * 0.10f);
+            var padY = Math.Max(6f, h * 0.10f);
+            if (h < w / 4) padY = Math.Max(padY, w * 0.12f);   // 1D 바코드 세로 확장
+            var rect = new SKRect(x - padX, y - padY, x + w + padX, y + h + padY);
+            canvas.DrawRect(rect, stroke);
+            var label = hit.Symbology;
+            var labelWidth = font.MeasureText(label) + 10;
+            var badge = new SKRect(rect.Left, Math.Max(0, rect.Top - 24),
+                                   rect.Left + labelWidth, Math.Max(24, rect.Top));
+            canvas.DrawRect(badge, badgeFill);
+            canvas.DrawText(label, badge.Left + 5, badge.Bottom - 6, font, textPaint);
+        }
+    }
+
     /// <summary>저신뢰 OCR 단어를 경고색(주황) 파선 박스로 하이라이트한다.
     /// 원본을 제자리에서 수정한다 (RenderOverlays 결과 위에 겹쳐 그리는 용도).</summary>
     public static void HighlightLowConfidence(SKBitmap image,

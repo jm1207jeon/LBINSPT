@@ -9,6 +9,7 @@ public partial class MainWindow : Window
     public AppConfig Config { get; }
     public HistoryDb History { get; }
     public OcrCorrections Corrections { get; }
+    public WordMergeRules Merges { get; }
     public GlyphLibrary Glyphs { get; }
 
     public MainWindow()
@@ -19,9 +20,10 @@ public partial class MainWindow : Window
         Corrections = new OcrCorrections(
             Path.Combine(AppConfig.DataDir(), "ocr_corrections.json"));
         Glyphs = new GlyphLibrary(Path.Combine(AppConfig.DataDir(), "glyphs.json"));
+        Merges = new WordMergeRules(Path.Combine(AppConfig.DataDir(), "word_merges.json"));
 
         Generator.Initialize(Config);
-        Inspector.Initialize(Config, History, Corrections, Glyphs);
+        Inspector.Initialize(Config, History, Corrections, Glyphs, Merges);
         HistoryPage.Initialize(Config, History);
 
         Generator.StatusMessage += ShowStatus;
@@ -63,7 +65,8 @@ public partial class MainWindow : Window
 
     private void OnOpenSettings(object sender, RoutedEventArgs e)
     {
-        var dialog = new SettingsWindow(Config, Corrections, Glyphs) { Owner = this };
+        var dialog = new SettingsWindow(Config, Corrections, Glyphs, Merges)
+        { Owner = this };
         if (dialog.ShowDialog() == true)
         {
             Inspector.ApplyConfig();

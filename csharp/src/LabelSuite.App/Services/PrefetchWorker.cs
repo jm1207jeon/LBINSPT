@@ -85,8 +85,10 @@ public sealed class PrefetchWorker : IDisposable
             PageAnalysis analysis;
             try
             {
+                // Render는 소유 비트맵을 반환하는 계약 — 분석 후 여기서 해제한다
                 var image = job.Render();
-                analysis = await _analyze(image);
+                try { analysis = await _analyze(image); }
+                finally { image.Dispose(); }
             }
             catch (Exception ex)
             {

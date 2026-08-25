@@ -76,6 +76,27 @@ public sealed class PdfDoc : IDisposable
         PageCount = 0;
     }
 
+    /// <summary>캐시를 거치지 않는 소유 렌더 — 반환 비트맵은 호출자가 해제한다.
+    /// 백그라운드 분석용: 공유 캐시 비트맵은 LRU 축출 시 분석 도중 해제될 수
+    /// 있어(좌표 오염·크래시) 분석 스레드는 항상 이 소유본을 사용한다.</summary>
+    public SKBitmap RenderPageOwned(int index)
+    {
+        byte[] bytes;
+        double zoom;
+        lock (_lock)
+        {
+            if (_bytes is null) throw new InvalidOperationException("열린 PDF가 없습니다.");
+            if (index < 0 || index >= PageCount)
+                throw new ArgumentOutOfRangeException(nameof(index));
+            bytes = _bytes;
+            zoom = RenderZoom;
+        }
+        var dpi = (int)Math.Round(72 * zoom);
+        return PDFtoImage.Conversion.ToImage(
+            bytes, page: (Index)index,
+            options: new PDFtoImage.RenderOptions(Dpi: dpi));
+    }
+
     /// <summary>렌더 비트맵 캐시만 비운다 (문서는 유지) — 렌더 배율 변경 시 필수.
     /// 배율이 바뀌었는데 이전 배율의 비트맵을 재사용하면 좌표가 어긋난다.</summary>
     public void ClearRenderCache()

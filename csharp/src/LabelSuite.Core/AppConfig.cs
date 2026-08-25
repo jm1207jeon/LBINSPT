@@ -132,15 +132,6 @@ public class AppConfig
 
     public void SaveSettings() => Write(SettingsFile, Settings);
     public void SaveStandards() => Write(StandardsFile, StandardsRaw);
-    public void SaveColumnMaps() => Write(ColumnMapsFile, ColumnMapsRaw);
-
-    public void RestoreDefaults(string name)
-    {
-        File.WriteAllText(Path.Combine(Directory, name), ReadEmbedded(name));
-        if (name == SettingsFile) Settings = Read(name);
-        else if (name == StandardsFile) StandardsRaw = Read(name);
-        else if (name == ColumnMapsFile) ColumnMapsRaw = Read(name);
-    }
 
     // ---- 편의 접근자 ----
     public string GetString(string key, string fallback = "") =>

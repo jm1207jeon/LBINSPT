@@ -122,12 +122,6 @@ public sealed class LabelTypeProfiler(string? path = null)
         Save();
     }
 
-    public void Forget(string formatKey)
-    {
-        _profiles.Remove(formatKey);
-        Save();
-    }
-
     private Dictionary<string, int> TokenCounts(string formatKey)
     {
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);

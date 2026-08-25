@@ -16,16 +16,18 @@ public partial class OcrLogWindow : Window
     private readonly string _field;
     private readonly string _expectedTerm;
     private readonly OcrCorrections _corrections;
+    private readonly WordMergeRules _merges;
     private readonly List<RowVm> _rows;
 
     public OcrLogWindow(IReadOnlyList<OcrWord> words, (int W, int H) pageSize,
                         string field, string expectedTerm,
-                        OcrCorrections corrections)
+                        OcrCorrections corrections, WordMergeRules merges)
     {
         InitializeComponent();
         _field = field;
         _expectedTerm = expectedTerm;
         _corrections = corrections;
+        _merges = merges;
 
         HeaderText.Text = expectedTerm.Length > 0
             ? $"필드 {field} — 기대값 '{expectedTerm}' 이(가) 검출되지 않았습니다. " +
@@ -76,7 +78,31 @@ public partial class OcrLogWindow : Window
         if (IsLoaded) Refresh();
     }
 
-    private void OnRowSelected(object sender, SelectionChangedEventArgs e) { }
+    /// <summary>선택한 여러 단어를 읽기 순서대로 하나의 문장으로 병합 학습.</summary>
+    private void OnLearnMerge(object sender, RoutedEventArgs e)
+    {
+        var selected = LogGrid.SelectedItems.OfType<RowVm>()
+            .OrderBy(r => int.Parse(r.Order)).ToList();
+        if (selected.Count < 2)
+        {
+            MessageBox.Show("Ctrl 클릭으로 병합할 단어를 2개 이상 선택하세요.",
+                            "병합 학습", MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+            return;
+        }
+        var phrase = string.Join(" ", selected.Select(r => r.Text));
+        if (!_merges.Add(selected.Select(r => r.Text)))
+        {
+            MessageBox.Show("이미 등록된 병합 패턴입니다.", "병합 학습",
+                            MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        MessageBox.Show(
+            $"병합 패턴 등록: \"{phrase}\"\n이후 검사부터 이 단어들이 나란히 " +
+            "인식되면 하나의 문장으로 합쳐집니다. (설정 → OCR 교정 사전에서 관리)",
+            "병합 학습", MessageBoxButton.OK, MessageBoxImage.Information);
+        DialogResult = true;   // 재검사 트리거
+    }
 
     private void OnRegister(object sender, RoutedEventArgs e)
     {

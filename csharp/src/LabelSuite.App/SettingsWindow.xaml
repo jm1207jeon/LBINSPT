@@ -232,6 +232,16 @@
                         </DataGrid>
                         <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
                                    Text="검사 탭에서 필드 행을 더블클릭해도 등록할 수 있습니다. 같은 길이의 교정에서 문자 혼동 규칙(예: O↔0)을 자동 학습합니다."/>
+                        <TextBlock Text="단어 병합 패턴 (OCR 로그에서 여러 단어 선택 → [선택 병합 학습]으로 등록):"
+                                   Margin="0,8,0,2"/>
+                        <DataGrid x:Name="MergesGrid" IsReadOnly="False"
+                                  AutoGenerateColumns="False" CanUserAddRows="True"
+                                  Height="80" FontFamily="Consolas">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="병합할 단어들 (공백 구분 — 순서대로 나란히 나오면 한 문장으로 인식)"
+                                                    Binding="{Binding Pattern}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
                     </StackPanel>
                 </GroupBox>
 

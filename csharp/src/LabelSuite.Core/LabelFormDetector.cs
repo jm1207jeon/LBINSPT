@@ -107,11 +107,6 @@ public sealed class LabelFormDetector(string? templatePath = null)
 
     public bool HasTemplate(string ruleName) => _templates.ContainsKey(ruleName);
 
-    public void RemoveTemplate(string ruleName)
-    {
-        if (_templates.Remove(ruleName)) SaveTemplates();
-    }
-
     /// <summary>영역을 잘라 64x48 그레이 썸네일 → zero-mean unit-norm 벡터.</summary>
     internal static float[]? ExtractThumb(SKBitmap image,
                                           (double X, double Y, double W, double H) region)
