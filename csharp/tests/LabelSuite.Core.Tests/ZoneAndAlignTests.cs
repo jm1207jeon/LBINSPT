@@ -73,6 +73,53 @@ public class FieldZoneTests : IDisposable
     }
 }
 
+public class SearchAndGtinBoxTests : IDisposable
+{
+    private readonly string _directory =
+        Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+    private readonly InspectionEngine _engine;
+
+    public SearchAndGtinBoxTests()
+    {
+        _engine = new InspectionEngine(StandardsBundle.Load(new AppConfig(_directory)));
+    }
+
+    public void Dispose() => Directory.Delete(_directory, recursive: true);
+
+    [Fact]
+    public void GtinBoxCoversOnlyAi01Segment()
+    {
+        // (01)+14자리(18자) 뒤에 (10)AI가 이어지는 30자 UDI — 박스는 앞 60%만
+        var word = new OcrWord("(01)08806173612345(10)25090776", (0, 0, 300, 20), 95);
+        var matches = _engine.CountField("GTIN", "08806173612345", [word]);
+        var match = Assert.Single(matches);
+        Assert.Equal(0, match.Word.Bbox.X);
+        Assert.Equal(180, match.Word.Bbox.W);   // 300 * 18/30
+
+        // 접두 문자가 있으면 시작 위치도 이동
+        var offset = new OcrWord("XX(01)08806173612345", (0, 0, 200, 20), 95);
+        var offsetMatch = Assert.Single(
+            _engine.CountField("GTIN", "08806173612345", [offset]));
+        Assert.Equal(20, offsetMatch.Word.Bbox.X);   // 200 * 2/20
+        Assert.Equal(180, offsetMatch.Word.Bbox.W);  // 200 * 18/20
+    }
+
+    [Fact]
+    public void SearchMatchesUnregisteredShortAndSpecialWords()
+    {
+        var words = new[]
+        {
+            new OcrWord("STERILE", (0, 0, 50, 10), 95),
+            new OcrWord("EO", (60, 0, 20, 10), 95),          // 2글자 — 기존 필터에선 제외
+            new OcrWord("(01)08806173612345", (0, 20, 100, 10), 95),  // (01) 포함
+            new OcrWord("nope", (0, 40, 30, 10), 95),
+        };
+        Assert.Equal(2, _engine.CountSearch("STERILE EO", words).Count);
+        Assert.Single(_engine.CountSearch("(01)088", words));
+        Assert.Empty(_engine.CountSearch("없는값", words));
+    }
+}
+
 public class LabelAlignTests
 {
     /// <summary>흰 배경 위에 하늘색 이형지 사각형(안에 흰 라벨)을 회전시켜 그린다.</summary>
@@ -92,6 +139,11 @@ public class LabelAlignTests
         using var white = new SKPaint
         { Color = SKColors.White, Style = SKPaintStyle.Fill };
         canvas.DrawRect(new SKRect(200, 150, 600, 450), white);   // 라벨(흰색)
+        // 본 라벨의 인쇄 내용(수평선/텍스트 행) — 기울기 보정 기준
+        using var ink = new SKPaint
+        { Color = SKColors.Black, Style = SKPaintStyle.Fill };
+        for (var i = 0; i < 5; i++)
+            canvas.DrawRect(new SKRect(220, 180 + i * 50, 580, 190 + i * 50), ink);
         canvas.Restore();
         return bmp;
     }
@@ -119,6 +171,16 @@ public class LabelAlignTests
         // 보정 후 크롭 크기가 정자세 이형지 크기에 근접
         Assert.InRange(result.Image.Width, 470, 560);
         Assert.InRange(result.Image.Height, 370, 460);
+        if (!ReferenceEquals(result.Image, image)) result.Image.Dispose();
+    }
+
+    [Fact]
+    public void StraightScanIsNotRotated()
+    {
+        using var image = Scan(0, out _);
+        var result = ImagePreprocess.DeskewAndCropLiner(image);
+        Assert.True(result.Cropped);
+        Assert.Equal(0, result.AngleDegrees, 1);
         if (!ReferenceEquals(result.Image, image)) result.Image.Dispose();
     }
 

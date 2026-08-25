@@ -382,15 +382,9 @@ public sealed class GlyphOcrEngine(GlyphLibrary library) : IOcrEngine
     {
         var gray = new GrayImage(image.Width, image.Height);
         var histogram = new int[256];
-        var index = 0;
-        for (var y = 0; y < image.Height; y++)
-            for (var x = 0; x < image.Width; x++)
-            {
-                var color = image.GetPixel(x, y);
-                var v = (byte)((color.Red * 299 + color.Green * 587 + color.Blue * 114) / 1000);
-                gray.Pixels[index++] = v;
-                histogram[v]++;
-            }
+        var luma = ImagePreprocess.LumaBuffer(image);   // 포인터 고속 경로
+        Buffer.BlockCopy(luma, 0, gray.Pixels, 0, luma.Length);
+        foreach (var v in luma) histogram[v]++;
         // 2%/98% 퍼센타일 중간을 문턱으로
         long total = (long)image.Width * image.Height, acc = 0;
         int lo = 0, hi = 255;

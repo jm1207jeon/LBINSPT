@@ -1,0 +1,51 @@
+<Window x:Class="LabelSuite.App.OcrLogWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="OCR 인식 로그" Width="680" Height="580"
+        WindowStartupLocation="CenterOwner">
+    <DockPanel Margin="8">
+        <TextBlock DockPanel.Dock="Top" x:Name="HeaderText" FontWeight="Bold"
+                   TextWrapping="Wrap" Margin="0,0,0,6"/>
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+            <TextBlock Text="필터:" VerticalAlignment="Center"/>
+            <TextBox x:Name="FilterBox" Width="170" Margin="4,0"
+                     TextChanged="OnFilterChanged"/>
+            <CheckBox x:Name="SimilarSortCheck" Content="기대값과 유사한 순 정렬"
+                      Margin="10,2,0,2" Checked="OnFilterChanged"
+                      Unchecked="OnFilterChanged"/>
+            <TextBlock x:Name="CountText" VerticalAlignment="Center"
+                       Margin="12,0,0,0" Foreground="Gray"/>
+        </WrapPanel>
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <Button DockPanel.Dock="Right" Content="닫기" MinWidth="70"
+                    Click="OnClose" Margin="6,0,0,0"/>
+            <Button DockPanel.Dock="Right" x:Name="RegisterButton"
+                    Content="선택 단어로 교정 등록" FontWeight="Bold" MinWidth="150"
+                    Click="OnRegister"/>
+            <TextBlock DockPanel.Dock="Left" Text="올바른 값:"
+                       VerticalAlignment="Center" Margin="0,0,4,0"/>
+            <TextBox x:Name="RightBox" VerticalAlignment="Center"/>
+        </DockPanel>
+        <DataGrid x:Name="LogGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                  FontFamily="Consolas" SelectionMode="Single"
+                  SelectionChanged="OnRowSelected">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="No." Binding="{Binding Order}" Width="42"/>
+                <DataGridTextColumn Header="인식된 텍스트" Binding="{Binding Text}" Width="*"/>
+                <DataGridTextColumn Header="신뢰도%" Binding="{Binding Confidence}" Width="60"/>
+                <DataGridTextColumn Header="X%" Binding="{Binding X}" Width="46"/>
+                <DataGridTextColumn Header="Y%" Binding="{Binding Y}" Width="46"/>
+                <DataGridTextColumn Header="유사도" Binding="{Binding Similarity}" Width="52"/>
+            </DataGrid.Columns>
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Low}" Value="True">
+                            <Setter Property="Foreground" Value="#B03A2E"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
+        </DataGrid>
+    </DockPanel>
+</Window>

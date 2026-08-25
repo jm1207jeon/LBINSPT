@@ -122,22 +122,44 @@ public sealed class InspectionEngine(StandardsBundle standards,
             && !ExcludedWords.Any(w => text.Contains(w, StringComparison.OrdinalIgnoreCase));
     }
 
-    private bool GtinCounts(string gtin14, OcrWord word)
+    /// <summary>GTIN 매칭 — UDI 문자열에서 AI(01) 구간만 찾아, 바운딩 박스도
+    /// (01)+14자리 구간으로 잘라 반환한다 (뒤따르는 (10) 등 다른 AI는 제외).</summary>
+    private TextMatch? GtinMatch(string gtin14, OcrWord word)
     {
         var text = Options.Charsets.Repair("GTIN", word.Text.Trim());
         if (Options.AllowConfusables && Options.Corrections is { } corrections)
             text = corrections.Canonicalize(text);
         var match = GtinAi.Match(text);
-        return match.Success && match.Groups[1].Value == gtin14;
+        if (!match.Success || match.Groups[1].Value != gtin14) return null;
+        var (x, y, w, h) = word.Bbox;
+        var length = Math.Max(1, text.Length);
+        var subX = x + (int)((double)w * match.Index / length);
+        var subW = Math.Max(1, (int)((double)w * match.Length / length));
+        return new TextMatch("GTIN", word with { Bbox = (subX, y, subW, h) }, gtin14);
     }
 
     public List<TextMatch> CountField(string fieldName, string term, IReadOnlyList<OcrWord> words)
     {
         if (term.Length == 0) return [];
-        Func<string, OcrWord, bool> matcher = fieldName == "GTIN"
-            ? GtinCounts : (t, w) => TextCounts(fieldName, t, w);
-        return words.Where(w => matcher(term, w))
+        if (fieldName == "GTIN")
+            return words.Select(w => GtinMatch(term, w))
+                        .Where(m => m is not null).Select(m => m!).ToList();
+        return words.Where(w => TextCounts(fieldName, term, w))
                     .Select(w => new TextMatch(fieldName, w, term)).ToList();
+    }
+
+    /// <summary>검색창 매칭 — 사전 지정 필드가 아니어도 찾을 수 있도록
+    /// 길이/제외어 필터 없이 관대하게 매칭한다. 공백으로 나눈 토큰별 검색.</summary>
+    public List<TextMatch> CountSearch(string term, IReadOnlyList<OcrWord> words)
+    {
+        var tokens = term.Split(' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0) return [];
+        return words.Where(w => tokens.Any(token =>
+                w.Text.Contains(token, StringComparison.OrdinalIgnoreCase)
+                || (Options.AllowConfusables && Options.Corrections is { } c
+                    && c.ConfusableContains(w.Text, token))))
+            .Select(w => new TextMatch("SEARCH", w, term)).ToList();
     }
 
     /// <summary>커스텀 필드 카운트 — 정규식이면 단어 전체 매칭, 아니면 부분 문자열 규칙.</summary>
@@ -200,7 +222,7 @@ public sealed class InspectionEngine(StandardsBundle standards,
             outcome.Fields["SEARCH"] = new FieldResult
             {
                 Field = "SEARCH", Term = search, Expected = null,
-                Matches = CountField("SEARCH", search, effective),
+                Matches = CountSearch(search, effective),
             };
         return outcome;
     }

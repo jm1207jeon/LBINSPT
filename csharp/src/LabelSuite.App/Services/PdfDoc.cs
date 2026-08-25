@@ -54,7 +54,9 @@ public sealed class PdfDoc : IDisposable
                 options: new PDFtoImage.RenderOptions(Dpi: dpi));
             _cache[index] = bitmap;
             _order.AddLast(index);
-            while (_cache.Count > CachePages && _order.First is { } oldest)
+            // 초대형 렌더(고배율)는 캐시 페이지 수를 줄여 메모리 폭주 방지
+            var limit = bitmap.ByteCount > 60_000_000 ? 2 : CachePages;
+            while (_cache.Count > limit && _order.First is { } oldest)
             {
                 _order.RemoveFirst();
                 _cache[oldest.Value].Dispose();
@@ -72,6 +74,18 @@ public sealed class PdfDoc : IDisposable
         _bytes = null;
         Path = null;
         PageCount = 0;
+    }
+
+    /// <summary>렌더 비트맵 캐시만 비운다 (문서는 유지) — 렌더 배율 변경 시 필수.
+    /// 배율이 바뀌었는데 이전 배율의 비트맵을 재사용하면 좌표가 어긋난다.</summary>
+    public void ClearRenderCache()
+    {
+        lock (_lock)
+        {
+            foreach (var bitmap in _cache.Values) bitmap.Dispose();
+            _cache.Clear();
+            _order.Clear();
+        }
     }
 
     public void Close()

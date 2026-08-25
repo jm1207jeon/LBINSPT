@@ -58,6 +58,8 @@
                     <Button Content="저장 경로" Click="OnPickSaveDir"/>
                     <Button Content="CSV 내보내기" Click="OnExportCsv"
                             ToolTip="페이지별 판정 결과를 CSV로 내보냅니다"/>
+                    <Button Content="OCR 로그" Click="OnShowOcrLog"
+                            ToolTip="이 페이지에서 OCR이 실제로 읽은 모든 단어를 위→아래 순으로 보여줍니다 (미검출 원인 확인·교정 등록)"/>
                 </WrapPanel>
                 <!-- 페이지 상태 슬롯: 회색=대기 / 녹색=합격 / 주황=확인 필요, 클릭=이동 -->
                 <ItemsControl x:Name="PageSlots" Margin="2,4,2,0">

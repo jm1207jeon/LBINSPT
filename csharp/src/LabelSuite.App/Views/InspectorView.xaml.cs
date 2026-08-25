@@ -83,8 +83,7 @@ public partial class InspectorView : UserControl
         _formDetector = new LabelFormDetector(
             Path.Combine(AppConfig.DataDir(), "form_templates.json"));
         _formRules = LoadFormRules();
-        FormRow.Visibility = _formRules.Count > 0 ? Visibility.Visible
-                                                  : Visibility.Collapsed;
+        UpdateFormRowVisibility();
         _profiler = new LabelTypeProfiler(
             Path.Combine(AppConfig.DataDir(), "label_profiles.json"))
         { MinSamples = _config.SectionInt("type_learning", "min_samples", 5) };
@@ -131,6 +130,7 @@ public partial class InspectorView : UserControl
             Dispatcher.Invoke(() => OnPageFailed(gen, page, message));
 
         PopulateStandardButtons();
+        _analysisSig = CurrentAnalysisSig();
         _ = CheckAwsAsync();
     }
 
@@ -299,6 +299,19 @@ public partial class InspectorView : UserControl
         FillAlpha: (byte)Math.Clamp(_config.SectionInt("overlay", "fill_alpha", 90), 0, 255),
         ShowNumbers: _config.SectionBool("overlay", "show_numbers", false));
 
+    private string? _analysisSig;
+
+    /// <summary>분석 결과의 유효성을 좌우하는 설정 서명 — 바뀌면 렌더/분석 무효화.</summary>
+    private string CurrentAnalysisSig() =>
+        $"{PreprocessSig}|eng={CurrentOcrEngine().Id}" +
+        $"|cs={_config.SectionBool("ocr", "contrast_stretch", false)}" +
+        $"|zoom={_config.GetDouble("pdf_render_zoom", 4.0)}";
+
+    private void UpdateFormRowVisibility() =>
+        FormRow.Visibility = _formRules.Count > 0
+            || _engine.Options.CustomFields.Any(c => c.Standard is { Length: > 0 })
+            ? Visibility.Visible : Visibility.Collapsed;
+
     public void ApplyConfig()
     {
         _standards = StandardsBundle.Load(_config);
@@ -306,14 +319,32 @@ public partial class InspectorView : UserControl
         _textract = MakeTextract();
         _sameValueRules = LoadSameValueRules();
         _formRules = LoadFormRules();
-        FormRow.Visibility = _formRules.Count > 0 ? Visibility.Visible
-                                                  : Visibility.Collapsed;
+        UpdateFormRowVisibility();
         _profiler.MinSamples = _config.SectionInt("type_learning", "min_samples", 5);
-        ClearProcessed();   // 라벨 정렬 옵션이 바뀌었을 수 있음
         _pdf.RenderZoom = _config.GetDouble("pdf_render_zoom", 4.0);
         PopulateStandardButtons();
         _ = CheckAwsAsync();
-        ReinspectCurrent();
+
+        var signature = CurrentAnalysisSig();
+        if (_analysisSig != signature)
+        {
+            // 렌더 배율/대비 보정/엔진/정렬이 바뀜 → 이전 배율의 비트맵·분석을
+            // 재사용하면 좌표가 어긋나고 메모리가 폭주한다. 전부 무효화 후 재분석.
+            _analysisSig = signature;
+            _pdf.ClearRenderCache();
+            ClearProcessed();
+            _analyses.Clear();
+            _outcomes.Clear();
+            if (_pdf.IsOpen)
+            {
+                _worker.NewGeneration();
+                ShowPage(_currentPage);
+                SubmitPrefetchJobs();
+            }
+            UpdateDashboard();
+            UpdatePageSlots();
+        }
+        else ReinspectCurrent();
     }
 
     /// <summary>교정 사전이 바뀐 뒤 재검사 (설정 창/교정 등록에서 호출).</summary>
@@ -1419,21 +1450,46 @@ public partial class InspectorView : UserControl
                 .ToList();
             var choice = MessageBox.Show(
                 DiagnoseMissingField(row.Field, term, analysis) +
-                "\n\n[예] 인식 강화 파라미터(대비 보정 + 렌더 배율 5.0 + 최소 신뢰도 0)를 " +
-                "적용하고 이 PDF를 다시 OCR합니다.\n" +
-                "[아니오] 유사한 인식 결과 목록으로 오인식 교정 창을 엽니다.",
+                "\n\n[예] 이 페이지의 OCR 인식 로그를 열어 해당 구간이 실제로 어떻게 " +
+                "읽혔는지 확인하고 교정을 등록합니다.\n" +
+                "[아니오] 인식 강화 파라미터(대비 보정 + 렌더 배율 5.0 + 최소 신뢰도 0)를 " +
+                "적용하고 이 PDF를 다시 OCR합니다.",
                 "미검출 진단", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
             if (choice == MessageBoxResult.Cancel) return;
-            if (choice == MessageBoxResult.Yes)
+            if (choice == MessageBoxResult.No)
             {
                 ApplyRecognitionBoost();
                 return;
             }
+            OpenOcrLog(row.Field, term);
+            return;
         }
 
         var dialog = new CorrectionDialog(row.Field, term, candidates, _corrections)
         { Owner = Window.GetWindow(this) };
         if (dialog.ShowDialog() == true)
+        {
+            ReloadEngineAndReinspect();
+            StatusMessage?.Invoke("교정이 등록되었습니다 — 이후 검사부터 자동 적용됩니다.");
+        }
+    }
+
+    /// <summary>현재 페이지의 OCR 인식 로그 창 열기.</summary>
+    private void OnShowOcrLog(object sender, RoutedEventArgs e) => OpenOcrLog("", "");
+
+    private void OpenOcrLog(string field, string expectedTerm)
+    {
+        if (!_analyses.TryGetValue(_currentPage, out var analysis)
+            || _displayed is null)
+        {
+            MessageBox.Show("이 페이지의 OCR이 아직 끝나지 않았습니다.", "OCR 로그");
+            return;
+        }
+        var log = new OcrLogWindow(analysis.Words,
+                                   (_displayed.Width, _displayed.Height),
+                                   field, expectedTerm, _corrections)
+        { Owner = Window.GetWindow(this) };
+        if (log.ShowDialog() == true)
         {
             ReloadEngineAndReinspect();
             StatusMessage?.Invoke("교정이 등록되었습니다 — 이후 검사부터 자동 적용됩니다.");
@@ -1494,18 +1550,7 @@ public partial class InspectorView : UserControl
         if (_config.GetDouble("pdf_render_zoom", 4.0) < 5.0)
             _config.Settings["pdf_render_zoom"] = 5.0;
         _config.SaveSettings();
-        ApplyConfig();
-        if (_pdf.IsOpen && _pdf.Path is { } pdfPath)
-        {
-            var page = _currentPage;
-            _pdf.Open(pdfPath);   // 렌더 배율 변경 반영 (비트맵 캐시 초기화)
-            ClearProcessed();
-            _analyses.Clear();
-            _worker.NewGeneration();
-            _currentPage = page;
-            ShowPage(page);
-            SubmitPrefetchJobs();
-        }
+        ApplyConfig();   // 설정 서명 변경 감지 → 렌더/분석 무효화 후 재OCR
         StatusMessage?.Invoke("인식 강화 파라미터 적용 — 페이지를 다시 OCR합니다.");
     }
 

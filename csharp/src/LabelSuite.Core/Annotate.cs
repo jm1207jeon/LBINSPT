@@ -43,7 +43,9 @@ public static class Annotate
                 Color = new SKColor(color.R, color.G, color.B, 255),
                 Style = SKPaintStyle.Stroke, StrokeWidth = style.Thickness,
             };
-            var rect = new SKRect(x, y, x + w, y + h);
+            // 텍스트에 붙지 않도록 박스를 살짝 바깥으로 (높이 비례 여백)
+            var pad = Math.Max(3f, h * 0.12f);
+            var rect = new SKRect(x - pad, y - pad, x + w + pad, y + h + pad);
             canvas.DrawRect(rect, fill);
             canvas.DrawRect(rect, stroke);
             if (style.ShowNumbers)
@@ -51,8 +53,8 @@ public static class Annotate
                 var label = number.ToString();
                 var width = numberFont.MeasureText(label) + 8;
                 var height = style.NumberFontSize + 6;
-                var badge = new SKRect(x, Math.Max(0, y - height), x + width,
-                                       Math.Max(height, y));
+                var badge = new SKRect(rect.Left, Math.Max(0, rect.Top - height),
+                                       rect.Left + width, Math.Max(height, rect.Top));
                 using var badgeFill = new SKPaint
                 { Color = new SKColor(color.R, color.G, color.B, 230), Style = SKPaintStyle.Fill };
                 using var text = new SKPaint { Color = SKColors.White, IsAntialias = true };
