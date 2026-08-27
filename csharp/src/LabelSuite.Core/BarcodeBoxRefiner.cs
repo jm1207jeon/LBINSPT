@@ -69,18 +69,57 @@ public static class BarcodeBoxRefiner
 
         if (oneDimensional)
         {
-            // 1) 세로: 시드 스캔라인에서 막대 밴드로 (빈 줄 즉시 경계)
-            var capY = Math.Max(160, seedWidth);
-            Expand(ref y0, ref y1, 0, height, capY, window: 3, minRatio: 0.30,
-                   y => RowDark(y, x0, x1));
-            // 2) 가로: 시작/정지 패턴 중심 → 심볼 끝까지 (공백 4모듈 허용)
-            var spaceWindow = Math.Max(6, seedWidth / 15);
-            var capX = seedWidth * 2 + 80;
-            Expand(ref x0, ref x1, 0, width, capX, spaceWindow, minRatio: 0.35,
-                   x => ColDark(x, y0, y1));
-            // 3) 넓어진 가로 범위로 세로 한 번 더 (기울어진 인쇄 여유)
-            Expand(ref y0, ref y1, 0, height, capY, window: 3, minRatio: 0.30,
-                   y => RowDark(y, x0, x1));
+            // 세로 막대 '런(run)' 분석 — 시드 스캔라인을 가로지르는 세로 막대들의
+            // 실제 상/하단(중앙값)과 첫/끝 막대 위치를 직접 측정한다.
+            // 밀도 확장 방식은 스캔라인 주변 일부만 잡는 경우가 있어 교체.
+            var yCenter = Math.Clamp(y0 + (y1 - y0) / 2, 0, height - 1);
+            var margin = Math.Max(30, seedWidth / 5);
+            var winX0 = Math.Max(0, x0 - margin);
+            var winX1 = Math.Min(width, x1 + margin);
+            var winY0 = Math.Max(0, yCenter - 300);
+            var winY1 = Math.Min(height, yCenter + 300);
+
+            var bars = new List<(int X, int Top, int Bottom)>();
+            for (var x = winX0; x < winX1; x++)
+            {
+                // 스캔라인(±2px)에서 어두운 열만 막대 후보
+                var seedY = -1;
+                for (var dy = -2; dy <= 2 && seedY < 0; dy++)
+                {
+                    var y = yCenter + dy;
+                    if (y >= 0 && y < height && luma[y * width + x] < threshold)
+                        seedY = y;
+                }
+                if (seedY < 0) continue;
+                var top = seedY;
+                while (top > winY0 && luma[(top - 1) * width + x] < threshold) top--;
+                var bottom = seedY;
+                while (bottom < winY1 - 1 && luma[(bottom + 1) * width + x] < threshold)
+                    bottom++;
+                if (bottom - top + 1 >= 15) bars.Add((x, top, bottom));
+            }
+            if (bars.Count >= 8)
+            {
+                static int Median(IEnumerable<int> values)
+                {
+                    var sorted = values.OrderBy(v => v).ToList();
+                    return sorted[sorted.Count / 2];
+                }
+                var top = Median(bars.Select(b => b.Top));
+                var bottom = Median(bars.Select(b => b.Bottom));
+                var bandHeight = Math.Max(1, bottom - top);
+                // 밴드를 60% 이상 덮는 막대만 심볼로 인정 (주변 텍스트·잡티 배제)
+                var symbolBars = bars.Where(b =>
+                    Math.Min(b.Bottom, bottom) - Math.Max(b.Top, top)
+                    >= bandHeight * 0.6).ToList();
+                if (symbolBars.Count >= 8)
+                {
+                    var left = symbolBars.Min(b => b.X);
+                    var right = symbolBars.Max(b => b.X);
+                    return (left, top, right - left + 1, bottom - top + 1);
+                }
+            }
+            return seed;   // 막대를 찾지 못하면 시드 유지
         }
         else
         {
