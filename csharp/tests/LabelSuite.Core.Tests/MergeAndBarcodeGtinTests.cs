@@ -46,6 +46,17 @@ public class WordMergeRulesTests
     }
 
     [Fact]
+    public void ChainedMergeRulesApplyAcrossPasses()
+    {
+        var rules = new WordMergeRules();
+        rules.Add(["SINGLE", "USE"]);
+        rules.Add(["SINGLE USE", "ONLY"]);   // 병합 결과를 다시 참조
+        var result = rules.Apply(
+            [At("SINGLE", 0, 0), At("USE", 140, 0), At("ONLY", 220, 0)]);
+        Assert.Equal("SINGLE USE ONLY", Assert.Single(result).Text);
+    }
+
+    [Fact]
     public void PersistsAcrossInstances()
     {
         var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".json");
@@ -69,14 +80,21 @@ public class WordMergeRulesTests
             merges.Add(["MEGACATH", "KIT"]);
             var engine = new InspectionEngine(
                 StandardsBundle.Load(new AppConfig(directory)),
-                new InspectionOptions { Merges = merges });
+                new InspectionOptions
+                {
+                    Merges = merges,
+                    CustomFields = [new CustomFieldDef("제품명", "MEGACATH KIT",
+                                                       false, 1)],
+                });
             var record = new LabelRecord("25090776", "MEGACATH KIT", "HANARO-01",
                 "NCN20-080-230", "2024-05-10", "2027-05-09", "08806173612345", "MDR");
-            // 병합 전에는 "MEGACATH KIT"이 두 단어라 PRODUCTS 매칭 불가 →
+            // 병합 전에는 "MEGACATH KIT"이 두 단어라 매칭 불가 →
             // 병합 규칙 적용 후 한 문장으로 합쳐져 매칭된다
             var outcome = engine.Inspect(record, "MDR",
                 [At("MEGACATH", 0, 0), At("KIT", 180, 0)]);
-            Assert.Equal(1, outcome.Fields["PRODUCTS"].Found);
+            Assert.Equal(1, outcome.Fields["제품명"].Found);
+            // 기본 검출 필드는 6종 — PRODUCTS는 기대 횟수 없으면 검사·표시 제외
+            Assert.False(outcome.Fields.ContainsKey("PRODUCTS"));
         }
         finally { Directory.Delete(directory, recursive: true); }
     }

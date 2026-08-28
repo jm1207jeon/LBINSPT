@@ -226,6 +226,9 @@ public sealed class InspectionEngine(StandardsBundle standards,
                 continue;   // 사용자가 제외한 필드 (LOT은 매칭 기준이라 항상 유지)
             int? expected = standard.Counts.TryGetValue(fieldName, out var count)
                 ? count : null;
+            // 기본 검출 필드는 LOT/PN/REF/MFG/EXP/GTIN(+중국 규격의 CHINA) —
+            // PRODUCTS는 규격이 명시적으로 기대 횟수를 요구할 때만 검사한다
+            if (fieldName == "PRODUCTS" && expected is null or <= 0) continue;
             // GTIN은 바코드 리딩이 있으면 그것을 기준으로 (인쇄=바코드 가정, OCR보다 정확)
             var matches = fieldName == "GTIN"
                 && BarcodeGtinMatches(term, barcodes) is { } fromBarcodes

@@ -52,8 +52,22 @@ public sealed class WordMergeRules(string? path = null)
         Save();
     }
 
-    /// <summary>같은 줄에서 규칙 순서대로 나란히 등장하는 단어들을 병합한다.</summary>
+    /// <summary>같은 줄에서 규칙 순서대로 나란히 등장하는 단어들을 병합한다.
+    /// 병합 결과를 다시 참조하는 규칙(중첩 병합)을 위해 변화가 없을 때까지
+    /// 최대 3회 반복 적용한다.</summary>
     public List<OcrWord> Apply(IReadOnlyList<OcrWord> words)
+    {
+        var current = words.ToList();
+        for (var pass = 0; pass < 3; pass++)
+        {
+            var next = ApplyOnce(current);
+            if (next.Count == current.Count) return next;
+            current = next;
+        }
+        return current;
+    }
+
+    private List<OcrWord> ApplyOnce(IReadOnlyList<OcrWord> words)
     {
         List<List<string>> rules;
         lock (_lock) rules = _rules.Select(r => r.ToList()).ToList();

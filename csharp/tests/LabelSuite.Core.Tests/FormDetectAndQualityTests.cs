@@ -42,6 +42,9 @@ public class LabelFormDetectorTests : IDisposable
         Assert.NotNull(inside);
         Assert.Equal(("A00", "A00", "텍스트"),
                      (inside!.Name, inside.Standard, inside.Method));
+        // 판별에 쓰인 OCR 단어의 바운딩 박스 반환 (검사 화면 박스 표시용)
+        Assert.NotNull(inside.TextBbox);
+        Assert.Equal(WordAt("Rev.A00", 0.75, 0.08).Bbox, inside.TextBbox!.Value);
 
         // 같은 텍스트라도 영역 밖(좌하단)이면 감지하지 않음
         Assert.Null(detector.Detect(rules, [WordAt("Rev.A00", 0.2, 0.9)], image));

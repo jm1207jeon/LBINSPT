@@ -776,9 +776,11 @@ public partial class InspectorView : UserControl
             }
 
         // 라벨 양식 자동 감지 (설정된 위치의 텍스트/이미지 패턴) → 규격 자동 선택
+        FormDetection? detectedForm = null;
         if (_formRules.Count > 0)
         {
             var form = _formDetector.Detect(_formRules, analysis.Words, image);
+            detectedForm = form;
             if (form is not null)
             {
                 FormMatchLabel.Text =
@@ -830,6 +832,10 @@ public partial class InspectorView : UserControl
             image, outcome.AllMatches, _standards.FieldColors, CurrentOverlayStyle());
         // 검출된 바코드(DataMatrix·GS1-128 등)에도 박스 표시
         Annotate.DrawBarcodeBoxes(annotated, analysis.Barcodes, CurrentOverlayStyle());
+        // 규격 자동 판별에 쓰인 양식명 OCR 영역도 박스 표시 (보라색)
+        if (detectedForm is { TextBbox: { } formBbox } detected)
+            Annotate.DrawTaggedBox(annotated, formBbox, $"양식: {detected.Name}",
+                                   new SKColor(128, 0, 160), CurrentOverlayStyle());
         // 저신뢰 OCR 알람 — 유의미하게 낮으면 해당 단어를 주황 파선으로 하이라이트
         if (_config.SectionBool("ocr", "quality_alarm", true))
         {
@@ -905,7 +911,6 @@ public partial class InspectorView : UserControl
             StatusBadge.Background = (Brush)FindResource("WarnBgBrush");
         }
         FieldGrid.ItemsSource = outcome.Fields.Values
-            .Where(f => f.Field != "PRODUCTS")   // 요청: 필드별 검출에서 PRODUCTS 제외
             .Select(f => new FieldRowVm(
                 f.Field, f.Term.Length > 0 ? f.Term : "-",
                 f.Expected is { } expected ? $"{f.Found}/{expected}" : f.Found.ToString(),
@@ -1508,10 +1513,11 @@ public partial class InspectorView : UserControl
                                    (_displayed.Width, _displayed.Height),
                                    field, expectedTerm, _corrections, _merges)
         { Owner = Window.GetWindow(this) };
-        if (log.ShowDialog() == true)
+        log.ShowDialog();
+        if (log.Changed)   // 병합/교정이 있었으면 (X로 닫아도) 재검사
         {
             ReloadEngineAndReinspect();
-            StatusMessage?.Invoke("교정이 등록되었습니다 — 이후 검사부터 자동 적용됩니다.");
+            StatusMessage?.Invoke("병합/교정이 등록되었습니다 — 이후 검사부터 자동 적용됩니다.");
         }
     }
 

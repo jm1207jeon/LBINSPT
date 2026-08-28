@@ -17,7 +17,14 @@ public partial class OcrLogWindow : Window
     private readonly string _expectedTerm;
     private readonly OcrCorrections _corrections;
     private readonly WordMergeRules _merges;
-    private readonly List<RowVm> _rows;
+    private readonly List<OcrWord> _words;
+    private readonly (int W, int H) _pageSize;
+    private List<RowVm> _rows = [];
+    private bool _changed;   // 병합/교정이 있었으면 닫을 때 재검사 트리거
+
+    /// <summary>병합/교정 등록이 한 건이라도 있었는지 (호출측 재검사 판단용 —
+    /// X 버튼으로 닫아도 유효).</summary>
+    public bool Changed => _changed;
 
     public OcrLogWindow(IReadOnlyList<OcrWord> words, (int W, int H) pageSize,
                         string field, string expectedTerm,
@@ -28,6 +35,8 @@ public partial class OcrLogWindow : Window
         _expectedTerm = expectedTerm;
         _corrections = corrections;
         _merges = merges;
+        _words = words.ToList();
+        _pageSize = pageSize;
 
         HeaderText.Text = expectedTerm.Length > 0
             ? $"필드 {field} — 기대값 '{expectedTerm}' 이(가) 검출되지 않았습니다. " +
@@ -39,21 +48,29 @@ public partial class OcrLogWindow : Window
         SimilarSortCheck.Visibility = expectedTerm.Length > 0
             ? Visibility.Visible : Visibility.Collapsed;
 
-        var ordered = words.OrderBy(w => w.Bbox.Y).ThenBy(w => w.Bbox.X).ToList();
+        BuildRows();
+        Refresh();
+    }
+
+    /// <summary>병합 규칙을 적용한 상태로 행 목록 구성 — 병합된 문구는
+    /// 재오픈/재구성 시에도 묶인 상태로 표시된다.</summary>
+    private void BuildRows()
+    {
+        var effective = _merges.Apply(_words);
+        var ordered = effective.OrderBy(w => w.Bbox.Y).ThenBy(w => w.Bbox.X).ToList();
         _rows = ordered.Select((w, i) =>
         {
-            var similarity = expectedTerm.Length > 0
-                ? InspectionEngine.SimilarityScore(w.Text.Trim(), expectedTerm,
+            var similarity = _expectedTerm.Length > 0
+                ? InspectionEngine.SimilarityScore(w.Text.Trim(), _expectedTerm,
                                                    w.Confidence)
                 : 0;
             return new RowVm(
                 (i + 1).ToString(), w.Text.Trim(), w.Confidence,
-                $"{(w.Bbox.X + w.Bbox.W / 2.0) / Math.Max(1, pageSize.W) * 100:F0}",
-                $"{(w.Bbox.Y + w.Bbox.H / 2.0) / Math.Max(1, pageSize.H) * 100:F0}",
-                expectedTerm.Length > 0 ? similarity.ToString("F0") : "",
+                $"{(w.Bbox.X + w.Bbox.W / 2.0) / Math.Max(1, _pageSize.W) * 100:F0}",
+                $"{(w.Bbox.Y + w.Bbox.H / 2.0) / Math.Max(1, _pageSize.H) * 100:F0}",
+                _expectedTerm.Length > 0 ? similarity.ToString("F0") : "",
                 w.Confidence < 70, similarity);
         }).ToList();
-        Refresh();
     }
 
     private void Refresh()
@@ -97,11 +114,11 @@ public partial class OcrLogWindow : Window
                             MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        MessageBox.Show(
-            $"병합 패턴 등록: \"{phrase}\"\n이후 검사부터 이 단어들이 나란히 " +
-            "인식되면 하나의 문장으로 합쳐집니다. (설정 → OCR 교정 사전에서 관리)",
-            "병합 학습", MessageBoxButton.OK, MessageBoxImage.Information);
-        DialogResult = true;   // 재검사 트리거
+        _changed = true;
+        // 창을 유지하고 병합된 상태로 목록 갱신 — 다음 단어를 계속 처리
+        BuildRows();
+        Refresh();
+        CountText.Text += $"  ·  병합됨: \"{phrase}\"";
     }
 
     private void OnRegister(object sender, RoutedEventArgs e)
@@ -128,8 +145,9 @@ public partial class OcrLogWindow : Window
         }
         _corrections.Add(row.Text, right,
                          _field.Length > 0 ? _field : null);
+        _changed = true;
         DialogResult = true;
     }
 
-    private void OnClose(object sender, RoutedEventArgs e) => DialogResult = false;
+    private void OnClose(object sender, RoutedEventArgs e) => DialogResult = _changed;
 }

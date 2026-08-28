@@ -19,7 +19,8 @@ public sealed record LabelFormRule(
     string TextPattern, bool UseImage);
 
 public sealed record FormDetection(string Name, string Standard, double Score,
-                                   string Method);
+                                   string Method,
+                                   (int X, int Y, int W, int H)? TextBbox = null);
 
 public sealed class LabelFormDetector(string? templatePath = null)
 {
@@ -42,11 +43,12 @@ public sealed class LabelFormDetector(string? templatePath = null)
         foreach (var rule in rules)
         {
             if (rule.Name.Trim().Length == 0) continue;
-            var textOk = false;
+            (int, int, int, int)? textBbox = null;
             var imageScore = -1.0;
 
             if (rule.TextPattern.Trim().Length > 0)
-                textOk = TextMatches(rule, words, (image.Width, image.Height));
+                textBbox = TextMatch(rule, words, (image.Width, image.Height));
+            var textOk = textBbox is not null;
             if (rule.UseImage && _templates.ContainsKey(rule.Name))
                 imageScore = ImageScore(rule, image);
 
@@ -60,26 +62,28 @@ public sealed class LabelFormDetector(string? templatePath = null)
                        : textOk ? "텍스트" : "이미지";
             if (best is null || score > best.Score)
                 best = new FormDetection(rule.Name.Trim(), rule.Standard.Trim(),
-                                         Math.Min(1, score), method);
+                                         Math.Min(1, score), method, textBbox);
         }
         return best;
     }
 
-    private static bool TextMatches(LabelFormRule rule, IReadOnlyList<OcrWord> words,
-                                    (int W, int H) pageSize)
+    /// <summary>규칙 영역 안에서 패턴과 일치하는 단어의 바운딩 박스 (없으면 null).</summary>
+    private static (int, int, int, int)? TextMatch(LabelFormRule rule,
+                                                   IReadOnlyList<OcrWord> words,
+                                                   (int W, int H) pageSize)
     {
         Regex regex;
         try { regex = new Regex(rule.TextPattern.Trim(), RegexOptions.IgnoreCase); }
-        catch (ArgumentException) { return false; }
+        catch (ArgumentException) { return null; }
         foreach (var word in words)
         {
             var cx = (word.Bbox.X + word.Bbox.W / 2.0) / Math.Max(1, pageSize.W);
             var cy = (word.Bbox.Y + word.Bbox.H / 2.0) / Math.Max(1, pageSize.H);
             if (cx < rule.Region.X || cx > rule.Region.X + rule.Region.W
                 || cy < rule.Region.Y || cy > rule.Region.Y + rule.Region.H) continue;
-            if (regex.IsMatch(word.Text.Trim())) return true;
+            if (regex.IsMatch(word.Text.Trim())) return word.Bbox;
         }
-        return false;
+        return null;
     }
 
     private double ImageScore(LabelFormRule rule, SKBitmap image)

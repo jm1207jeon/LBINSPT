@@ -47,6 +47,7 @@ public static class BarcodeDetector
     public static List<BarcodeHit> Detect(SKBitmap image)
     {
         var hits = new List<BarcodeHit>();
+        var dmFromMultiple = new List<BarcodeHit>();
         Result[]? results;
         try { results = Reader.DecodeMultiple(image); }
         catch (Exception) { results = null; }
@@ -61,34 +62,47 @@ public static class BarcodeDetector
             var seed = (x, y, Math.Max(1, xs.Max() - x), Math.Max(1, ys.Max() - y));
             var bbox = BarcodeBoxRefiner.Refine(image, seed, Is1D(result.BarcodeFormat));
             var isGs1 = LooksGs1(result.Text);
-            hits.Add(new BarcodeHit(
+            var hit = new BarcodeHit(
                 BarcodeSymbology.Normalize(result.BarcodeFormat.ToString(), isGs1),
-                result.Text, bbox, isGs1));
+                result.Text, bbox, isGs1);
+            // DataMatrix는 로케이터 전수 탐지가 기준 — DecodeMultiple 결과는 보충용
+            if (result.BarcodeFormat == BarcodeFormat.DATA_MATRIX)
+                dmFromMultiple.Add(hit);
+            else hits.Add(hit);
         }
-        SupplementDataMatrix(image, hits);
+
+        // DataMatrix 전수 탐지: 라벨의 모든 위치·크기의 심볼을 후보로 찾아
+        // 각각 집중 디코딩. 같은 값이 여러 위치에 인쇄된 경우도 전부 유지한다
+        // (중복 제거는 '위치 겹침'으로만 판단).
+        var dataMatrixHits = DetectAllDataMatrix(image);
+        foreach (var fallback in dmFromMultiple)
+            if (!dataMatrixHits.Any(h => Overlaps(h.Bbox, fallback.Bbox)))
+                dataMatrixHits.Add(fallback);
+        hits.AddRange(dataMatrixHits);
         return hits;
     }
 
-    /// <summary>ZXing 전체 페이지 다중 검색이 놓친 DataMatrix 보강 탐지 —
-    /// 어두운 정방형 후보 영역을 직접 찾아 그 부분만 잘라 집중 디코딩한다.
-    /// (큰 이미지 속 작은 DataMatrix를 DecodeMultiple이 놓치는 알려진 약점 보완)</summary>
-    private static void SupplementDataMatrix(SKBitmap image, List<BarcodeHit> hits)
+    /// <summary>DataMatrix 전수 탐지 — 어두운 정방형 후보 영역을 모두 찾아
+    /// 각 영역을 잘라 집중 디코딩한다. (ZXing DecodeMultiple이 큰 이미지 속
+    /// 여러/작은 DataMatrix를 놓치는 약점을 보완, 위치·크기 무관 전부 검출)</summary>
+    private static List<BarcodeHit> DetectAllDataMatrix(SKBitmap image)
     {
+        var found = new List<BarcodeHit>();
         List<(int X, int Y, int W, int H)> candidates;
         try { candidates = DataMatrixLocator.FindCandidates(image); }
-        catch (Exception) { return; }
+        catch (Exception) { return found; }
         foreach (var candidate in candidates)
         {
-            if (hits.Any(h => Overlaps(h.Bbox, candidate))) continue;
+            if (found.Any(h => Overlaps(h.Bbox, candidate))) continue;
             var text = TryDecodeCrop(image, candidate);
             if (string.IsNullOrEmpty(text)) continue;
-            if (hits.Any(h => h.Text == text)) continue;   // 동일 심볼 중복 방지
             var bbox = BarcodeBoxRefiner.Refine(image, candidate,
                                                 oneDimensional: false);
             var isGs1 = LooksGs1(text);
-            hits.Add(new BarcodeHit(BarcodeSymbology.Normalize("DATA_MATRIX", isGs1),
-                                    text, bbox, isGs1));
+            found.Add(new BarcodeHit(BarcodeSymbology.Normalize("DATA_MATRIX", isGs1),
+                                     text, bbox, isGs1));
         }
+        return found;
     }
 
     private static bool Overlaps((int X, int Y, int W, int H) a,

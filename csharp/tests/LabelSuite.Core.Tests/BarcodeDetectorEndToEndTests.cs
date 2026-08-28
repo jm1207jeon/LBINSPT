@@ -60,6 +60,42 @@ public class BarcodeDetectorEndToEndTests
     }
 
     [Fact]
+    public void DetectsMultipleDataMatricesRegardlessOfSizeAndPosition()
+    {
+        // 같은 값 2개(크기 다름) + 다른 값 1개 — 위치·크기 무관 전부 검출돼야 한다
+        using var page = new SKBitmap(1200, 900);
+        var placements = new (string Content, int X, int Y, int Size)[]
+        {
+            ("(01)08806173612345(10)25090776", 100, 100, 120),
+            ("(01)08806173612345(10)25090776", 900, 640, 160),   // 동일 값, 다른 위치
+            ("(01)08806173612399(10)25100113", 620, 120, 90),    // 다른 값, 소형
+        };
+        using (var canvas = new SKCanvas(page))
+        {
+            canvas.Clear(SKColors.White);
+            foreach (var (content, x, y, size) in placements)
+            {
+                using var symbol = Encode(BarcodeFormat.DATA_MATRIX, content,
+                                          size, size);
+                canvas.DrawBitmap(symbol, x, y);
+            }
+        }
+
+        var hits = BarcodeDetector.Detect(page)
+            .Where(h => h.Symbology.Contains("DataMatrix")).ToList();
+        Assert.Equal(3, hits.Count);
+        // 각 배치 위치마다 그 중심을 포함하는 박스가 정확히 하나씩
+        foreach (var (content, x, y, size) in placements)
+        {
+            var hit = Assert.Single(hits, h =>
+                x + size / 2 >= h.Bbox.X && x + size / 2 <= h.Bbox.X + h.Bbox.W
+                && y + size / 2 >= h.Bbox.Y && y + size / 2 <= h.Bbox.Y + h.Bbox.H);
+            Assert.Equal(content, hit.Text);   // 위치별로 올바른 값이 대응
+            Assert.InRange(hit.Bbox.W, (int)(size * 0.55), (int)(size * 1.4));
+        }
+    }
+
+    [Fact]
     public void LocatorFindsDataMatrixCandidateOnComposedPage()
     {
         using var page = new SKBitmap(1000, 800);
