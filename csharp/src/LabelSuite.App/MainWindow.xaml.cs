@@ -16,7 +16,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         Config = new AppConfig();
-        History = new HistoryDb(Path.Combine(AppConfig.DataDir(), "history.sqlite3"));
+        History = OpenHistoryWithRecovery(
+            Path.Combine(AppConfig.DataDir(), "history.sqlite3"));
         Corrections = new OcrCorrections(
             Path.Combine(AppConfig.DataDir(), "ocr_corrections.json"));
         Glyphs = new GlyphLibrary(Path.Combine(AppConfig.DataDir(), "glyphs.json"));
@@ -49,6 +50,35 @@ public partial class MainWindow : Window
             Inspector.Shutdown();
             History.Dispose();
         };
+        if (Config.RecoveredFiles.Count > 0)
+            Loaded += (_, _) => MessageBox.Show(
+                $"손상된 설정 파일을 기본값으로 복구했습니다: " +
+                $"{string.Join(", ", Config.RecoveredFiles)}\n" +
+                "이전 파일은 같은 폴더에 .corrupt-시각 이름으로 보관되어 있습니다.",
+                "설정 복구", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    /// <summary>이력 DB가 손상돼 열리지 않으면 보관 후 새로 만든다 — DB 하나 때문에
+    /// 프로그램이 시작조차 못 하는 상황 방지.</summary>
+    private static HistoryDb OpenHistoryWithRecovery(string path)
+    {
+        try { return new HistoryDb(path); }
+        catch (Exception first)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Move(path, $"{path}.corrupt-{DateTime.Now:yyyyMMdd-HHmmss}",
+                              overwrite: true);
+                var db = new HistoryDb(path);
+                MessageBox.Show(
+                    $"검사 이력 DB를 열 수 없어 새로 만들었습니다.\n원인: {first.Message}\n" +
+                    "이전 DB는 .corrupt-시각 이름으로 보관되어 있습니다.",
+                    "이력 DB 복구", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return db;
+            }
+            catch (Exception) { throw first; }
+        }
     }
 
     private void ShowStatus(string message) =>

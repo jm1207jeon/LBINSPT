@@ -71,8 +71,27 @@ public class AppConfig
         return reader.ReadToEnd();
     }
 
-    private JsonObject Read(string name) =>
-        JsonNode.Parse(File.ReadAllText(Path.Combine(Directory, name)))!.AsObject();
+    /// <summary>설정 파일 읽기. 손상(JSON 파싱 실패)이면 파일을 .corrupt-시각 으로
+    /// 보관하고 기본값으로 복구한다 — 손상된 설정 하나로 프로그램이 매번 시작
+    /// 실패하는 상황을 막는다.</summary>
+    private JsonObject Read(string name)
+    {
+        var path = Path.Combine(Directory, name);
+        try
+        {
+            if (JsonNode.Parse(File.ReadAllText(path)) is JsonObject parsed) return parsed;
+        }
+        catch (JsonException) { }
+        var backup = $"{path}.corrupt-{DateTime.Now:yyyyMMdd-HHmmss}";
+        try { File.Move(path, backup, overwrite: true); }
+        catch (IOException) { }
+        File.WriteAllText(path, ReadEmbedded(name));
+        RecoveredFiles.Add(name);
+        return JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+    }
+
+    /// <summary>이번 로드에서 손상 복구된 설정 파일 이름 (UI 안내용).</summary>
+    public List<string> RecoveredFiles { get; } = [];
 
     private void Migrate()
     {

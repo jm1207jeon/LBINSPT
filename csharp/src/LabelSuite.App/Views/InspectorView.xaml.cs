@@ -684,12 +684,33 @@ public partial class InspectorView : UserControl
             RunInspection(page, analysis, RenderProcessed(page));
     }
 
+    private string? _lastFailureMessage;
+    private DateTime _lastFailureShownAt;
+
     private void OnPageFailed(int generation, int page, string message)
     {
         if (generation != _worker.Generation) return;
         StatusMessage?.Invoke($"{page + 1}페이지 OCR 실패: {message}");
-        if (page == _currentPage) ClearResultPanel($"OCR 실패: {message}");
-        MessageBox.Show(message, "OCR 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+        if (page == _currentPage)
+            ClearResultPanel($"OCR 실패 — {ShortMessage(message)}");
+        // 같은 원인(예: 자격증명 오류)으로 페이지마다 팝업이 연쇄되는 것을 막는다:
+        // 동일 메시지는 60초에 한 번만 알리고, 남은 프리페치는 중단한다.
+        var sameAsLast = message == _lastFailureMessage
+                         && DateTime.Now - _lastFailureShownAt < TimeSpan.FromSeconds(60);
+        if (sameAsLast) return;
+        _lastFailureMessage = message;
+        _lastFailureShownAt = DateTime.Now;
+        _worker.NewGeneration();   // 대기 중인 프리페치 잡 폐기 (재과금·연쇄 실패 방지)
+        MessageBox.Show(
+            $"{message}\n\n남은 페이지의 자동 OCR을 중단했습니다. 설정(OCR 엔진·AWS " +
+            "자격증명)을 확인한 뒤 페이지를 이동하면 다시 시도합니다.",
+            "OCR 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    private static string ShortMessage(string message)
+    {
+        var first = message.Split('\n')[0].Trim();
+        return first.Length > 60 ? first[..60] + "…" : first;
     }
 
     private void UpdatePrefetchLabel()
@@ -808,6 +829,12 @@ public partial class InspectorView : UserControl
             return;
         }
 
+        if (_standards.Standards.Count == 0)
+        {
+            SetViewerImage(image, fit);
+            ClearResultPanel("규격 정의가 없습니다 — 설정 폴더의 standards.json을 확인하세요");
+            return;
+        }
         var standardName = _selectedStandard ?? _standards.Standards.Keys.First();
         var barcodeChecks = BarcodeDetector.CrossCheckHits(analysis.Barcodes, record);
         // 사전 등록 기준정보(마스터 DB) 대조
@@ -1138,6 +1165,15 @@ public partial class InspectorView : UserControl
     private bool _zoneDragging;
     private Point _zoneStart;   // ViewerImage 표시 좌표
 
+    private void OnZoneModeChanged(object sender, RoutedEventArgs e)
+    {
+        var on = ZoneModeButton.IsChecked == true;
+        ViewerScroll.Cursor = on ? Cursors.Cross : Cursors.Arrow;
+        StatusMessage?.Invoke(on
+            ? "필드 영역 등록 모드 — 라벨 위를 드래그(영역) 또는 클릭(객체)하세요. 다시 누르면 해제"
+            : "필드 영역 등록 모드 해제");
+    }
+
     private void OnViewerMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.LeftButton != MouseButtonState.Pressed || _displayed is null) return;
@@ -1191,7 +1227,7 @@ public partial class InspectorView : UserControl
             return;
         }
         _panning = false;
-        ViewerScroll.Cursor = Cursors.Arrow;
+        ViewerScroll.Cursor = ZoneModeButton.IsChecked == true ? Cursors.Cross : Cursors.Arrow;
     }
 
     // ---------------- 필드 영역 등록 (드래그/객체 클릭) ----------------
@@ -1377,7 +1413,16 @@ public partial class InspectorView : UserControl
         var currentStroke = (Brush)FindResource("AccentBrush");
         var normalStroke = new SolidColorBrush(Color.FromRgb(0xCF, 0xCF, 0xCF));
         var slots = new List<PageSlotVm>();
-        for (var page = 0; page < _pdf.PageCount; page++)
+        // 페이지가 아주 많으면 슬롯이 읽을 수 없게 작아진다 — 현재 페이지 주변 60개만
+        const int MaxSlots = 60;
+        var first = 0;
+        var last = _pdf.PageCount;
+        if (_pdf.PageCount > MaxSlots)
+        {
+            first = Math.Clamp(_currentPage - MaxSlots / 2, 0, _pdf.PageCount - MaxSlots);
+            last = first + MaxSlots;
+        }
+        for (var page = first; page < last; page++)
         {
             var hasOutcome = _outcomes.TryGetValue(page, out var outcome);
             var fill = !hasOutcome ? gray : outcome!.Passed ? green : orange;
@@ -1653,7 +1698,13 @@ public partial class InspectorView : UserControl
                             MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
-        _history?.RecordInspection(outcome, path, "pdf", _pdf.Path, page);
+        try { _history?.RecordInspection(outcome, path, "pdf", _pdf.Path, page); }
+        catch (Exception ex)
+        {
+            // 이미지는 저장됐으므로 이력 기록 실패만 알리고 계속 진행
+            StatusMessage?.Invoke($"저장됨: {filename} (이력 기록 실패: {ShortMessage(ex.Message)})");
+            return;
+        }
         StatusMessage?.Invoke($"저장됨: {filename}");
         if (notify)
             MessageBox.Show($"저장됨: {filename}", "저장 완료",
