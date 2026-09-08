@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Data;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
