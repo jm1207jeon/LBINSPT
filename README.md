@@ -47,7 +47,7 @@ UDInspect와 같은 간이 검증 트랙(위험 낮음)을 전제로 합니다.
 ## 빌드 / 테스트 / 실행
 
 ```bash
-# 테스트 (Windows 또는 Linux — 262건)
+# 테스트 (Windows 또는 Linux — 263건)
 dotnet test csharp/tests/LabelSuite.Core.Tests
 # 실행 (Windows)
 dotnet run --project csharp/src/LabelSuite.App
@@ -77,7 +77,7 @@ dotnet publish csharp/src/LabelSuite.App -c Release -r win-x64 --self-contained 
 csharp/
 ├── src/LabelSuite.Core/   # GUI 비의존 순수 로직 (스키마·생성·검사·OCR·바코드·이력)
 ├── src/LabelSuite.App/    # WPF GUI (검사/목록/이력 탭, 설정 창, 뷰어)
-└── tests/                 # xunit 262건 (합성 렌더링 OCR 왕복·소스 규약·테마 정합 포함)
+└── tests/                 # xunit 263건 (합성 렌더링 OCR 왕복·소스 규약·테마 정합 포함)
 docs/                      # 워크플로 분석·비교 보고서·체크리스트
 .github/workflows/         # 테스트 → 빌드 → 폴더 패키징 → 릴리스
 ```

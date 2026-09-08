@@ -139,4 +139,23 @@ public class ThemeTokenTests(ITestOutputHelper output)
             "인라인 색 잔존 — Theme.xaml 토큰({StaticResource …Brush})으로 바꾸세요:\n  "
             + string.Join("\n  ", offenders));
     }
+
+    /// <summary>docs/family_design.md가 언급하는 스타일·브러시 토큰이 Theme.xaml에 실제로 존재한다 —
+    /// 문서와 코드가 어긋나면(토큰 삭제·개명) 문서 갱신을 강제한다.</summary>
+    [Fact]
+    public void FamilyDesignDocTokensExist()
+    {
+        if (!AppSourceLocator.TryFind(out var app)) return;
+        var repo = Directory.GetParent(Directory.GetParent(Directory.GetParent(app)!.FullName)!.FullName)!.FullName;
+        var doc = Path.Combine(repo, "docs", "family_design.md");
+        if (!File.Exists(doc)) return;
+        var theme = File.ReadAllText(Path.Combine(app, "Theme.xaml"));
+        var keys = System.Text.RegularExpressions.Regex.Matches(theme, "x:Key=\"([^\"]+)\"")
+            .Select(m => m.Groups[1].Value).ToHashSet();
+        var mentioned = System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(doc),
+                "`([A-Z][A-Za-z]+(?:Brush|Color|Size|Button|Text|Panel|Chip|Banner|Card|Toggle|VSep))`")
+            .Select(m => m.Groups[1].Value).Distinct().ToList();
+        var missing = mentioned.Where(k => !keys.Contains(k)).ToList();
+        Assert.True(missing.Count == 0, "family_design.md에 있으나 Theme.xaml에 없는 토큰: " + string.Join(", ", missing));
+    }
 }
