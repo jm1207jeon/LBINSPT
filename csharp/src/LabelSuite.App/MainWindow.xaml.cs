@@ -1,5 +1,7 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Threading;
 using LabelSuite.Core;
 
 namespace LabelSuite.App;
@@ -11,6 +13,12 @@ public partial class MainWindow : Window
     public OcrCorrections Corrections { get; }
     public WordMergeRules Merges { get; }
     public GlyphLibrary Glyphs { get; }
+
+    /// <summary>경고/오류 메시지가 다음 정보 메시지에 바로 덮이지 않도록 고정하는 시간.</summary>
+    private static readonly TimeSpan AlertHold = TimeSpan.FromSeconds(5);
+    private DateTime _alertUntil = DateTime.MinValue;
+    private string? _pendingInfo;
+    private readonly DispatcherTimer _alertTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
 
     public MainWindow()
     {
@@ -30,11 +38,12 @@ public partial class MainWindow : Window
         Generator.StatusMessage += ShowStatus;
         Inspector.StatusMessage += ShowStatus;
         Inspector.AwsStatusChanged += OnAwsStatus;
+        Inspector.ProgressChanged += OnProgress;
         Generator.ListGenerated += records =>
         {
             Inspector.LoadRecords(records);
             Tabs.SelectedIndex = 1;
-            ShowStatus($"검사 목록 {records.Count}건을 검사 탭으로 전달했습니다.");
+            ShowStatus($"검사 목록 {records.Count}건을 검사 탭으로 전달했습니다.", StatusLevel.Info);
         };
         Tabs.SelectionChanged += (_, _) =>
         {
@@ -44,6 +53,25 @@ public partial class MainWindow : Window
         PreviewKeyDown += (_, e) =>
         {
             if (Tabs.SelectedIndex == 1) Inspector.HandleGlobalKey(e);
+        };
+        _alertTimer.Tick += (_, _) =>
+        {
+            if (DateTime.Now < _alertUntil) return;
+            _alertTimer.Stop();
+            if (_pendingInfo is { } pending) { _pendingInfo = null; ApplyStatus(pending, StatusLevel.Info); }
+        };
+        // 미저장 결과가 있으면 종료 전 확인 (기본 버튼 '아니오' — Enter 오조작 방지)
+        Closing += (_, e) =>
+        {
+            var unsaved = Inspector.UnsavedCount;
+            if (unsaved == 0) return;
+            var answer = MessageBox.Show(this,
+                $"판정된 페이지 중 {unsaved}건의 결과가 아직 저장되지 않았습니다.\n" +
+                "([결과 저장] 또는 [자동 저장]으로 결과 이미지·이력이 저장됩니다)\n\n" +
+                "그래도 종료하시겠습니까?",
+                "종료 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                MessageBoxResult.No);
+            if (answer != MessageBoxResult.Yes) e.Cancel = true;
         };
         Closed += (_, _) =>
         {
@@ -81,16 +109,55 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ShowStatus(string message) =>
-        Dispatcher.Invoke(() => StatusText.Text = message);
+    // ---------------- 상태바: 3단계 메시지 (UDInspect 규범) ----------------
+
+    private void ShowStatus(string message, StatusLevel level) =>
+        Dispatcher.Invoke(() =>
+        {
+            if (level == StatusLevel.Info && DateTime.Now < _alertUntil)
+            {
+                // 경고/오류 고정 중 — 정보 메시지는 고정이 풀린 뒤 표시
+                _pendingInfo = message;
+                if (!_alertTimer.IsEnabled) _alertTimer.Start();
+                return;
+            }
+            ApplyStatus(message, level);
+        });
+
+    private void ApplyStatus(string message, StatusLevel level)
+    {
+        StatusText.Text = $"[{DateTime.Now:HH:mm:ss}] {message}";
+        if (level != StatusLevel.Info) AppLog.Warn(message);
+        StatusText.Foreground = level switch
+        {
+            StatusLevel.Error => (Brush)FindResource("StatusErrorBrush"),
+            StatusLevel.Warn => (Brush)FindResource("StatusWarnBrush"),
+            _ => (Brush)FindResource("TextBrush"),
+        };
+        StatusText.FontWeight = level == StatusLevel.Info ? FontWeights.Normal : FontWeights.Bold;
+        if (level != StatusLevel.Info)
+        {
+            _alertUntil = DateTime.Now + AlertHold;
+            _pendingInfo = null;
+        }
+    }
+
+    private void OnProgress(int done, int total) => Dispatcher.Invoke(() =>
+    {
+        ProgressBarMain.Maximum = Math.Max(1, total);
+        ProgressBarMain.Value = Math.Min(done, total);
+        BufferText.Text = total == 0 ? "대기"
+            : done >= total ? $"OCR 완료 {done}/{total}" : $"OCR {done}/{total}";
+    });
 
     private void OnAwsStatus(bool ok, string text) => Dispatcher.Invoke(() =>
     {
-        AwsStatusText.Text = ok ? "AWS: 인증됨" : "AWS: 인증 실패";
+        AwsStatusText.Text = ok ? (text.StartsWith("OCR:") ? text : "OCR: AWS 인증됨")
+                                : "OCR: AWS 인증 실패";
         AwsStatusText.ToolTip = text;
         AwsStatusText.Foreground = ok
-            ? (System.Windows.Media.Brush)FindResource("SuccessBrush")
-            : (System.Windows.Media.Brush)FindResource("DangerBrush");
+            ? (Brush)FindResource("SuccessBrush")
+            : (Brush)FindResource("StatusErrorBrush");
     });
 
     private void OnOpenSettings(object sender, RoutedEventArgs e)
@@ -101,7 +168,7 @@ public partial class MainWindow : Window
         {
             Inspector.ApplyConfig();
             Generator.ApplyConfig();
-            ShowStatus("설정이 저장되었습니다.");
+            ShowStatus("설정이 저장되었습니다 — 즉시 적용되고 다음 실행에도 유지됩니다.", StatusLevel.Info);
         }
     }
 }

@@ -117,8 +117,13 @@ public partial class SettingsWindow : Window
 
     private void OnClearGlyphs(object sender, RoutedEventArgs e)
     {
-        if (MessageBox.Show("학습된 글자 패턴을 모두 삭제할까요?", "패턴 초기화",
-                MessageBoxButton.YesNo, MessageBoxImage.Question)
+        // 파괴적 동작: 건수 표시 + 기본 버튼 '아니오' (Enter 오조작 방지)
+        if (MessageBox.Show(
+                $"학습된 글자 패턴을 모두 삭제할까요?\n" +
+                $"글자 {_glyphs.CharCount}종 / 템플릿 {_glyphs.TemplateCount}개가 삭제되며 되돌릴 수 없습니다.\n" +
+                "(삭제 전 [학습 데이터 내보내기]로 보관할 수 있습니다)",
+                "패턴 초기화", MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                MessageBoxResult.No)
             != MessageBoxResult.Yes) return;
         _glyphs.Clear();
         UpdateGlyphStatus();

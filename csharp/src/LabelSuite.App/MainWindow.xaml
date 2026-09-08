@@ -3,21 +3,35 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:LabelSuite.App.Views"
         Title="LaVIS - Label Verification &amp; Inspection System Rev.00" Height="880" Width="1500"
-        Icon="/Assets/app.ico" MinWidth="1180" MinHeight="700"
+        Icon="/Assets/app.ico" MinWidth="1280" MinHeight="720"
         WindowStartupLocation="CenterScreen">
+    <Grid>
     <DockPanel>
-        <!-- ===================== 상태바 (verifier 스타일) ===================== -->
+        <!-- ===================== 상태바 (UDInspect 패밀리: 엔진 상태 | 메시지 3단계 | 진행률) ===================== -->
         <StatusBar DockPanel.Dock="Bottom" Height="30">
             <StatusBarItem>
-                <TextBlock x:Name="AwsStatusText" Text="AWS: 확인 중..." FontWeight="Bold"/>
+                <TextBlock x:Name="AwsStatusText" Text="OCR: 확인 중..." FontWeight="Bold"
+                           ToolTip="현재 OCR 엔진과 인증 상태"/>
             </StatusBarItem>
             <Separator/>
             <StatusBarItem HorizontalContentAlignment="Stretch">
-                <TextBlock x:Name="StatusText" Text="준비"/>
+                <!-- 말줄임 + 툴팁으로 전체 보기. 경고/오류는 색·굵기로 구분 -->
+                <TextBlock x:Name="StatusText" Text="준비" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
             </StatusBarItem>
             <Separator/>
-            <StatusBarItem HorizontalAlignment="Right">
-                <Button Content="설정" Padding="14,2" Margin="0" Click="OnOpenSettings"/>
+            <StatusBarItem>
+                <StackPanel Orientation="Horizontal">
+                    <ProgressBar x:Name="ProgressBarMain" Width="180" Height="14" Margin="0,0,8,0"
+                                 ToolTip="페이지 OCR 진행률"/>
+                    <TextBlock x:Name="BufferText" Text="대기" MinWidth="90"
+                               ToolTip="OCR 완료 페이지 / 전체 페이지"/>
+                </StackPanel>
+            </StatusBarItem>
+            <Separator/>
+            <StatusBarItem>
+                <Button Content="⚙ 설정" Padding="14,2" Margin="0" Click="OnOpenSettings"
+                        ToolTip="OCR 엔진 · 검출 필드 · 규격 · 양식 감지 · 표시 설정"/>
             </StatusBarItem>
         </StatusBar>
 
@@ -33,4 +47,5 @@
             </TabItem>
         </TabControl>
     </DockPanel>
+    </Grid>
 </Window>

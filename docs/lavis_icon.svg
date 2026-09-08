@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- LaVIS 아이콘 (UDInspect 패밀리): 라벨 카드(필드 행 + 바코드) + 돋보기 렌즈 안 체크마크.
+       색: 잉크 #222B36, 돋보기 #1A6FB5, 체크 #2E9E4F — UDInspect 아이콘과 동일한 렌즈 좌표·색상 -->
+  <rect x="16" y="24" width="180" height="176" rx="14" fill="#000000" fill-opacity="0.16"/>
+  <rect x="12" y="18" width="180" height="176" rx="14" fill="#FFFFFF" stroke="#B9C4D0" stroke-width="4"/>
+  <g fill="#222B36">
+    <rect x="30" y="40" width="38.5" height="12" rx="4"/><rect x="30" y="64" width="31.9" height="12" rx="4"/>
+    <rect x="30" y="88" width="40.7" height="12" rx="4"/><rect x="30" y="112" width="34.1" height="12" rx="4"/>
+  </g>
+  <g fill="#8A949E">
+    <rect x="78.5" y="40" width="78" height="12" rx="4"/><rect x="71.9" y="64" width="90" height="12" rx="4"/>
+    <rect x="80.7" y="88" width="84" height="12" rx="4"/><rect x="74.1" y="112" width="72" height="12" rx="4"/>
+  </g>
+  <g fill="#222B36">
+    <rect x="30" y="140" width="3" height="38"/><rect x="41" y="140" width="3" height="38"/><rect x="52" y="140" width="3" height="38"/>
+    <rect x="66" y="140" width="9" height="38"/><rect x="80" y="140" width="3" height="38"/><rect x="88" y="140" width="3" height="38"/>
+    <rect x="99" y="140" width="6" height="38"/><rect x="112" y="140" width="6" height="38"/><rect x="123" y="140" width="9" height="38"/>
+    <rect x="137" y="140" width="3" height="38"/><rect x="148" y="140" width="6" height="38"/>
+  </g>
+  <circle cx="169.0" cy="163.8" r="74.1" fill="#FFFFFF"/>
+  <line x1="216.4" y1="211.3" x2="252.2" y2="247.1" stroke="#1A6FB5" stroke-width="22.5" stroke-linecap="round"/>
+  <circle cx="169.0" cy="163.8" r="61.4" fill="#E8F3FC" stroke="#1A6FB5" stroke-width="14.1"/>
+  <polyline points="138.2,165.1 161.6,189.6 202.8,138.0" fill="none" stroke="#2E9E4F" stroke-width="16.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

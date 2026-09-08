@@ -27,7 +27,7 @@
                             <ColumnDefinition Width="170"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <Button Content="주문일정 체크리스트" Click="OnPickSchedule"/>
+                        <Button Content="주문일정 체크리스트" Click="OnPickSchedule" ToolTip="주문일정 체크리스트 엑셀 파일 선택"/>
                         <TextBlock x:Name="ScheduleStatus" Grid.Column="1" Text="선택되지 않음"
                                    Foreground="{StaticResource MutedBrush}" Margin="8,0,0,0"
                                    VerticalAlignment="Center" TextWrapping="Wrap"/>
@@ -37,7 +37,7 @@
                             <ColumnDefinition Width="170"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <Button Content="제품 품목번호 리스트" Click="OnPickProduct"/>
+                        <Button Content="제품 품목번호 리스트" Click="OnPickProduct" ToolTip="PN → GTIN/REF 조회용 품목번호 리스트 선택"/>
                         <TextBlock x:Name="ProductStatus" Grid.Column="1" Text="선택되지 않음"
                                    Foreground="{StaticResource MutedBrush}" Margin="8,0,0,0"
                                    VerticalAlignment="Center" TextWrapping="Wrap"/>
@@ -47,7 +47,7 @@
                             <ColumnDefinition Width="170"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <Button Content="BSC FGD 리스트" Click="OnPickBsc"/>
+                        <Button Content="BSC FGD 리스트" Click="OnPickBsc" ToolTip="BSC 규격 REF 조회용 FGD 리스트 선택"/>
                         <TextBlock x:Name="BscStatus" Grid.Column="1" Text="선택되지 않음"
                                    Foreground="{StaticResource MutedBrush}" Margin="8,0,0,0"
                                    VerticalAlignment="Center" TextWrapping="Wrap"/>
@@ -62,12 +62,14 @@
 
             <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,10,0,0">
                 <Button x:Name="GenerateButton" Content="리스트 생성" IsEnabled="False"
-                        Style="{StaticResource AccentButton}" Click="OnGenerate"/>
+                        Style="{StaticResource PrimaryButton}" Click="OnGenerate"
+                        ToolTip="선택한 제조일의 주문을 검사 목록으로 만듭니다"/>
                 <Button x:Name="SaveButton" Content="엑셀로 저장" IsEnabled="False"
                         Margin="8,0,0,0" Click="OnSaveXlsx"/>
                 <Button x:Name="SendButton" Content="검사 탭으로 보내기 →" IsEnabled="False"
-                        Style="{StaticResource AccentButton}" Margin="8,0,0,0"
-                        Click="OnSendToInspector"/>
+                        Style="{StaticResource PrimaryButton}" Margin="8,0,0,0"
+                        Click="OnSendToInspector"
+                        ToolTip="생성된 목록을 라벨 검사 탭에 올리고 그 탭으로 이동합니다"/>
             </StackPanel>
         </Grid>
 

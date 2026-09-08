@@ -18,12 +18,13 @@
                 <ComboBoxItem Content="합격"/>
                 <ComboBoxItem Content="확인 필요"/>
             </ComboBox>
-            <Button Content="새로고침" Margin="10,0,0,0" Click="OnRefresh"/>
+            <Button Content="새로고침" Margin="10,0,0,0" Click="OnRefresh" ToolTip="필터를 적용해 이력을 다시 읽습니다"/>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
                         HorizontalAlignment="Right">
                 <Button Content="기준정보 DB" Click="OnOpenMasterDb"
                         ToolTip="PN별 라벨 기준정보(REF/GTIN/기대 심볼로지)를 등록·수정합니다"/>
-                <Button Content="LOT 리포트 내보내기" Click="OnExportReport"/>
+                <Button Content="LOT 리포트 내보내기" Style="{StaticResource PrimaryButton}" Click="OnExportReport"
+                        ToolTip="LOT 필터에 입력한 LOT의 검사 이력을 xlsx 리포트로 내보냅니다"/>
             </StackPanel>
         </DockPanel>
 
@@ -54,6 +55,6 @@
         </DataGrid>
 
         <TextBlock Grid.Row="2" Text="행을 더블클릭하면 저장된 결과 이미지를 엽니다."
-                   Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0"/>
+                   Style="{StaticResource HintText}" Margin="0,6,0,0"/>
     </Grid>
 </UserControl>

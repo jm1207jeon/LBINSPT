@@ -1,4 +1,5 @@
 using System.IO;
+using System.Threading;
 using System.Windows;
 using LabelSuite.Core;
 
@@ -9,9 +10,23 @@ public partial class App : Application
     private static string CrashLogPath =>
         Path.Combine(AppConfig.DataDir(), "crash.log");
 
+    // 중복 실행 방지: 두 인스턴스가 학습 데이터(glyphs/교정/병합 JSON)·이력 DB를
+    // 동시에 쓰면 파일이 깨질 수 있다 (UDInspect와 동일 규범).
+    private Mutex? _singleInstance;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        _singleInstance = new Mutex(true, @"Local\LaVIS.SingleInstance", out var createdNew);
+        if (!createdNew)
+        {
+            MessageBox.Show(
+                "LaVIS가 이미 실행 중입니다.\n실행 중인 창을 사용하세요 (두 개를 동시에 열면 학습 데이터·이력이 손상될 수 있습니다).",
+                "LaVIS", MessageBoxButton.OK, MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
+        AppLog.Info($"LaVIS 시작 (버전 {typeof(App).Assembly.GetName().Version})");
         // UI 스레드 예외: 안내 후 계속 실행
         DispatcherUnhandledException += (_, args) =>
         {
@@ -33,8 +48,17 @@ public partial class App : Application
             LogCrash("Fatal", args.ExceptionObject as Exception);
     }
 
+    protected override void OnExit(ExitEventArgs e)
+    {
+        AppLog.Info("LaVIS 종료");
+        try { _singleInstance?.ReleaseMutex(); } catch (Exception) { }
+        _singleInstance?.Dispose();
+        base.OnExit(e);
+    }
+
     private static void LogCrash(string kind, Exception? exception)
     {
+        AppLog.Error($"{kind} 예외", exception);
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(CrashLogPath)!);

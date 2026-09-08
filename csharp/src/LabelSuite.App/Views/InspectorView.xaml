@@ -18,8 +18,9 @@
 
             <GroupBox Grid.Row="0" Header="라벨 PDF">
                 <StackPanel>
+                <!-- 툴바 위계(UDInspect 규범): 주 동작=파랑, 되돌리기 어려운 동작은 확인 대화상자 -->
                 <WrapPanel>
-                    <Button Content="PDF 열기" Style="{StaticResource AccentButton}"
+                    <Button Content="PDF 열기" Style="{StaticResource PrimaryButton}"
                             Click="OnOpenPdf"
                             ToolTip="검사할 라벨 PDF를 엽니다 (창에 끌어다 놓아도 됩니다)"/>
                     <TextBlock x:Name="PdfNameLabel" VerticalAlignment="Center"
@@ -37,30 +38,36 @@
                     <TextBlock x:Name="PageLabel" Text="- / -" FontWeight="Bold"
                                VerticalAlignment="Center" Margin="6,0"/>
                     <TextBlock x:Name="PrefetchLabel" VerticalAlignment="Center"
-                               Margin="10,0" Foreground="Gray"/>
+                               Margin="10,0" Foreground="{StaticResource HintBrush}"
+                               ToolTip="백그라운드 OCR 진행 상태 (상태바 진행 막대와 동일)"/>
                     <TextBlock x:Name="AlignLabel" VerticalAlignment="Center"
-                               Margin="4,0" Foreground="Gray" FontSize="11"
-                               ToolTip="라벨 정렬: 하늘색 이형지 기준 크롭·기울기 보정 상태"/>
+                               Margin="4,0" Style="{StaticResource CaptionText}"
+                               ToolTip="라벨 정렬: 하늘색 이형지 기준 크롭 · 라벨 잉크 기준 기울기 보정 상태"/>
                     <Separator Width="10" Visibility="Hidden"/>
                     <TextBlock Text="배율:" VerticalAlignment="Center"/>
                     <Slider x:Name="ZoomSlider" Width="140" Minimum="10" Maximum="500"
                             Value="100" VerticalAlignment="Center" Margin="4,0"
-                            ValueChanged="OnZoomSliderChanged"/>
+                            ValueChanged="OnZoomSliderChanged"
+                            ToolTip="확대/축소 (휠 · Q/E 키로도 조절)"/>
                     <TextBlock x:Name="ZoomLabel" Text="100%" MinWidth="42"
                                VerticalAlignment="Center"/>
                     <Separator Width="10" Visibility="Hidden"/>
-                    <ToggleButton x:Name="ZoneModeButton" Content="필드 영역 등록"
+                    <ToggleButton x:Name="ZoneModeButton" Content="✚ 필드 영역 등록"
                                   Checked="OnZoneModeChanged" Unchecked="OnZoneModeChanged"
-                                  ToolTip="켠 상태에서 라벨 위를 드래그(영역) 또는 클릭(객체)하면 그 위치를 필드 검출 영역으로 등록합니다"/>
+                                  ToolTip="켠 상태에서 라벨 위를 드래그(영역) 또는 클릭(객체)하면 그 위치를 필드 검출 영역으로 등록합니다.&#10;다시 누르면 해제됩니다"/>
                     <Separator Width="6" Visibility="Hidden"/>
                     <CheckBox x:Name="AutoSaveCheck" Content="자동 저장"
-                              ToolTip="페이지 검사가 끝날 때마다 결과 이미지를 저장합니다"/>
-                    <Button Content="결과 저장" FontWeight="Bold" Click="OnSaveCurrent"/>
-                    <Button Content="저장 경로" Click="OnPickSaveDir"/>
+                              Checked="OnAutoSaveToggled" Unchecked="OnAutoSaveToggled"
+                              ToolTip="페이지 검사가 끝날 때마다 결과 이미지를 저장합니다 (설정은 즉시 저장되어 다음 실행에도 유지)"/>
+                    <Button Content="결과 저장" Style="{StaticResource PrimaryButton}"
+                            Click="OnSaveCurrent"
+                            ToolTip="현재 페이지의 판정 결과 이미지를 저장하고 검사 이력에 기록합니다"/>
+                    <Button Content="저장 경로" Click="OnPickSaveDir"
+                            ToolTip="결과 이미지 저장 폴더를 지정합니다 (재실행 시에도 유지)"/>
                     <Button Content="CSV 내보내기" Click="OnExportCsv"
-                            ToolTip="페이지별 판정 결과를 CSV로 내보냅니다"/>
+                            ToolTip="페이지별 판정 결과를 CSV로 내보냅니다 (엑셀에서 지수 표기·선행 0 소실 없음)"/>
                     <Button Content="OCR 로그" Click="OnShowOcrLog"
-                            ToolTip="이 페이지에서 OCR이 실제로 읽은 모든 단어를 위→아래 순으로 보여줍니다 (미검출 원인 확인·교정 등록)"/>
+                            ToolTip="이 페이지에서 OCR이 실제로 읽은 모든 단어를 위→아래 순으로 보여줍니다 (미검출 원인 확인·교정·병합 등록)"/>
                 </WrapPanel>
                 <!-- 페이지 상태 슬롯: 회색=대기 / 녹색=합격 / 주황=확인 필요, 클릭=이동 -->
                 <ItemsControl x:Name="PageSlots" Margin="2,4,2,0">
@@ -115,7 +122,7 @@
             </GroupBox>
         </Grid>
 
-        <!-- ===================== 우측: 목록/판정/검증 ===================== -->
+        <!-- ===================== 우측: 집계/목록/판정/검증 ===================== -->
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -125,32 +132,36 @@
                 <RowDefinition Height="3*"/>
             </Grid.RowDefinitions>
 
-            <!-- 대시보드: verifier 멀티스캔의 대형 카운터 스타일 -->
+            <!-- 집계 줄: UDInspect 멀티 스캔 상단의 큰 숫자 (합격=녹색 / 확인 필요=주황) -->
             <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="6,2,6,0">
-                <TextBlock x:Name="PassCountText" Text="0" FontSize="42" FontWeight="Bold"
+                <TextBlock x:Name="PassCountText" Text="0" Style="{StaticResource BigCount}"
                            Foreground="{StaticResource SuccessBrush}"
-                           VerticalAlignment="Center"/>
-                <TextBlock Text="합격" FontSize="13" FontWeight="Bold"
-                           Foreground="{StaticResource SuccessBrush}"
-                           VerticalAlignment="Bottom" Margin="6,0,20,8"/>
-                <TextBlock x:Name="CheckCountText" Text="0" FontSize="42" FontWeight="Bold"
-                           Foreground="{StaticResource WarnBrush}"
-                           VerticalAlignment="Center"/>
-                <TextBlock Text="확인 필요" FontSize="13" FontWeight="Bold"
-                           Foreground="{StaticResource WarnBrush}"
-                           VerticalAlignment="Bottom" Margin="6,0,20,8"/>
-                <TextBlock x:Name="ProgressCountText" Text="검사 0 / 0 페이지"
-                           FontSize="15" FontWeight="Bold" Foreground="#FF666666"
-                           VerticalAlignment="Center"/>
+                           ToolTip="합격 판정 페이지 수"/>
+                <TextBlock Text="합격" Style="{StaticResource BigCountLabel}"
+                           Foreground="{StaticResource SuccessBrush}"/>
+                <TextBlock x:Name="CheckCountText" Text="0" Style="{StaticResource BigCount}"
+                           Foreground="{StaticResource CountOrangeBrush}"
+                           ToolTip="확인 필요(필드 누락·불일치·저신뢰) 페이지 수 — 검사자가 화면에서 확인 후 판정합니다"/>
+                <TextBlock Text="확인 필요" Style="{StaticResource BigCountLabel}"
+                           Foreground="{StaticResource CountOrangeBrush}"/>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="ProgressCountText" Text="검사 0 / 0 페이지"
+                               FontSize="15" FontWeight="Bold" Foreground="{StaticResource HintBrush}"
+                               ToolTip="판정이 끝난 페이지 / 전체 페이지"/>
+                    <!-- 미저장 상시 표시: 종료·PDF 교체 전에 저장을 유도 -->
+                    <TextBlock x:Name="DirtyText" Text="" FontWeight="Bold" Margin="0,2,0,0"
+                               ToolTip="판정된 페이지 중 결과 이미지가 저장되지 않은 수입니다 — [결과 저장] 또는 [자동 저장]으로 저장됩니다"/>
+                </StackPanel>
             </StackPanel>
 
-            <GroupBox Grid.Row="1" Header="검사 목록 / 규격">
+            <GroupBox Grid.Row="1" Header="검사 목록 / 규격 (규격 버튼 클릭 = 이 페이지만 수동 지정)">
                 <StackPanel>
                     <DockPanel>
-                        <Button DockPanel.Dock="Left" Content="목록 열기" Click="OnOpenList"/>
+                        <Button DockPanel.Dock="Left" Content="목록 열기" Click="OnOpenList"
+                                ToolTip="검사 목록(xlsx/csv)을 엽니다 — 목록 생성 탭에서 보낼 수도 있습니다"/>
                         <TextBlock x:Name="ListStatus" VerticalAlignment="Center"
                                    Margin="6,0,0,0" TextWrapping="Wrap"
-                                   Foreground="Gray"
+                                   Foreground="{StaticResource HintBrush}"
                                    Text="목록 없음 — 목록 생성 탭에서 보내거나 파일을 여세요"/>
                     </DockPanel>
                     <DockPanel Margin="0,6,0,0">
@@ -160,7 +171,8 @@
                                    VerticalAlignment="Center" Margin="6,0,0,0"
                                    FontWeight="Bold"
                                    Foreground="{StaticResource SuccessBrush}"/>
-                        <ComboBox x:Name="LotCombo" SelectionChanged="OnLotChanged"/>
+                        <ComboBox x:Name="LotCombo" SelectionChanged="OnLotChanged"
+                                  ToolTip="검사 목록의 LOT — 라벨에서 읽힌 LOT과 자동으로 맞춰집니다"/>
                     </DockPanel>
                     <DockPanel Margin="0,6,0,0">
                         <TextBlock DockPanel.Dock="Left" Text="규격:" Width="34"
@@ -182,24 +194,25 @@
                         <TextBlock DockPanel.Dock="Left" Text="검색:" Width="34"
                                    VerticalAlignment="Center"/>
                         <TextBox x:Name="SearchBox" KeyDown="OnSearchKeyDown"
-                                 ToolTip="라벨에서 추가로 찾을 텍스트 (Enter로 적용)"/>
+                                 ToolTip="라벨에서 추가로 찾을 텍스트 (Enter로 적용) — 미등록 문구도 검색해 바운딩 박스로 표시"/>
                     </DockPanel>
                 </StackPanel>
             </GroupBox>
 
-            <!-- 판정 배지: verifier의 대형 판독값 박스 스타일 -->
+            <!-- 판정 배지: UDInspect의 대형 판독값 박스 스타일 -->
             <Border Grid.Row="2" x:Name="StatusBadge" Style="{StaticResource BadgeBorder}"
                     Margin="4,2,4,2">
                 <TextBlock x:Name="StatusBadgeText" Text="검사 대기" FontSize="17"
                            FontWeight="Bold" Foreground="Gray" TextWrapping="Wrap"/>
             </Border>
 
-            <GroupBox Grid.Row="3" Header="필드별 검출 (더블클릭: OCR 오인식 교정 등록)">
+            <GroupBox Grid.Row="3" Header="필드별 검출 (더블클릭: 미검출 진단 · OCR 오인식 교정 등록)">
                 <DataGrid x:Name="FieldGrid" MouseDoubleClick="OnFieldDoubleClick">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="항목" Binding="{Binding Field}" Width="85"/>
                         <DataGridTextColumn Header="검사 값" Binding="{Binding Term}" Width="*"/>
-                        <DataGridTextColumn Header="검출/기준" Binding="{Binding Count}" Width="70"/>
+                        <DataGridTextColumn Header="검출/기준" Binding="{Binding Count}" Width="70"
+                                            ElementStyle="{StaticResource CenterCell}"/>
                     </DataGrid.Columns>
                     <DataGrid.RowStyle>
                         <Style TargetType="DataGridRow">
@@ -211,6 +224,7 @@
                                 <DataTrigger Binding="{Binding State}" Value="fail">
                                     <Setter Property="Background"
                                             Value="{StaticResource WarnBgBrush}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
@@ -221,11 +235,14 @@
             <GroupBox Grid.Row="4" Header="바코드 검증 (라벨 위→아래 순 · 종류/등급/값/일치)">
                 <DataGrid x:Name="BarcodeGrid">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="No." Binding="{Binding Order}" Width="38"/>
+                        <DataGridTextColumn Header="No." Binding="{Binding Order}" Width="38"
+                                            ElementStyle="{StaticResource RightCell}"/>
                         <DataGridTextColumn Header="종류" Binding="{Binding Symbology}" Width="105"/>
-                        <DataGridTextColumn Header="등급" Binding="{Binding Grade}" Width="56"/>
+                        <DataGridTextColumn Header="등급" Binding="{Binding Grade}" Width="56"
+                                            ElementStyle="{StaticResource CenterCell}"/>
                         <DataGridTextColumn Header="값" Binding="{Binding Value}" Width="*"/>
-                        <DataGridTextColumn Header="일치" Binding="{Binding State}" Width="52"/>
+                        <DataGridTextColumn Header="일치" Binding="{Binding State}" Width="52"
+                                            ElementStyle="{StaticResource CenterCell}"/>
                     </DataGrid.Columns>
                     <DataGrid.RowStyle>
                         <Style TargetType="DataGridRow">
@@ -236,7 +253,10 @@
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding State}" Value="불일치">
                                     <Setter Property="Background"
-                                            Value="{StaticResource WarnBgBrush}"/>
+                                            Value="{StaticResource FailBgBrush}"/>
+                                    <Setter Property="Foreground"
+                                            Value="{StaticResource FailFgBrush}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>

@@ -17,8 +17,11 @@ public partial class GeneratorView : UserControl
     { ["schedule"] = null, ["product"] = null, ["bsc"] = null };
     private GenerationResult? _result;
 
-    public event Action<string>? StatusMessage;
+    public event Action<string, StatusLevel>? StatusMessage;
     public event Action<List<LabelRecord>>? ListGenerated;
+
+    private void Status(string message, StatusLevel level = StatusLevel.Info) =>
+        Status(message, level);
 
     public GeneratorView() => InitializeComponent();
 
@@ -93,7 +96,7 @@ public partial class GeneratorView : UserControl
             if (key == "schedule")
                 PopulateDateTree(ListGenerator.ExtractAvailableDates(frame, _maps));
             UpdateButtons();
-            if (!silent) StatusMessage?.Invoke($"{FileLabels[key]} 로드 완료: {Path.GetFileName(path)}");
+            if (!silent) Status($"{FileLabels[key]} 로드 완료: {Path.GetFileName(path)}");
         }
         catch (Exception ex)
         {
@@ -232,7 +235,7 @@ public partial class GeneratorView : UserControl
             if (answer != MessageBoxResult.Yes) return;
         }
         GenerateButton.IsEnabled = false;
-        StatusMessage?.Invoke("리스트 생성 중…");
+        Status("리스트 생성 중…");
         var schedule = _frames["schedule"]!;
         var product = _frames["product"];
         var bsc = _frames["bsc"];
@@ -260,7 +263,7 @@ public partial class GeneratorView : UserControl
         UpdateButtons();
         var summary = $"{_result.Records.Count}건 생성 " +
                       $"(경고 {_result.WarningCount}, 오류 {_result.ErrorCount})";
-        StatusMessage?.Invoke(summary);
+        Status(summary);
         if (_result.WarningCount + _result.ErrorCount > 0)
             MessageBox.Show(summary + "\n자세한 내용은 경고/오류 패널을 확인하세요.",
                             "생성 완료", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -290,7 +293,7 @@ public partial class GeneratorView : UserControl
         }
         _config.Settings["last_list_path"] = dialog.FileName;
         _config.SaveSettings();
-        StatusMessage?.Invoke($"저장 완료: {dialog.FileName}");
+        Status($"저장 완료: {dialog.FileName}");
     }
 
     private void OnSendToInspector(object sender, RoutedEventArgs e)

@@ -1,18 +1,22 @@
 <Window x:Class="LabelSuite.App.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="설정" Width="780" Height="660"
-        WindowStartupLocation="CenterOwner">
-    <DockPanel Margin="4">
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
-                    HorizontalAlignment="Right" Margin="4,6">
-            <Button Content="설정 폴더 열기" Click="OnOpenConfigFolder"/>
-            <Button Content="설정 저장" FontWeight="Bold" MinWidth="90" Click="OnSave"/>
-            <Button Content="취소" MinWidth="70" Click="OnCancel"/>
-        </StackPanel>
+        Title="LaVIS 설정" Width="860" Height="680" MinWidth="760" MinHeight="560"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <DockPanel Margin="10">
+        <!-- 하단 바(UDInspect 규범): 안내문 왼쪽, 저장(파랑)·취소 오른쪽 -->
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0" LastChildFill="False">
+            <Button DockPanel.Dock="Right" Content="취소" Click="OnCancel" Padding="18,5" Margin="8,0,0,0"/>
+            <Button DockPanel.Dock="Right" Content="저장" Click="OnSave" MinWidth="90"
+                    Style="{StaticResource PrimaryButton}" Padding="18,5"/>
+            <Button DockPanel.Dock="Left" Content="설정 폴더 열기" Click="OnOpenConfigFolder"
+                    ToolTip="settings.json · standards.json · 학습 데이터가 있는 폴더를 탐색기로 엽니다"/>
+            <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" Style="{StaticResource HintText}"
+                       Text="저장하면 즉시 적용되고 다음 실행에도 유지됩니다."/>
+        </DockPanel>
 
         <TabControl>
-            <TabItem Header="일반 · 저장 · AWS">
+            <TabItem Header="  일반 · 저장 · AWS  ">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                     <GroupBox Header="일반">
@@ -35,7 +39,7 @@
                                     <ComboBoxItem Content="프리페치 없음"/>
                                 </ComboBox>
                             </WrapPanel>
-                            <TextBlock FontSize="11" Foreground="Gray"
+                            <TextBlock Style="{StaticResource HintText}"
                                        Text="유효기간: EXP = MFG + 기간 - 1일"/>
                         </StackPanel>
                     </GroupBox>
@@ -49,7 +53,7 @@
                                 <CheckBox x:Name="AutoSaveDefaultCheck" Content="자동 저장 기본 켜기"
                                           Margin="16,2,0,2"/>
                             </WrapPanel>
-                            <TextBlock FontSize="11" Foreground="Gray"
+                            <TextBlock Style="{StaticResource HintText}"
                                        Text="배율 0.5 = 원본의 50% 크기로 저장 (용량 절약). 파일명: ###_LOT_REF_날짜_판정.jpg"/>
                         </StackPanel>
                     </GroupBox>
@@ -61,17 +65,17 @@
                                 <TextBlock Text="   프로필:" VerticalAlignment="Center"/>
                                 <TextBox x:Name="AwsProfileBox" Width="130"
                                          ToolTip="비우면 기본 자격증명 체인을 사용합니다"/>
-                                <Button Content="인증 확인" FontWeight="Bold" Click="OnCheckAws"/>
+                                <Button Content="인증 확인" Style="{StaticResource AccentButton}" Click="OnCheckAws"/>
                             </WrapPanel>
                             <TextBlock x:Name="AwsCheckLabel" TextWrapping="Wrap" Margin="2,4,2,0"/>
                         </StackPanel>
                     </GroupBox>
-                        <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap" Margin="6,2"
+                        <TextBlock Style="{StaticResource HintText}" Margin="6,2"
                                    Text="고급 설정(컬럼 매핑 · 중국 REF 매핑 · 규격 표시명)은 [설정 폴더 열기]에서 JSON 파일을 직접 편집합니다."/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem Header="OCR 엔진 · 교정">
+            <TabItem Header="  OCR 엔진 · 교정  ">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                     <GroupBox Header="OCR 설정 (인식 정밀도 / 속도)">
@@ -86,7 +90,7 @@
                                 </ComboBox>
                                 <TextBlock x:Name="GlyphStatusText" VerticalAlignment="Center"
                                            Margin="10,0,6,0" Foreground="Gray"/>
-                                <Button Content="패턴 초기화" Click="OnClearGlyphs"
+                                <Button Content="패턴 초기화" Click="OnClearGlyphs" Style="{StaticResource DangerButton}"
                                         ToolTip="학습된 글자 패턴을 모두 삭제합니다"/>
                             </WrapPanel>
                             <WrapPanel Margin="0,0,0,4">
@@ -95,7 +99,7 @@
                                 <Button Content="학습 데이터 가져오기" Click="OnImportLearning"
                                         ToolTip="다른 PC에서 내보낸 학습 데이터를 현재 데이터에 병합합니다"/>
                             </WrapPanel>
-                            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                            <TextBlock Style="{StaticResource HintText}"
                                        Margin="0,0,0,6"
                                        Text="패턴 학습: AWS로 검사할 때 글자 모양을 자동 학습 → 이후 무료·오프라인·초고속 인식. ONNX: 학습 없이 바로 쓰는 범용 로컬 OCR."/>
                             <WrapPanel>
@@ -125,9 +129,9 @@
                                 <TextBlock Text="   평균 임계(%):" VerticalAlignment="Center"/>
                                 <TextBox x:Name="LowAvgConfBox" Width="46"/>
                             </WrapPanel>
-                            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                            <TextBlock Style="{StaticResource HintText}"
                                        Text="페이지 평균 신뢰도가 평균 임계 미만이거나, 단어 임계 미만인 단어가 30%를 넘으면 배지·상태바에 알람을 띄우고 해당 단어를 주황 파선 박스로 표시합니다."/>
-                            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                            <TextBlock Style="{StaticResource HintText}"
                                        Text="렌더 배율↑·전송 크기↑ = 정밀·느림 / 최소 신뢰도: 이 값 미만 OCR 단어는 무시 (0=전부 사용)"/>
                         </StackPanel>
                     </GroupBox>
@@ -144,7 +148,7 @@
                                                         IsReadOnly="True" Width="110"/>
                                 </DataGrid.Columns>
                             </DataGrid>
-                            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                            <TextBlock Style="{StaticResource HintText}"
                                        Text="검사 탭에서 필드 행을 더블클릭해도 등록할 수 있습니다. 같은 길이의 교정에서 문자 혼동 규칙(예: O↔0)을 자동 학습합니다."/>
                             <TextBlock Text="단어 병합 패턴 (OCR 로그에서 여러 단어 선택 → [선택 병합 학습]으로 등록):"
                                        Margin="0,8,0,2"/>
@@ -161,7 +165,7 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem Header="검출 필드 · 영역">
+            <TabItem Header="  검출 필드 · 영역  ">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                     <GroupBox Header="OCR 대상 필드">
@@ -182,7 +186,7 @@
                                     <DataGridTextColumn Header="규격 자동" Binding="{Binding Standard}" Width="66"/>
                                 </DataGrid.Columns>
                             </DataGrid>
-                            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                            <TextBlock Style="{StaticResource HintText}"
                                        Text="예: 이름=CE마크, 패턴=CE0123 / 기대횟수를 비우면 판정에 반영하지 않고 검출 수만 표시합니다. '규격 자동'에 규격 키(MDR/MDD/BSC/A00/A02/중국)를 넣으면 이 값이 라벨에서 검출될 때 그 규격이 자동 선택됩니다 (예: 패턴 Rev.A00 → 규격 A00). 수동으로 규격 버튼을 누르면 그 페이지는 수동 선택이 우선합니다."/>
                             <TextBlock Text="필드 검출 영역 (등록 필드는 영역 안 검출만 인정 — 검사 화면 [필드 영역 등록] 버튼으로 드래그/클릭 등록):"
                                        Margin="0,8,0,2"/>
@@ -198,7 +202,7 @@
                                     <DataGridTextColumn Header="H%" Binding="{Binding H}" Width="52"/>
                                 </DataGrid.Columns>
                             </DataGrid>
-                            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                            <TextBlock Style="{StaticResource HintText}"
                                        Text="영역이 등록된 필드는 라벨의 다른 위치에서 우연히 매칭되는 값을 바운딩 박스/판정에서 제외합니다 (±4% 이동 허용). 행을 지우면 영역 제한이 해제됩니다."/>
                             <TextBlock Text="필드별 문자 제약 (이 필드에서 나올 수 없는 문자를 미리 지정):"
                                        Margin="0,8,0,2"/>
@@ -213,7 +217,7 @@
                                                         Binding="{Binding Denied}" Width="*"/>
                                 </DataGrid.Columns>
                             </DataGrid>
-                            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                            <TextBlock Style="{StaticResource HintText}"
                                        Text="예: LOT 허용=0123456789 → OCR이 O를 읽으면 자동으로 0으로 복원 (O↔0, I↔1, S↔5 등 혼동 그룹 기준). 복원 불가능한 문자는 불일치로 검출됩니다. 두 칸 모두 비우면 제약 없음."/>
                             <TextBlock Text="동일값 패턴 (라벨 안 여러 위치의 같은 값 상호 비교 — 위치 이동 자동 추적):"
                                        Margin="0,8,0,2"/>
@@ -226,7 +230,7 @@
                                     <DataGridTextColumn Header="최소 개수" Binding="{Binding Min}" Width="70"/>
                                 </DataGrid.Columns>
                             </DataGrid>
-                            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                            <TextBlock Style="{StaticResource HintText}"
                                        Text="예: 이름=LOT 3회, 패턴=^\d{8}$, 최소 개수=3 → 8자리 숫자 객체를 전부 찾아 서로 값이 같은지 비교하고, 합격 라벨의 배치를 기준으로 학습해 다음 라벨부터는 스캔·출력 위치 이동을 보정한 뒤 기준 위치마다 값이 있는지 추적합니다. 결과는 검사 탭 바코드 검증 표에 '동일값' 행으로 표시됩니다."/>
                             <WrapPanel Margin="0,8,0,0">
                                 <CheckBox x:Name="TypeLearningCheck"
@@ -234,14 +238,14 @@
                                 <TextBlock Text="   판정 시작 표본 수:" VerticalAlignment="Center"/>
                                 <TextBox x:Name="TypeMinSamplesBox" Width="46"/>
                             </WrapPanel>
-                            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                            <TextBlock Style="{StaticResource HintText}"
                                        Text="검사할 때마다 라벨 전체 OCR 문구를 유형(PN+규격)별로 축적하고, 표본이 쌓인 뒤 기존 유형과 다른 라벨(고정 문구 누락·처음 보는 문구 다수)이 나오면 알람을 띄웁니다."/>
                         </StackPanel>
                     </GroupBox>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem Header="규격 · 양식 감지">
+            <TabItem Header="  규격 · 양식 감지  ">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                     <GroupBox Header="검사 기준 (규격별 필드 기대 출현 횟수 — 더블클릭으로 수정)">
@@ -265,14 +269,14 @@
                                     <DataGridCheckBoxColumn Header="이미지" Binding="{Binding UseImage}" Width="52"/>
                                 </DataGrid.Columns>
                             </DataGrid>
-                            <TextBlock FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                            <TextBlock Style="{StaticResource HintText}"
                                        Text="라벨마다 특정 위치에 인쇄되는 양식명(예: Rev.A00)으로 라벨 종류를 자동 감지해 규격을 선택합니다. 영역은 페이지 비율(%): X,Y=좌상단, W,H=크기. 텍스트 패턴(예: Rev\.?A00)과 이미지 중 하나만 설정해도 되고 둘 다 설정하면 어느 한쪽만 맞아도 감지됩니다(둘 다 맞으면 신뢰도 상승). 이미지 기준은 검사 탭에서 해당 양식 라벨을 띄우고 [양식 학습] 버튼으로 등록합니다. 규격 칸에는 내부 키(MDR/MDD/BSC/A00/A02/중국)를 입력하세요."/>
                         </StackPanel>
                     </GroupBox>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem Header="표시">
+            <TabItem Header="  표시  ">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                     <GroupBox Header="바운딩 박스 표시">

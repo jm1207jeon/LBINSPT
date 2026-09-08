@@ -1,0 +1,75 @@
+# LaVIS 패밀리 디자인 규범 (UDInspect 공통)
+
+LaVIS와 UDInspect(2D-Verifier)는 같은 회사·같은 검사실에서 쓰는 자매 제품이다. 검사자가
+두 프로그램을 오갈 때 같은 규칙으로 읽히도록, UDInspect가 6주간 현장 피드백으로 확정한
+시각·조작 규범을 LaVIS에 그대로 적용한다. 토큰의 단일 출처는
+`csharp/src/LabelSuite.App/Theme.xaml`이다.
+
+## 1. 원칙
+
+- 커스텀 컨트롤 템플릿을 쓰지 않는다. 기본 WPF 크롬 위에 **색·굵기·크기·여백**만으로 위계를 만든다.
+- 색은 "의미"에만 쓴다. 파랑=주 동작/선택, 주황=집계·확인 필요, 빨강=파괴적/오류, 녹색=합격/저장됨.
+- 되돌리기 어려운 동작은 ①색으로 분리 ②확인 대화상자 ③기본 버튼 '아니오'의 3중 잠금.
+- 상태는 상태바 한 곳이 아니라 **상시 표시**(미저장·진행률·엔진 상태)로 보여 준다.
+- 조작법은 기억이 아니라 화면에 둔다: GroupBox 헤더 괄호, 툴팁(효과+부작용+되돌림 가능 여부).
+
+## 2. 팔레트
+
+| 토큰 | 값 | 용도 |
+|---|---|---|
+| `PrimaryBrush` | `#1A6FB5` | 주 동작 버튼 배경, 선택 테두리, 진행 집계 2순위, 아이콘 돋보기 |
+| `AccentBrush` | `#1A5276` | 정보성 강조 **글씨** 전용 (배경으로 쓰지 않음) |
+| `PrimarySoftBrush` | `#E3F0FB` | 선택 카드 배경, 칩 |
+| `SoftPanelBrush` / `SoftPanelBorderBrush` | `#F3F6FA` / `#B9C4D0` | 연파랑 상태 패널 (CornerRadius 6) |
+| `GroupAltBrush` | `#E8F1FA` | 같은 묶음(LOT 등) 교대 배경 |
+| `CountOrangeBrush` | `#E67E00` | 큰 숫자 집계 1순위 (확인 필요) |
+| `SuccessBrush` / `SuccessBgBrush` | `#1E8449` / `#D5F5E3` | 합격 글씨 / 합격 행 |
+| `ScannedBgBrush` | `#D7EFD7` | 확인된 칸 채움 |
+| `FailBgBrush` / `FailFgBrush` | `#FFC7CE` / `#9C0006` | 부적합·불일치·만료 행 |
+| `DangerButtonBrush` | `#D9534F` | 파괴적 버튼 (삭제·초기화) |
+| `CautionButtonBrush` | `#F0AD4E` | 주의 버튼 (선택 행 삭제) |
+| `StatusWarnBrush` / `StatusErrorBrush` | `#9A5B00` / `#B01E1E` | 상태바 경고 / 오류 |
+| `SavedGreenBrush` | `#2E7D32` | `✓ 저장됨` |
+| `InvalidInputBrush` | `#FFE4E1` | 잘못된 입력란 배경 |
+| `ReadoutBrush` / `ReadoutBorderBrush` | `#FDF6E3` / `#BBB69A` | 판정 배지(크림) |
+| `ImageBgBrush` / `ImageHintBrush` | `#1E1E1E` / `#9E9E9E` | 이미지 영역 / 빈 상태 안내 |
+| `HintBrush` | `#666666` | 안내문 |
+| `GridLineBrush` | `#DDDDDD` | 표 격자선 |
+| `OverlayDimBrush` | `#66000000` | 메인 창 안 오버레이 딤 |
+| `InkBrush` / `CheckBrush` | `#222B36` / `#2E9E4F` | 아이콘 잉크 / 체크 |
+
+## 3. 타이포·간격
+
+- 글꼴 미지정(시스템 기본). 크기 계층: 큰 숫자 집계 48~56 / 판독값 24 / 배지 17 / 집계 라벨 14 / 표 13 / 안내 12 / 캡션 11.
+- Button Padding 10,5 · Margin 2 / GroupBox Margin 4 · Padding 6 / 설정 창 바깥 여백 10, 하단 버튼줄 상단 10.
+- CornerRadius 3단계: 칩 4 / 패널 6 / 오버레이 카드 10.
+- 탭 헤더는 `"  두 칸 여백  "` 관습.
+
+## 4. 컴포넌트 규칙
+
+| 상황 | 규칙 | 스타일 키 |
+|---|---|---|
+| 주 동작 (화면당 1~2개) | 파랑 배경 흰 굵은 글씨 | `PrimaryButton` |
+| 보조 강조 | 네이비 굵은 글씨, 기본 크롬 | `AccentButton` |
+| 파괴적 동작 | 빨강, 다른 버튼과 분리 배치, 확인 대화상자 기본 '아니오', 건수 표시 | `DangerButton` |
+| 주의 동작 | 주황, 파괴 버튼 왼쪽 | `CautionButton` |
+| 규격·양식 선택 | 카드형 토글: 보통 흰/회색 2px, 선택 파랑 3px + 연파랑, 글자색 유지 | `StandardToggle` |
+| 안내문 | 12px #666666, 줄바꿈 | `HintText` |
+| 판정 배지 | 크림 박스 | `BadgeBorder` |
+| 경고 배너 | 본문 상단 주황 테두리 | `AlertBanner` |
+| 오버레이 | 딤 + 카드(#F4F6F9, 파랑 2px, R10, 그림자) | `OverlayCard` |
+| 표 | 전체 격자 #DDDDDD, 행 24, 글꼴 13, 행 헤더 없음, 숫자 열 우측 정렬 | (기본 DataGrid), `RightCell` |
+
+## 5. 상태 표시 규범
+
+- **상태바 3단계**: `[HH:mm:ss]` 접두 + 정보(검정) / 경고(갈색 굵게) / 오류(빨강 굵게). 말줄임 + 툴팁으로 전체 보기.
+  경고·오류는 5초간 고정되어 뒤따르는 정보 메시지에 덮이지 않는다. 경고·오류는 `%APPDATA%\LaVIS\app.log`에 남는다.
+- **미저장 상시 표시**: 집계 줄에 `● 결과 미저장 N건`(빨강) / `✓ 결과 저장됨`(녹색). 미저장 상태로 종료하면 확인 대화상자(기본 '아니오').
+- **진행률**: 상태바 우측 진행 막대 + `OCR n/N`.
+- **엔진 상태**: 상태바 좌측 `OCR: …` 굵게 (녹색=준비, 빨강=인증 실패).
+- **툴바 옵션 즉시 저장**: 자주 바꾸는 옵션(자동 저장 등)은 바꾸는 즉시 설정에 저장한다. 구조적 설정은 설정 창의 [저장]으로 확정한다.
+
+## 6. 아이콘
+
+`docs/lavis_icon.svg`(원본) → `Assets/app.ico`. UDInspect와 같은 구성 규칙 "검사 대상 + 파랑 돋보기 + 초록 체크".
+UDInspect는 대상이 DataMatrix 격자, LaVIS는 라벨 카드(필드 행 + 바코드 띠). 렌즈 좌표·색·굵기는 동일하다.

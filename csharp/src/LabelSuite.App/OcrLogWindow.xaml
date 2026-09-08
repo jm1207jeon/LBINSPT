@@ -1,8 +1,8 @@
 <Window x:Class="LabelSuite.App.OcrLogWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="OCR 인식 로그" Width="680" Height="580"
-        WindowStartupLocation="CenterOwner">
+        Title="OCR 인식 로그" Width="700" Height="600" MinWidth="560" MinHeight="420"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
     <DockPanel Margin="8">
         <TextBlock DockPanel.Dock="Top" x:Name="HeaderText" FontWeight="Bold"
                    TextWrapping="Wrap" Margin="0,0,0,6"/>
@@ -14,16 +14,17 @@
                       Margin="10,2,0,2" Checked="OnFilterChanged"
                       Unchecked="OnFilterChanged"/>
             <TextBlock x:Name="CountText" VerticalAlignment="Center"
-                       Margin="12,0,0,0" Foreground="Gray"/>
+                       Margin="12,0,0,0" Style="{StaticResource HintText}"/>
         </WrapPanel>
         <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
             <Button DockPanel.Dock="Right" Content="닫기" MinWidth="70"
                     Click="OnClose" Margin="6,0,0,0"/>
             <Button DockPanel.Dock="Right" x:Name="RegisterButton"
-                    Content="선택 단어로 교정 등록" FontWeight="Bold" MinWidth="150"
-                    Click="OnRegister"/>
+                    Content="선택 단어로 교정 등록" Style="{StaticResource PrimaryButton}" MinWidth="150"
+                    Click="OnRegister"
+                    ToolTip="목록에서 잘못 읽힌 단어를 선택하고 올바른 값을 입력한 뒤 누르면 이후 모든 검사에 자동 적용됩니다"/>
             <Button DockPanel.Dock="Right" Content="선택 병합 학습" MinWidth="110"
-                    Margin="0,0,6,0" Click="OnLearnMerge"
+                    Margin="0,0,6,0" Click="OnLearnMerge" Style="{StaticResource AccentButton}"
                     ToolTip="Ctrl 클릭으로 여러 단어를 선택한 뒤 누르면, 이후 검사에서 그 단어들이 하나의 문장으로 합쳐져 인식됩니다"/>
             <TextBlock DockPanel.Dock="Left" Text="올바른 값:"
                        VerticalAlignment="Center" Margin="0,0,4,0"/>
@@ -43,7 +44,7 @@
                 <Style TargetType="DataGridRow">
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding Low}" Value="True">
-                            <Setter Property="Foreground" Value="#B03A2E"/>
+                            <Setter Property="Foreground" Value="{StaticResource DangerBrush}"/>
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>

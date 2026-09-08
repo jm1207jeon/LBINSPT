@@ -34,6 +34,8 @@ public partial class InspectorView : UserControl
     private int _currentPage;
     private readonly Dictionary<int, PageAnalysis> _analyses = [];
     private readonly Dictionary<int, InspectionOutcome> _outcomes = [];
+    /// <summary>결과 이미지가 저장된 페이지 — '● 결과 미저장 / ✓ 저장됨' 표시와 종료 확인용.</summary>
+    private readonly HashSet<int> _savedPages = [];
     private readonly HashSet<int> _manualLotPages = [];   // 사용자가 직접 LOT 고른 페이지
     private readonly Dictionary<int, int> _pageLotChoice = [];  // 페이지 → 수동 선택 인덱스
     private readonly Dictionary<int, string> _manualStandardPages = [];  // 페이지 → 수동 규격
@@ -50,8 +52,14 @@ public partial class InspectorView : UserControl
     private Point _panStart;
     private bool _panning;
 
-    public event Action<string>? StatusMessage;
+    /// <summary>상태바 메시지 (정보/경고/오류 3단계 — MainWindow가 색·고정 시간을 처리).</summary>
+    public event Action<string, StatusLevel>? StatusMessage;
     public event Action<bool, string>? AwsStatusChanged;
+    /// <summary>OCR 진행률 (완료 페이지, 전체 페이지) — 상태바 진행 표시용.</summary>
+    public event Action<int, int>? ProgressChanged;
+
+    private void Status(string message, StatusLevel level = StatusLevel.Info) =>
+        Status(message, level);
 
     private OcrCorrections _corrections = null!;
     private WordMergeRules _merges = null!;
@@ -94,7 +102,9 @@ public partial class InspectorView : UserControl
                               _config.GetInt("ocr_cache_max_entries", 500));
         _pdf.RenderZoom = _config.GetDouble("pdf_render_zoom", 4.0);
         _pdf.CachePages = _config.GetInt("page_image_cache_pages", 6);
+        _loadingConfig = true;
         AutoSaveCheck.IsChecked = _config.GetBool("auto_save_default", false);
+        _loadingConfig = false;
 
         _worker = new PrefetchWorker(async image =>
         {
@@ -272,7 +282,7 @@ public partial class InspectorView : UserControl
         var image = RenderProcessed(_currentPage);   // 캐시 소유 — 해제 금지
         if (_formDetector.LearnTemplate(rule, image))
         {
-            StatusMessage?.Invoke(
+            Status(
                 $"양식 '{rule.Name}' 기준 이미지 학습 완료 " +
                 $"(영역 {rule.Region.X * 100:F0}%,{rule.Region.Y * 100:F0}% " +
                 $"{rule.Region.W * 100:F0}x{rule.Region.H * 100:F0}%)");
@@ -339,6 +349,7 @@ public partial class InspectorView : UserControl
             ClearProcessed();
             _analyses.Clear();
             _outcomes.Clear();
+            _savedPages.Clear();
             if (_pdf.IsOpen)
             {
                 _worker.NewGeneration();
@@ -387,7 +398,7 @@ public partial class InspectorView : UserControl
         AwsStatusChanged?.Invoke(status.Ok,
             status.Ok ? "AWS 인증 확인됨" : $"AWS 인증 실패: {status.Error}");
         if (!status.Ok)
-            StatusMessage?.Invoke("AWS 인증 실패 — OCR 실행 전에 설정에서 자격증명을 확인하세요.");
+            Status("AWS 인증 실패 — OCR 실행 전에 설정에서 자격증명을 확인하세요.", StatusLevel.Error);
     }
 
     private void PopulateStandardButtons()
@@ -543,6 +554,7 @@ public partial class InspectorView : UserControl
         _currentPage = 0;
         _analyses.Clear();
         _outcomes.Clear();
+        _savedPages.Clear();
         _manualLotPages.Clear();
         _pageLotChoice.Clear();
         _manualStandardPages.Clear();
@@ -553,7 +565,7 @@ public partial class InspectorView : UserControl
         foreach (var button in new[] { FirstButton, PrevButton, NextButton, LastButton })
             button.IsEnabled = true;
         PdfNameLabel.Text = $"{Path.GetFileName(path)} · {_pdf.PageCount}페이지";
-        StatusMessage?.Invoke($"PDF 로드: {Path.GetFileName(path)} ({_pdf.PageCount}페이지)");
+        Status($"PDF 로드: {Path.GetFileName(path)} ({_pdf.PageCount}페이지)");
         UpdateDashboard();
         UpdatePageSlots();
         ShowPage(0, fit: true);
@@ -690,7 +702,7 @@ public partial class InspectorView : UserControl
     private void OnPageFailed(int generation, int page, string message)
     {
         if (generation != _worker.Generation) return;
-        StatusMessage?.Invoke($"{page + 1}페이지 OCR 실패: {message}");
+        Status($"{page + 1}페이지 OCR 실패: {message}", StatusLevel.Error);
         if (page == _currentPage)
             ClearResultPanel($"OCR 실패 — {ShortMessage(message)}");
         // 같은 원인(예: 자격증명 오류)으로 페이지마다 팝업이 연쇄되는 것을 막는다:
@@ -715,9 +727,10 @@ public partial class InspectorView : UserControl
 
     private void UpdatePrefetchLabel()
     {
-        if (!_pdf.IsOpen) { PrefetchLabel.Text = ""; return; }
+        if (!_pdf.IsOpen) { PrefetchLabel.Text = ""; ProgressChanged?.Invoke(0, 0); return; }
         var done = _analyses.Count;
         var total = _pdf.PageCount;
+        ProgressChanged?.Invoke(done, total);
         PrefetchLabel.Text = done >= total
             ? $"OCR 완료 {done}/{total} ✓" : $"OCR 진행 {done}/{total}…";
         PrefetchLabel.Foreground = done >= total
@@ -875,7 +888,7 @@ public partial class InspectorView : UserControl
                     OcrQuality.LowConfidenceWords(analysis.Words, lowThreshold),
                     CurrentOverlayStyle());
                 StatusBadgeText.Text += $"  ·  ⚠ OCR 신뢰도 {quality.Average:F0}%";
-                StatusMessage?.Invoke($"⚠ p{page + 1}: {quality.Summary}");
+                Status($"⚠ p{page + 1}: {quality.Summary}", StatusLevel.Warn);
             }
         }
         SetViewerImage(annotated, fit);
@@ -894,7 +907,7 @@ public partial class InspectorView : UserControl
         var report = _profiler.Check(formatKey, analysis.Words, record);
         if (report.IsAnomaly)
         {
-            StatusMessage?.Invoke($"⚠ 유형 이상 (p{page + 1}): {report.Summary}");
+            Status($"⚠ 유형 이상 (p{page + 1}): {report.Summary}", StatusLevel.Warn);
             if (!_typeAlarmPages.Add(page)) return;   // 같은 페이지 중복 알람 방지
             var detail =
                 (report.MissingTokens.Count > 0
@@ -917,7 +930,7 @@ public partial class InspectorView : UserControl
         {
             _profiler.Learn(formatKey, analysis.Words, record);
             if (report.SampleCount < _profiler.MinSamples)
-                StatusMessage?.Invoke(
+                Status(
                     $"라벨 유형 학습 중 ({report.SampleCount + 1}/{_profiler.MinSamples})");
         }
     }
@@ -1169,7 +1182,7 @@ public partial class InspectorView : UserControl
     {
         var on = ZoneModeButton.IsChecked == true;
         ViewerScroll.Cursor = on ? Cursors.Cross : Cursors.Arrow;
-        StatusMessage?.Invoke(on
+        Status(on
             ? "필드 영역 등록 모드 — 라벨 위를 드래그(영역) 또는 클릭(객체)하세요. 다시 누르면 해제"
             : "필드 영역 등록 모드 해제");
     }
@@ -1251,7 +1264,7 @@ public partial class InspectorView : UserControl
             // 클릭 = 객체 선택: 커서 아래 OCR 단어의 상자를 영역으로 사용
             if (!_analyses.TryGetValue(_currentPage, out var analysis))
             {
-                StatusMessage?.Invoke("OCR이 끝난 뒤 객체를 선택할 수 있습니다.");
+                Status("OCR이 끝난 뒤 객체를 선택할 수 있습니다.");
                 return;
             }
             var word = analysis.Words.FirstOrDefault(w =>
@@ -1384,7 +1397,7 @@ public partial class InspectorView : UserControl
         _config.SaveSettings();
         ZoneModeButton.IsChecked = false;
         ReloadEngineAndReinspect();
-        StatusMessage?.Invoke(
+        Status(
             $"'{zoneField}' 필드 영역 등록됨 — 이제 이 영역 안의 검출만 인정합니다.");
     }
 
@@ -1398,7 +1411,23 @@ public partial class InspectorView : UserControl
         CheckCountText.Text = check.ToString();
         ProgressCountText.Text = _pdf.IsOpen
             ? $"검사 {_outcomes.Count} / {_pdf.PageCount} 페이지" : "검사 0 / 0 페이지";
+        // 미저장 상시 표시 (UDInspect '● CSV 미저장 / ✓ CSV 저장됨' 규범)
+        var unsaved = UnsavedCount;
+        if (_outcomes.Count == 0) DirtyText.Text = "";
+        else if (unsaved > 0)
+        {
+            DirtyText.Text = $"● 결과 미저장 {unsaved}건";
+            DirtyText.Foreground = (Brush)FindResource("StatusErrorBrush");
+        }
+        else
+        {
+            DirtyText.Text = "✓ 결과 저장됨";
+            DirtyText.Foreground = (Brush)FindResource("SavedGreenBrush");
+        }
     }
+
+    /// <summary>판정은 끝났지만 결과 이미지·이력이 저장되지 않은 페이지 수.</summary>
+    public int UnsavedCount => _outcomes.Keys.Count(p => !_savedPages.Contains(p));
 
     private void UpdatePageSlots()
     {
@@ -1481,7 +1510,7 @@ public partial class InspectorView : UserControl
         }
         File.WriteAllText(dialog.FileName, string.Join("\r\n", lines),
                           System.Text.Encoding.UTF8);
-        StatusMessage?.Invoke($"CSV 저장됨: {dialog.FileName}");
+        Status($"CSV 저장됨: {dialog.FileName}");
     }
 
     // ---------------- OCR 교정 등록 ----------------
@@ -1539,7 +1568,7 @@ public partial class InspectorView : UserControl
         if (dialog.ShowDialog() == true)
         {
             ReloadEngineAndReinspect();
-            StatusMessage?.Invoke("교정이 등록되었습니다 — 이후 검사부터 자동 적용됩니다.");
+            Status("교정이 등록되었습니다 — 이후 검사부터 자동 적용됩니다.");
         }
     }
 
@@ -1562,7 +1591,7 @@ public partial class InspectorView : UserControl
         if (log.Changed)   // 병합/교정이 있었으면 (X로 닫아도) 재검사
         {
             ReloadEngineAndReinspect();
-            StatusMessage?.Invoke("병합/교정이 등록되었습니다 — 이후 검사부터 자동 적용됩니다.");
+            Status("병합/교정이 등록되었습니다 — 이후 검사부터 자동 적용됩니다.");
         }
     }
 
@@ -1621,7 +1650,7 @@ public partial class InspectorView : UserControl
             _config.Settings["pdf_render_zoom"] = 5.0;
         _config.SaveSettings();
         ApplyConfig();   // 설정 서명 변경 감지 → 렌더/분석 무효화 후 재OCR
-        StatusMessage?.Invoke("인식 강화 파라미터 적용 — 페이지를 다시 OCR합니다.");
+        Status("인식 강화 파라미터 적용 — 페이지를 다시 OCR합니다.");
     }
 
     /// <summary>제한 거리 이하일 때만 편집 거리 반환 (초과 시 -1).</summary>
@@ -1664,7 +1693,26 @@ public partial class InspectorView : UserControl
         if (dialog.ShowDialog() != true) return;
         _config.Settings["save_directory"] = dialog.FolderName;
         _config.SaveSettings();
-        StatusMessage?.Invoke($"저장 경로: {dialog.FolderName}");
+        Status($"저장 경로: {dialog.FolderName}");
+    }
+
+    private bool _loadingConfig;
+
+    /// <summary>툴바 옵션은 UDInspect처럼 바꾸는 즉시 저장 (설정 창을 거치지 않음).</summary>
+    private void OnAutoSaveToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingConfig || _config is null) return;
+        try
+        {
+            _config.Settings["auto_save_default"] =
+                System.Text.Json.Nodes.JsonValue.Create(AutoSaveCheck.IsChecked == true);
+            _config.SaveSettings();
+        }
+        catch (Exception ex)
+        {
+            Status($"설정 저장 실패 (재실행 시 이전 설정으로 돌아갈 수 있음): {ShortMessage(ex.Message)}",
+                   StatusLevel.Error);
+        }
     }
 
     private void OnSaveCurrent(object sender, RoutedEventArgs e)
@@ -1698,14 +1746,16 @@ public partial class InspectorView : UserControl
                             MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
+        _savedPages.Add(page);
+        UpdateDashboard();
         try { _history?.RecordInspection(outcome, path, "pdf", _pdf.Path, page); }
         catch (Exception ex)
         {
             // 이미지는 저장됐으므로 이력 기록 실패만 알리고 계속 진행
-            StatusMessage?.Invoke($"저장됨: {filename} (이력 기록 실패: {ShortMessage(ex.Message)})");
+            Status($"저장됨: {filename} (이력 기록 실패: {ShortMessage(ex.Message)})", StatusLevel.Warn);
             return;
         }
-        StatusMessage?.Invoke($"저장됨: {filename}");
+        Status($"저장됨: {filename}");
         if (notify)
             MessageBox.Show($"저장됨: {filename}", "저장 완료",
                             MessageBoxButton.OK, MessageBoxImage.Information);
