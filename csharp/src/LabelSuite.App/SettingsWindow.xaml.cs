@@ -3,6 +3,7 @@
 using System.Collections.ObjectModel;
 using System.Data;
 using System.Diagnostics;
+using System.IO;
 using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
@@ -150,6 +151,116 @@ public partial class SettingsWindow : Window
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
         {
             MessageBox.Show($"내보내기 실패: {ex.Message}", "학습 데이터 내보내기",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    // ---------------- 프리셋 (규칙 + 학습 데이터 통째로) ----------------
+
+    private void OnExportPreset(object sender, RoutedEventArgs e)
+    {
+        var name = InputDialog.Ask(this, "프리셋 내보내기", "프리셋 이름 (예: A라인 스텐트 2026-09):",
+                                   _config.GetString("last_preset_name", ""),
+                                   "이름은 파일 안 manifest에 기록되어 가져올 때 표시됩니다.");
+        if (name is null) return;
+        var safe = string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+        var dialog = new SaveFileDialog
+        {
+            Title = "프리셋 내보내기",
+            Filter = $"LaVIS 프리셋 (*{PresetBundle.Extension})|*{PresetBundle.Extension}",
+            FileName = $"LaVIS-preset_{safe}_{DateTime.Now:yyyyMMdd}{PresetBundle.Extension}",
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            var manifest = PresetBundle.Export(dialog.FileName, _config, name);
+            _config.Settings["last_preset_name"] = name;
+            MessageBox.Show(this,
+                $"프리셋 '{manifest.Name}' 내보내기 완료\n포함: {string.Join(", ", manifest.Contents)}\n\n" +
+                "다른 PC의 LaVIS 설정 › 규격·양식 감지 › [프리셋 가져오기]로 적용할 수 있습니다.",
+                "프리셋 내보내기", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("프리셋 내보내기 실패", ex);
+            MessageBox.Show(this, $"내보내기 실패: {ex.Message}", "프리셋 내보내기",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void OnImportPreset(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "프리셋 가져오기",
+            Filter = $"LaVIS 프리셋 (*{PresetBundle.Extension})|*{PresetBundle.Extension}|모든 파일|*.*",
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        PresetManifest manifest;
+        try { manifest = PresetBundle.Inspect(dialog.FileName); }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "프리셋 가져오기", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        // 되돌리기 어려운 동작: 내용을 보여 주고 기본 버튼 '아니오'
+        var answer = MessageBox.Show(this,
+            $"프리셋 '{manifest.Name}' ({manifest.ExportedAt})\n" +
+            (manifest.Note.Length > 0 ? $"메모: {manifest.Note}\n" : "") +
+            $"포함: {string.Join(", ", manifest.Contents)}\n\n" +
+            "현재 규격·필드 규칙·영역·양식 감지·학습 데이터가 이 프리셋으로 교체됩니다.\n" +
+            "(현재 상태는 데이터 폴더의 backup-preset-시각 폴더에 보관됩니다)\n" +
+            "적용을 위해 LaVIS가 다시 시작됩니다. 계속할까요?",
+            "프리셋 가져오기", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (answer != MessageBoxResult.Yes) return;
+        try
+        {
+            var applied = PresetBundle.Import(dialog.FileName, _config);
+            AppLog.Info($"프리셋 적용: {applied.Name} (백업 {applied.BackupDirectory})");
+            MessageBox.Show(this,
+                $"프리셋 '{applied.Name}' 적용 완료. 이전 상태는\n{applied.BackupDirectory}\n에 보관되었습니다.\n\n확인을 누르면 LaVIS가 다시 시작됩니다.",
+                "프리셋 가져오기", MessageBoxButton.OK, MessageBoxImage.Information);
+            DialogResult = false;   // 설정 창의 미저장 편집은 버림 (재시작으로 새 상태 로드)
+            App.Restart();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("프리셋 가져오기 실패", ex);
+            MessageBox.Show(this, $"가져오기 실패: {ex.Message}\n현재 설정은 변경되지 않았거나 backup-preset 폴더에서 복원할 수 있습니다.",
+                "프리셋 가져오기", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void OnBackupDataDir(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "데이터 폴더 백업",
+            Filter = "zip 파일 (*.zip)|*.zip",
+            FileName = $"LaVIS-data-backup_{DateTime.Now:yyyyMMdd-HHmm}.zip",
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            if (File.Exists(dialog.FileName)) File.Delete(dialog.FileName);
+            // 이력 DB(WAL)와 캐시는 제외 — 열려 있는 DB 파일은 복사가 불완전할 수 있고 캐시는 재생성 가능
+            using var zip = System.IO.Compression.ZipFile.Open(dialog.FileName,
+                System.IO.Compression.ZipArchiveMode.Create);
+            var count = 0;
+            foreach (var file in Directory.GetFiles(_config.Directory))
+            {
+                var name = Path.GetFileName(file);
+                if (name.StartsWith("history.sqlite3", StringComparison.OrdinalIgnoreCase)) continue;
+                zip.CreateEntryFromFile(file, name);
+                count++;
+            }
+            MessageBox.Show(this, $"파일 {count}개를 백업했습니다.\n{dialog.FileName}\n(검사 이력 DB와 OCR 캐시는 제외)",
+                "데이터 폴더 백업", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("데이터 폴더 백업 실패", ex);
+            MessageBox.Show(this, $"백업 실패: {ex.Message}", "데이터 폴더 백업",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }

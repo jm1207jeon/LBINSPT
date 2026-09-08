@@ -248,6 +248,20 @@
             <TabItem Header="  규격 · 양식 감지  ">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
+                    <GroupBox Header="프리셋 (규격 + 필드 규칙 + 영역 + 양식 감지 + 학습 데이터를 한 파일로)">
+                        <StackPanel>
+                            <WrapPanel>
+                                <Button Content="프리셋 내보내기…" Style="{StaticResource PrimaryButton}" Click="OnExportPreset"
+                                        ToolTip="현재 규격·필드 규칙·영역·양식 감지·컬럼 매핑·학습 데이터(글자 패턴/교정/병합/동일값 레이아웃/양식 템플릿/유형 프로필)를 .lavispreset 파일 하나로 내보냅니다.&#10;다른 PC나 다른 제품군 세팅으로 전환할 때 사용합니다"/>
+                                <Button Content="프리셋 가져오기…" Click="OnImportPreset" Style="{StaticResource CautionButton}"
+                                        ToolTip="프리셋 파일을 적용합니다. 현재 규칙·학습 데이터는 교체되며(가져오기 전 backup-preset-시각 폴더에 보관) 적용을 위해 프로그램이 다시 시작됩니다.&#10;PC 고유 설정(저장 폴더·AWS·OCR 엔진 선택)은 유지됩니다"/>
+                                <Button Content="데이터 폴더 백업…" Click="OnBackupDataDir"
+                                        ToolTip="설정·규격·학습 데이터·이력 DB가 있는 데이터 폴더 전체를 zip으로 보관합니다"/>
+                            </WrapPanel>
+                            <TextBlock Style="{StaticResource HintText}"
+                                       Text="프리셋 = 제품군/라인별 검사 세팅 단위. 학습 데이터만 옮기려면 [OCR 엔진·교정] 탭의 학습 데이터 내보내기(.lslearn)를 쓰세요. 프리셋에는 저장 폴더·AWS 프로필·최근 파일 같은 PC 고유값은 들어가지 않습니다."/>
+                        </StackPanel>
+                    </GroupBox>
                     <GroupBox Header="검사 기준 (규격별 필드 기대 출현 횟수 — 더블클릭으로 수정)">
                         <DataGrid x:Name="CountsGrid" IsReadOnly="False"
                                   AutoGenerateColumns="True" CanUserAddRows="False"

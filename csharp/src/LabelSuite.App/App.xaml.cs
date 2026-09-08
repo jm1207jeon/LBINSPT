@@ -48,6 +48,24 @@ public partial class App : Application
             LogCrash("Fatal", args.ExceptionObject as Exception);
     }
 
+    /// <summary>프로그램을 다시 시작한다 (프리셋 적용 등 전체 재로드가 필요할 때).</summary>
+    public static void Restart()
+    {
+        var exe = Environment.ProcessPath;
+        if (exe is not null)
+        {
+            try
+            {
+                // 뮤텍스는 종료 시 해제되므로 새 프로세스는 잠시 기다렸다 시작
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe",
+                    $"/c timeout /t 1 /nobreak >nul & start \"\" \"{exe}\"")
+                { CreateNoWindow = true, UseShellExecute = false });
+            }
+            catch (Exception ex) { AppLog.Error("재시작 실패", ex); }
+        }
+        Current.Shutdown();
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
         AppLog.Info("LaVIS 종료");

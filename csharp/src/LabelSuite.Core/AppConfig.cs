@@ -1,4 +1,5 @@
-// 앱 설정 관리 — 임베디드 기본값을 %APPDATA%/LabelSuite로 복사 후 로드/저장.
+// 앱 설정 관리 — 임베디드 기본값을 %APPDATA%/LaVIS로 복사 후 로드/저장.
+// 저장은 원자적(임시 파일 → 교체), 스키마 버전을 기록해 구버전 파일을 단계 이전한다.
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -26,10 +27,24 @@ public class AppConfig
 
     public static string DataDir() => DefaultConfigDir();
 
+    /// <summary>settings.json 스키마 버전. 구조가 바뀌면 올리고 Migrate()에 단계 이전을 추가한다.
+    /// v1: 초기 / v2: 스키마 버전 기록·원자적 저장 도입 (구조 변경 없음).</summary>
+    public const int CurrentSchemaVersion = 2;
+
+    /// <summary>설정 파일이 이 프로그램보다 새 버전(schema_version이 더 큼)이면 true —
+    /// 상위 버전에서 만든 프리셋을 가져온 경우로, UI가 안내한다.</summary>
+    public bool SettingsFromNewerVersion { get; private set; }
+
     public AppConfig(string? directory = null)
     {
         if (directory is null) MigrateLegacyDataDir();
         Directory = directory ?? DefaultConfigDir();
+        Reload();
+    }
+
+    /// <summary>디스크의 설정 3파일을 다시 읽는다 (프리셋 가져오기 뒤 등).</summary>
+    public void Reload()
+    {
         EnsureDefaults();
         Settings = Read(SettingsFile);
         StandardsRaw = Read(StandardsFile);
@@ -95,9 +110,26 @@ public class AppConfig
 
     private void Migrate()
     {
+        // 스키마 버전 단계 이전 (구조가 바뀐 버전만 case 추가)
+        var version = Settings["schema_version"] is { } v
+                      && v.AsValue().TryGetValue<int>(out var parsed) ? parsed : 1;
+        var changed = false;
+        SettingsFromNewerVersion = version > CurrentSchemaVersion;
+        while (version < CurrentSchemaVersion)
+        {
+            switch (version)
+            {
+                case 1:
+                    // v1 → v2: 구조 변경 없음 (누락 키 보충은 아래 공통 단계가 처리)
+                    break;
+            }
+            version++;
+            Settings["schema_version"] = version;
+            changed = true;
+        }
+
         // 번들 기본값에 새 키가 추가됐을 때 사용자 settings.json 보충
         var defaults = JsonNode.Parse(ReadEmbedded(SettingsFile))!.AsObject();
-        var changed = false;
         foreach (var (key, value) in defaults)
         {
             if (!Settings.ContainsKey(key))
@@ -146,8 +178,17 @@ public class AppConfig
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    /// <summary>원자적 저장: 임시 파일에 완전히 쓴 뒤 교체한다 — 저장 도중 정전·강제 종료로
+    /// 설정 파일이 반쯤 쓰인 채 남는(=다음 시작 때 손상 복구로 초기화되는) 일을 막는다.</summary>
     private void Write(string name, JsonObject data) =>
-        File.WriteAllText(Path.Combine(Directory, name), data.ToJsonString(WriteOptions));
+        WriteAtomic(Path.Combine(Directory, name), data.ToJsonString(WriteOptions));
+
+    public static void WriteAtomic(string path, string content)
+    {
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, content);
+        File.Move(temp, path, overwrite: true);
+    }
 
     public void SaveSettings() => Write(SettingsFile, Settings);
     public void SaveStandards() => Write(StandardsFile, StandardsRaw);

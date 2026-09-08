@@ -78,6 +78,10 @@ public partial class MainWindow : Window
             Inspector.Shutdown();
             History.Dispose();
         };
+        if (Config.SettingsFromNewerVersion)
+            Loaded += (_, _) => ShowStatus(
+                "설정 파일이 이 프로그램보다 새 버전에서 만들어졌습니다 — 일부 항목이 무시될 수 있습니다. LaVIS를 업데이트하세요.",
+                StatusLevel.Warn);
         if (Config.RecoveredFiles.Count > 0)
             Loaded += (_, _) => MessageBox.Show(
                 $"손상된 설정 파일을 기본값으로 복구했습니다: " +
