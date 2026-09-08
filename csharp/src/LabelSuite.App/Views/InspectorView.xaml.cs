@@ -37,6 +37,13 @@ public partial class InspectorView : UserControl
     private readonly Dictionary<int, InspectionOutcome> _outcomes = [];
     /// <summary>결과 이미지가 저장된 페이지 — '● 결과 미저장 / ✓ 저장됨' 표시와 종료 확인용.</summary>
     private readonly HashSet<int> _savedPages = [];
+    /// <summary>페이지 → 마지막으로 저장된 판정 서명(InspectionOutcome.Signature). 같은 판정을
+    /// 다시 방문·재검사해도 자동 저장이 중복 파일·이력을 만들지 않게 한다 (A-05).</summary>
+    private readonly Dictionary<int, string> _savedSignature = [];
+    /// <summary>페이지 → 마지막으로 저장된 결과 파일 경로 (재저장 확인 문구·CSV IMAGE_PATH).</summary>
+    private readonly Dictionary<int, string> _savedFile = [];
+    /// <summary>라벨에서 목록 LOT을 읽지 못한 페이지 — 슬롯 '?' 표시.</summary>
+    private readonly HashSet<int> _lotUnmatchedPages = [];
     private readonly HashSet<int> _manualLotPages = [];   // 사용자가 직접 LOT 고른 페이지
     private readonly Dictionary<int, int> _pageLotChoice = [];  // 페이지 → 수동 선택 인덱스
     private readonly Dictionary<int, string> _manualStandardPages = [];  // 페이지 → 수동 규격
@@ -106,7 +113,9 @@ public partial class InspectorView : UserControl
         _pdf.CachePages = _config.GetInt("page_image_cache_pages", 6);
         _loadingConfig = true;
         AutoSaveCheck.IsChecked = _config.GetBool("auto_save_default", false);
+        ShowZonesCheck.IsChecked = _config.SectionBool("overlay", "show_zones", true);
         _loadingConfig = false;
+        UpdateLegend();
 
         _worker = new PrefetchWorker(async image =>
         {
@@ -147,6 +156,22 @@ public partial class InspectorView : UserControl
         PopulateStandardButtons();
         _analysisSig = CurrentAnalysisSig();
         _ = CheckAwsAsync();
+        // 저장 폴더 접근 확인(비차단) — 네트워크 드라이브가 끊겨 있으면 자동 저장을 미리 해제해 기록 유실을 막는다
+        if (AutoSaveCheck.IsChecked == true) _ = VerifySaveDirAsync(disableAutoSaveOnFailure: true);
+    }
+
+    /// <summary>범례 '합격 필드' 견본을 설정의 필드 색(LOT)으로 채운다 (Initialize/ApplyConfig).</summary>
+    private void UpdateLegend()
+    {
+        if (!_standards.FieldColors.TryGetValue("LOT", out var c))
+        {
+            if (_standards.FieldColors.Count == 0) return;
+            c = _standards.FieldColors.Values.First();
+        }
+        // 설정 데이터(필드 색)에서 오는 색 — 토큰이 아니라 사용자 설정값이라 코드에서 만든다
+        var brush = new SolidColorBrush(Color.FromArgb(255, c.R, c.G, c.B));
+        LegendFieldSwatch.Fill = brush;
+        LegendFieldSwatch.Stroke = brush;
     }
 
     private TextractClient MakeTextract()
@@ -348,6 +373,10 @@ public partial class InspectorView : UserControl
         _profiler.MinSamples = _config.SectionInt("type_learning", "min_samples", 5);
         _pdf.RenderZoom = _config.GetDouble("pdf_render_zoom", 4.0);
         PopulateStandardButtons();
+        UpdateLegend();
+        _loadingConfig = true;
+        ShowZonesCheck.IsChecked = _config.SectionBool("overlay", "show_zones", true);
+        _loadingConfig = false;
         _ = CheckAwsAsync();
 
         var signature = CurrentAnalysisSig();
@@ -361,6 +390,9 @@ public partial class InspectorView : UserControl
             _analyses.Clear();
             _outcomes.Clear();
             _savedPages.Clear();
+            _savedSignature.Clear();
+            _savedFile.Clear();
+            _lotUnmatchedPages.Clear();
             if (_pdf.IsOpen)
             {
                 _worker.NewGeneration();
@@ -371,6 +403,7 @@ public partial class InspectorView : UserControl
             UpdatePageSlots();
         }
         else ReinspectCurrent();
+        DrawZones();
     }
 
     /// <summary>교정 사전이 바뀐 뒤 재검사 (설정 창/교정 등록에서 호출).</summary>
@@ -378,6 +411,7 @@ public partial class InspectorView : UserControl
     {
         _engine = BuildEngine();
         ReinspectCurrent();
+        DrawZones();
     }
 
     public void Shutdown()
@@ -468,6 +502,7 @@ public partial class InspectorView : UserControl
         _records = records;
         _manualLotPages.Clear();
         _pageLotChoice.Clear();
+        _savedSignature.Clear();   // 목록이 바뀌면 같은 페이지라도 다른 판정 — 자동 저장 스킵 기준 초기화
         _suppressEvents = true;
         var items = new List<string> { "LOT 선택…" };
         items.AddRange(records.Select(r => r.Lot));
@@ -563,6 +598,9 @@ public partial class InspectorView : UserControl
         _analyses.Clear();
         _outcomes.Clear();
         _savedPages.Clear();
+        _savedSignature.Clear();
+        _savedFile.Clear();
+        _lotUnmatchedPages.Clear();
         _manualLotPages.Clear();
         _pageLotChoice.Clear();
         _manualStandardPages.Clear();
@@ -570,7 +608,8 @@ public partial class InspectorView : UserControl
         _typeAlarmPages.Clear();
         ClearProcessed();
         _worker.NewGeneration();
-        foreach (var button in new[] { FirstButton, PrevButton, NextButton, LastButton })
+        foreach (var button in new[] { FirstButton, PrevButton, NextButton, LastButton,
+                                       NextAttentionButton })
             button.IsEnabled = true;
         PdfNameLabel.Text = $"{Path.GetFileName(path)} · {_pdf.PageCount}페이지";
         Status($"PDF 로드: {Path.GetFileName(path)} ({_pdf.PageCount}페이지)");
@@ -627,19 +666,83 @@ public partial class InspectorView : UserControl
     private void OnNextPage(object s, RoutedEventArgs e) => Navigate(_currentPage + 1);
     private void OnLastPage(object s, RoutedEventArgs e) => Navigate(_pdf.PageCount - 1);
 
+    private void OnNextAttention(object sender, RoutedEventArgs e) => GoToNextAttention();
+
+    /// <summary>현재 다음 페이지부터 순환하며 미검사(OCR 대기·LOT 미매칭 포함) 또는 확인 필요 페이지로 이동 (N).</summary>
+    private void GoToNextAttention()
+    {
+        if (!_pdf.IsOpen) return;
+        var target = SessionStats.NextAttention(_pdf.PageCount, _currentPage, PageState);
+        if (target is null)
+        {
+            Status("다음 확인 대상 없음 — 모든 페이지 검사·합격");
+            return;
+        }
+        if (target == _currentPage)
+        {
+            Status($"p{_currentPage + 1}만 확인 대상입니다 — 다른 페이지는 모두 검사·합격");
+            return;
+        }
+        Navigate(target.Value);
+    }
+
+    /// <summary>페이지 상태: null=미검사(OCR 대기·LOT 미매칭), false=확인 필요, true=합격.</summary>
+    private bool? PageState(int page) =>
+        _lotUnmatchedPages.Contains(page) ? null
+        : _outcomes.TryGetValue(page, out var outcome) ? outcome.Passed : null;
+
     private void OnKeyDown(object sender, KeyEventArgs e) => HandleGlobalKey(e);
 
     /// <summary>전역 키 입력 (MainWindow가 검사 탭 활성 시 라우팅) —
-    /// ←/→ 페이지 이동, WASD 이미지 이동, Q 확대 / E 축소.</summary>
+    /// Ctrl+O 열기 · Esc 등록 모드 해제 · Ctrl+S 저장 · F5 재검사 · N 다음 확인 대상 ·
+    /// Ctrl+L LOT · Ctrl+F 검색 · Ctrl+Shift+L OCR 로그 · ←/→ 페이지 · WASD 이동 · Q/E 줌.</summary>
     public void HandleGlobalKey(KeyEventArgs e)
     {
-        // 텍스트 입력 중에는 개입하지 않는다
+        // 텍스트 입력 중에는 개입하지 않는다 (검색창에서 N/F5는 문자 입력)
         if (e.OriginalSource is System.Windows.Controls.Primitives.TextBoxBase
             or PasswordBox or ComboBox or ComboBoxItem) return;
+        var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+        if (ctrl && !shift && e.Key == Key.O)
+        {
+            OnOpenPdf(this, new RoutedEventArgs());
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == Key.Escape && ZoneModeButton.IsChecked == true)
+        {
+            ZoneModeButton.IsChecked = false;
+            e.Handled = true;
+            return;
+        }
         if (!_pdf.IsOpen) return;
+        if (ctrl)
+        {
+            switch (e.Key)
+            {
+                case Key.S when !shift:
+                    OnSaveCurrent(this, new RoutedEventArgs()); e.Handled = true; break;
+                case Key.L when shift:
+                    OpenOcrLog("", ""); e.Handled = true; break;
+                case Key.L:
+                    LotCombo.Focus();
+                    LotCombo.IsDropDownOpen = true;
+                    e.Handled = true; break;
+                case Key.F when !shift:
+                    SearchBox.Focus();
+                    SearchBox.SelectAll();
+                    e.Handled = true; break;
+            }
+            return;   // Ctrl 조합은 아래 단일 키(S=이동 등)와 겹치지 않게 여기서 끝
+        }
         const double PanStep = 90;
         switch (e.Key)
         {
+            case Key.F5:
+                ReinspectCurrent();
+                Status($"p{_currentPage + 1} 재검사");
+                e.Handled = true; break;
+            case Key.N: GoToNextAttention(); e.Handled = true; break;
             case Key.Left: Navigate(_currentPage - 1); e.Handled = true; break;
             case Key.Right: Navigate(_currentPage + 1); e.Handled = true; break;
             case Key.Home: Navigate(0); e.Handled = true; break;
@@ -692,6 +795,7 @@ public partial class InspectorView : UserControl
         }
         UpdatePrefetchLabel();
         UpdatePageSlots();
+        DrawZones();
     }
 
     private void OnPageDone(int generation, int page, string key, PageAnalysis analysis)
@@ -712,7 +816,7 @@ public partial class InspectorView : UserControl
         if (generation != _worker.Generation) return;
         Status($"{page + 1}페이지 OCR 실패: {message}", StatusLevel.Error);
         if (page == _currentPage)
-            ClearResultPanel($"OCR 실패 — {ShortMessage(message)}");
+            ClearResultPanel($"OCR 실패 — {ShortMessage(message)}", StatusLevel.Warn);
         // 같은 원인(예: 자격증명 오류)으로 페이지마다 팝업이 연쇄되는 것을 막는다:
         // 동일 메시지는 60초에 한 번만 알리고, 남은 프리페치는 중단한다.
         var sameAsLast = message == _lastFailureMessage
@@ -747,12 +851,16 @@ public partial class InspectorView : UserControl
 
     // ---------------- 검사 ----------------
 
-    private sealed record FieldRowVm(string Field, string Term, string Count, string State);
+    private sealed record FieldRowVm(string Field, string Term, string Count, string State)
+    {
+        /// <summary>색 없이도 읽히는 상태 기호 — ✓ 일치 / ✗ 불일치 / – 참고(기대 없음).</summary>
+        public string Glyph => State switch { "pass" => "✓", "fail" => "✗", _ => "–" };
+    }
     private sealed record BarcodeRowVm(string Order, string Symbology, string Grade,
-                                       string Value, string State);
+                                       string Value, string State, string? Tip = null);
     private sealed record PageSlotVm(int PageIndex, string Number, string Tip,
                                      Brush Fill, Brush Stroke, Thickness StrokeThickness,
-                                     Brush TextBrush);
+                                     Brush TextBrush, bool Saved, FontWeight Weight);
 
     private void RunInspection(int page, PageAnalysis analysis, SKBitmap image,
                                bool fit = false)
@@ -814,6 +922,7 @@ public partial class InspectorView : UserControl
                        StatusLevel.Warn);
             }
         }
+        if (lotUnmatched) _lotUnmatchedPages.Add(page); else _lotUnmatchedPages.Remove(page);
 
         // 커스텀 필드 값 → 규격 자동 매칭 (예: 라벨에서 Rev.A00 검출 → 규격 A00)
         if (manualStandard is null)
@@ -860,15 +969,16 @@ public partial class InspectorView : UserControl
         if (record is null)
         {
             SetViewerImage(image, fit);
-            ClearResultPanel(_records.Count > 0
-                ? "LOT을 선택하면 검사를 시작합니다" : "검사 목록을 먼저 로드하세요");
+            if (_records.Count > 0) ClearResultPanel("LOT을 선택하면 검사를 시작합니다");
+            else ClearResultPanel("검사 목록을 먼저 로드하세요", StatusLevel.Warn);
             return;
         }
 
         if (_standards.Standards.Count == 0)
         {
             SetViewerImage(image, fit);
-            ClearResultPanel("규격 정의가 없습니다 — 설정 폴더의 standards.json을 확인하세요");
+            ClearResultPanel("규격 정의가 없습니다 — 설정 폴더의 standards.json을 확인하세요",
+                             StatusLevel.Warn);
             return;
         }
         var standardName = _selectedStandard ?? _standards.Standards.Keys.First();
@@ -901,7 +1011,7 @@ public partial class InspectorView : UserControl
         // 규격 자동 판별에 쓰인 양식명 OCR 영역도 박스 표시 (보라색)
         if (detectedForm is { TextBbox: { } formBbox } detected)
             Annotate.DrawTaggedBox(annotated, formBbox, $"양식: {detected.Name}",
-                                   new SKColor(128, 0, 160), CurrentOverlayStyle());
+                                   Annotate.FormBoxColor, CurrentOverlayStyle());
         // 저신뢰 OCR 알람 — 유의미하게 낮으면 해당 단어를 주황 파선으로 하이라이트
         if (_config.SectionBool("ocr", "quality_alarm", true))
         {
@@ -913,14 +1023,18 @@ public partial class InspectorView : UserControl
                 Annotate.HighlightLowConfidence(annotated,
                     OcrQuality.LowConfidenceWords(analysis.Words, lowThreshold),
                     CurrentOverlayStyle());
-                StatusBadgeText.Text += $"  ·  ⚠ OCR 신뢰도 {quality.Average:F0}%";
+                BadgeReasonText.Text += $" · ⚠ OCR 신뢰도 {quality.Average:F0}%";
                 Status($"⚠ p{page + 1}: {quality.Summary}", StatusLevel.Warn);
             }
         }
         SetViewerImage(annotated, fit);
         UpdateDashboard();
         UpdatePageSlots();
-        if (AutoSaveCheck.IsChecked == true)
+        // 자동 저장: 같은 판정(서명 동일)이 이미 저장돼 있으면 건너뛴다 — 재방문·재검사마다
+        // 새 번호 파일과 이력 행이 쌓이지 않게 (페이지당 판정 1건 원칙)
+        if (AutoSaveCheck.IsChecked == true
+            && (!_savedSignature.TryGetValue(page, out var savedSig)
+                || savedSig != outcome.Signature()))
             SaveOutcome(page, outcome, image, notify: false);
     }
 
@@ -982,14 +1096,19 @@ public partial class InspectorView : UserControl
         {
             StatusBadgeText.Text = $"✓ 합격 (PASSED) · 규격 {outcome.Standard.DisplayName}";
             StatusBadgeText.Foreground = (Brush)FindResource("SuccessBrush");
+            StatusBadge.BorderBrush = (Brush)FindResource("SuccessBrush");
             FlashBadge((SolidColorBrush)FindResource("SuccessBgBrush"));
         }
         else
         {
             StatusBadgeText.Text = $"⚠ 확인 필요 (CHECK) · 규격 {outcome.Standard.DisplayName}";
             StatusBadgeText.Foreground = (Brush)FindResource("WarnBrush");
+            StatusBadge.BorderBrush = (Brush)FindResource("WarnBrush");
             FlashBadge((SolidColorBrush)FindResource("WarnBgBrush"));
         }
+        // 사유줄: 저장 이미지 요약 박스 2행과 같은 문구 (Core InspectionSummary)
+        BadgeReasonText.Text = InspectionSummary.Describe(outcome);
+        BadgeReasonText.Foreground = (Brush)FindResource(outcome.Passed ? "SuccessBrush" : "WarnBrush");
         FieldGrid.ItemsSource = outcome.Fields.Values
             .Select(f => new FieldRowVm(
                 f.Field, f.Term.Length > 0 ? f.Term : "-",
@@ -1004,6 +1123,7 @@ public partial class InspectorView : UserControl
             var hit = hits[i];
             string value;
             string state;
+            string? tip = null;
             if (hit.IsGs1 || BarcodeDetector.LooksGs1(hit.Text))
             {
                 try
@@ -1022,11 +1142,20 @@ public partial class InspectorView : UserControl
                             .Where(c => !c.Matched)
                             .Select(c => $"{c.Field} 기대 {c.ExpectedValue}"));
                     }
+                    if (message.Partial)
+                    {
+                        value += $" (미등록 AI: {string.Join(", ", message.UnknownAis)})";
+                        tip = "GS1 표준 표에 없는 AI가 있어 그 구간은 대조하지 않았습니다 — 등록된 AI(01/10/17 등)만 대조";
+                    }
                 }
                 catch (Gs1ParseException)
                 {
-                    value = hit.Text.Replace('\x1d', '|');
-                    state = "-";
+                    // 바코드는 읽혔지만 GS1 구조 해석 실패 — OCR 텍스트로 대체하지 않고(GTIN은 바코드가 진실)
+                    // 붉은 행으로 육안 확인을 요구한다
+                    var raw = hit.Text.Replace('\x1d', '|');
+                    value = raw.Length > 40 ? raw[..40] + "…" : raw;
+                    state = "해석 불가";
+                    tip = "바코드는 읽혔으나 GS1 구조를 해석하지 못했습니다 — 판독값을 육안 확인하세요";
                 }
             }
             else
@@ -1035,7 +1164,7 @@ public partial class InspectorView : UserControl
                 state = "-";
             }
             barcodeRows.Add(new BarcodeRowVm($"#{i + 1}", hit.Symbology,
-                                             hit.Grade ?? "", value, state));
+                                             hit.Grade ?? "", value, state, tip));
         }
         // 부가 검증 행 (동일값 패턴 · 기준정보 DB)
         foreach (var check in outcome.BarcodeChecks
@@ -1051,11 +1180,14 @@ public partial class InspectorView : UserControl
 
     private PageAnalysis? _lastAnalysisShown;
 
-    private void ClearResultPanel(string message)
+    /// <summary>판정 없음 상태의 배지 — level=Warn(OCR 실패·목록 없음)이면 주황 테두리로 주의를 끈다.</summary>
+    private void ClearResultPanel(string message, StatusLevel level = StatusLevel.Info)
     {
         StatusBadgeText.Text = message;
-        StatusBadgeText.Foreground = (Brush)FindResource("MutedBrush");
+        StatusBadgeText.Foreground = (Brush)FindResource(level == StatusLevel.Info ? "MutedBrush" : "WarnBrush");
         StatusBadge.Background = (Brush)FindResource("ReadoutBrush");
+        StatusBadge.BorderBrush = (Brush)FindResource(level == StatusLevel.Info ? "ReadoutBorderBrush" : "WarnBrush");
+        BadgeReasonText.Text = "";
         FieldGrid.ItemsSource = null;
         BarcodeGrid.ItemsSource = null;
     }
@@ -1177,6 +1309,94 @@ public partial class InspectorView : UserControl
         ZoomSlider.Value = _zoom * 100;
         _suppressEvents = false;
         ZoomLabel.Text = $"{(int)(_zoom * 100)}%";
+        DrawZones();
+    }
+
+    // ---------------- 등록 영역 표시 (점선 + 칩) ----------------
+
+    /// <summary>등록된 필드 영역(현재 규격 + 전체 규격)과 양식 규칙 영역을 뷰어 위에 점선·칩으로 그린다.
+    /// 좌표계는 RubberBand와 같은 ViewerImage 표시 좌표(영역% × 표시 크기 × 배율).</summary>
+    private void DrawZones()
+    {
+        ZoneLayer.Children.Clear();
+        if (_displayed is null || _engine is null || ShowZonesCheck.IsChecked != true) return;
+        var width = _displayed.Width * _zoom;
+        var height = _displayed.Height * _zoom;
+        var zoneStroke = (Brush)FindResource("PrimaryBrush");
+        var zoneChipBg = (Brush)FindResource("PrimarySoftBrush");
+        var zoneChipFg = (Brush)FindResource("AccentBrush");
+        var formStroke = (Brush)FindResource("OverlayFormBrush");
+        var chipFg = (Brush)FindResource("PanelBrush");
+        foreach (var zone in _engine.Options.Zones)
+        {
+            if (zone.Standard.Length > 0 && zone.Standard != _selectedStandard) continue;
+            var label = zone.Standard.Length > 0 ? $"{zone.Field} · {zone.Standard}" : zone.Field;
+            AddZoneShape(zone.Region, width, height, zoneStroke, zoneChipBg, zoneChipFg, label,
+                         ZoneTag(zone.Field, zone.Standard, zone.Region));
+        }
+        foreach (var rule in _formRules)
+            AddZoneShape(rule.Region, width, height, formStroke, formStroke, chipFg,
+                         $"양식: {rule.Name}", null);
+    }
+
+    private static string ZoneTag(string field, string standard,
+                                  (double X, double Y, double W, double H) region) =>
+        $"{field.ToUpperInvariant()}|{standard}|{region.X:F3}|{region.Y:F3}|{region.W:F3}|{region.H:F3}";
+
+    private void AddZoneShape((double X, double Y, double W, double H) region,
+                              double width, double height, Brush stroke, Brush chipBg,
+                              Brush chipFg, string label, string? tag)
+    {
+        var x = region.X * width;
+        var y = region.Y * height;
+        var rect = new System.Windows.Shapes.Rectangle
+        {
+            Width = Math.Max(1, region.W * width), Height = Math.Max(1, region.H * height),
+            Stroke = stroke, StrokeThickness = 1.5, StrokeDashArray = [6, 3],
+            Fill = Brushes.Transparent, Tag = tag,
+        };
+        Canvas.SetLeft(rect, x);
+        Canvas.SetTop(rect, y);
+        ZoneLayer.Children.Add(rect);
+        var chip = new Border
+        {
+            Background = chipBg, CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(4, 0, 4, 1),
+            Child = new TextBlock
+            {
+                Text = label, FontSize = 11, FontWeight = FontWeights.Bold, Foreground = chipFg,
+            },
+        };
+        Canvas.SetLeft(chip, x);
+        Canvas.SetTop(chip, Math.Max(0, y - 16));
+        ZoneLayer.Children.Add(chip);
+    }
+
+    /// <summary>방금 등록한 영역의 점선 사각형을 앰버로 번쩍인다 (DrawZones 뒤).</summary>
+    private void FlashZone(string field, string standard,
+                           (double X, double Y, double W, double H) region)
+    {
+        var tag = ZoneTag(field, standard, region);
+        foreach (var child in ZoneLayer.Children.OfType<System.Windows.Shapes.Rectangle>())
+            if (child.Tag is string t && t == tag) UiFx.FlashShape(child);
+    }
+
+    /// <summary>'영역 표시' 토글은 바꾸는 즉시 저장 (overlay.show_zones).</summary>
+    private void OnShowZonesToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingConfig || _config is null) return;
+        try
+        {
+            _config.Section("overlay")["show_zones"] =
+                System.Text.Json.Nodes.JsonValue.Create(ShowZonesCheck.IsChecked == true);
+            _config.SaveSettings();
+        }
+        catch (Exception ex)
+        {
+            Status($"설정 저장 실패 (재실행 시 이전 설정으로 돌아갈 수 있음): {ShortMessage(ex.Message)}",
+                   StatusLevel.Error);
+        }
+        DrawZones();
     }
 
     private void OnZoomSliderChanged(object sender,
@@ -1222,9 +1442,16 @@ public partial class InspectorView : UserControl
     {
         var on = ZoneModeButton.IsChecked == true;
         ViewerScroll.Cursor = on ? Cursors.Cross : Cursors.Arrow;
+        ZoneModeBanner.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        if (!on && _zoneDragging)
+        {
+            _zoneDragging = false;
+            RubberBand.Visibility = Visibility.Collapsed;
+        }
         Status(on
-            ? "필드 영역 등록 모드 — 라벨 위를 드래그(영역) 또는 클릭(객체)하세요. 다시 누르면 해제"
+            ? "필드 영역 등록 모드 — 라벨 위를 드래그(영역) 또는 클릭(객체)하세요. Esc 또는 버튼으로 해제"
             : "필드 영역 등록 모드 해제");
+        DrawZones();
     }
 
     private void OnViewerMouseDown(object sender, MouseButtonEventArgs e)
@@ -1335,6 +1562,12 @@ public partial class InspectorView : UserControl
                                 (double X, double Y, double W, double H) regionPercent)
     {
         const string NewCustom = "(새 커스텀 필드 만들기)";
+        var fields = _config.Section("fields");
+        if (fields["zones"] is not System.Text.Json.Nodes.JsonArray zoneArray)
+        {
+            zoneArray = new System.Text.Json.Nodes.JsonArray();
+            fields["zones"] = zoneArray;
+        }
         var fieldNames = BuiltinZoneFields
             .Concat(_engine.Options.CustomFields.Select(c => c.Name))
             .Distinct().Append(NewCustom).ToList();
@@ -1350,12 +1583,54 @@ public partial class InspectorView : UserControl
         var nameBox = new TextBox { MinWidth = 220, IsEnabled = false };
         var patternBox = new TextBox
         { MinWidth = 220, Text = clickedText ?? "", IsEnabled = false };
+        var header = new TextBlock
+        {
+            Text = clickedText is null
+                ? $"선택 영역: X {regionPercent.X:F0}%, Y {regionPercent.Y:F0}%, " +
+                  $"{regionPercent.W:F0}×{regionPercent.H:F0}%"
+                : $"선택 객체: '{clickedText}'",
+            FontWeight = FontWeights.Bold,
+        };
+        // '(이미 n개 등록됨)' — 고른 필드·규격에 등록된 영역 수를 즉시 보여 준다
+        var existingText = new TextBlock
+        { Style = (Style)FindResource("HintText"), Margin = new Thickness(0, 2, 0, 0) };
+        string SelectedStandard() =>
+            (string?)standardCombo.SelectedItem is { } sel && sel != "전체" ? sel : "";
+        string SelectedField() =>
+            (string?)fieldCombo.SelectedItem == NewCustom ? nameBox.Text.Trim()
+                                                          : (string?)fieldCombo.SelectedItem ?? "";
+        void RefreshExisting()
+        {
+            var count = SelectedField().Length > 0
+                ? FieldZoneStore.CountFor(zoneArray, SelectedField(), SelectedStandard()) : 0;
+            existingText.Text = count > 0
+                ? $"(이미 {count}개 등록됨 — 등록 시 교체/추가를 묻습니다)" : "(이 필드·규격에 등록된 영역 없음)";
+        }
         fieldCombo.SelectionChanged += (_, _) =>
         {
             var isNew = (string?)fieldCombo.SelectedItem == NewCustom;
             nameBox.IsEnabled = isNew;
             patternBox.IsEnabled = isNew;
+            RefreshExisting();
         };
+        standardCombo.SelectionChanged += (_, _) => RefreshExisting();
+        nameBox.TextChanged += (_, _) => RefreshExisting();
+        var keepModeCheck = new CheckBox
+        {
+            Content = "등록 후 영역 등록 모드 유지 (연속 등록)",
+            IsChecked = _config.SectionBool("zones", "keep_mode", false),
+            Margin = new Thickness(0, 10, 0, 0),
+            ToolTip = "켜 두면 등록 뒤에도 드래그·클릭으로 계속 등록할 수 있습니다 (Esc로 해제 · 설정은 즉시 저장)",
+        };
+        void SaveKeepMode(object? _, RoutedEventArgs __)
+        {
+            _config.Section("zones")["keep_mode"] =
+                System.Text.Json.Nodes.JsonValue.Create(keepModeCheck.IsChecked == true);
+            try { _config.SaveSettings(); }
+            catch (Exception ex) { Status($"설정 저장 실패: {ShortMessage(ex.Message)}", StatusLevel.Error); }
+        }
+        keepModeCheck.Checked += SaveKeepMode;
+        keepModeCheck.Unchecked += SaveKeepMode;
         var okButton = new Button
         {
             Content = "등록", MinWidth = 90, IsDefault = true,
@@ -1368,18 +1643,13 @@ public partial class InspectorView : UserControl
             { Text = label, Margin = new Thickness(0, 6, 0, 2) });
             panel.Children.Add(input);
         }
-        panel.Children.Add(new TextBlock
-        {
-            Text = clickedText is null
-                ? $"선택 영역: X {regionPercent.X:F0}%, Y {regionPercent.Y:F0}%, " +
-                  $"{regionPercent.W:F0}×{regionPercent.H:F0}%"
-                : $"선택 객체: '{clickedText}'",
-            FontWeight = FontWeights.Bold,
-        });
+        panel.Children.Add(header);
+        panel.Children.Add(existingText);
         AddRow("이 위치에서 검출할 필드:", fieldCombo);
         AddRow("적용 규격 (전체 = 모든 규격):", standardCombo);
         AddRow("새 커스텀 필드 이름:", nameBox);
         AddRow("새 커스텀 필드 패턴 (찾을 값):", patternBox);
+        panel.Children.Add(keepModeCheck);
         okButton.Style = (Style)FindResource("PrimaryButton");
         var cancelButton = new Button { Content = "취소", IsCancel = true, MinWidth = 70 };
         var buttonRow = new StackPanel
@@ -1389,6 +1659,7 @@ public partial class InspectorView : UserControl
         buttonRow.Children.Add(okButton);
         buttonRow.Children.Add(cancelButton);
         panel.Children.Add(buttonRow);
+        RefreshExisting();
         var dialog = new Window
         {
             Title = "필드 영역 등록", Content = panel,
@@ -1398,11 +1669,14 @@ public partial class InspectorView : UserControl
             ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false,
         };
         okButton.Click += (_, _) => dialog.DialogResult = true;
-        if (dialog.ShowDialog() != true) { ZoneModeButton.IsChecked = false; return; }
+        var keepMode = () => keepModeCheck.IsChecked == true;
+        if (dialog.ShowDialog() != true)
+        {
+            if (!keepMode()) ZoneModeButton.IsChecked = false;
+            return;
+        }
 
-        var standard = (string?)standardCombo.SelectedItem is { } sel && sel != "전체"
-            ? sel : "";
-        var fields = _config.Section("fields");
+        var standard = SelectedStandard();
         string zoneField;
         if ((string?)fieldCombo.SelectedItem == NewCustom)
         {
@@ -1427,12 +1701,20 @@ public partial class InspectorView : UserControl
         }
         else zoneField = (string?)fieldCombo.SelectedItem ?? "";
 
-        if (fields["zones"] is not System.Text.Json.Nodes.JsonArray zoneArray)
+        // 같은 필드·규격에 이미 영역이 있으면 교체/추가를 묻는다 (잘못 드래그된 영역이 영구 미검출을
+        // 만들지 않게 — 버튼 라벨이 동작을 말하고, Esc/취소는 아무것도 바꾸지 않는다)
+        var replace = false;
+        var existing = FieldZoneStore.CountFor(zoneArray, zoneField, standard);
+        if (existing > 0)
         {
-            zoneArray = new System.Text.Json.Nodes.JsonArray();
-            fields["zones"] = zoneArray;
+            var choice = ChoiceDialog.Show(Window.GetWindow(this), "필드 영역 등록",
+                $"'{zoneField}'({(standard.Length > 0 ? standard : "전체 규격")})에 이미 영역 {existing}개가 있습니다.",
+                ("기존 영역 교체", ChoiceStyle.Primary, true),
+                ("영역 추가 (둘 다 인정)", ChoiceStyle.Default, false));
+            if (choice < 0) return;
+            replace = choice == 0;
         }
-        zoneArray.Add(new System.Text.Json.Nodes.JsonObject
+        var zone = new System.Text.Json.Nodes.JsonObject
         {
             ["field"] = zoneField,
             ["standard"] = standard,
@@ -1441,15 +1723,33 @@ public partial class InspectorView : UserControl
                 System.Text.Json.Nodes.JsonValue.Create(Math.Round(regionPercent.Y, 1)),
                 System.Text.Json.Nodes.JsonValue.Create(Math.Round(regionPercent.W, 1)),
                 System.Text.Json.Nodes.JsonValue.Create(Math.Round(regionPercent.H, 1))),
-        });
+        };
+        var removed = FieldZoneStore.Upsert(zoneArray, zone, replace);
         _config.SaveSettings();
-        ZoneModeButton.IsChecked = false;
-        ReloadEngineAndReinspect();
-        Status(
-            $"'{zoneField}' 필드 영역 등록됨 — 이제 이 영역 안의 검출만 인정합니다.");
+        if (!keepMode()) ZoneModeButton.IsChecked = false;
+        ReloadEngineAndReinspect();   // 끝에 DrawZones() — 새 영역이 점선으로 나타난다
+        // BuildEngine과 같은 변환(% → 비율, 최소 0.01)으로 방금 그린 사각형을 찾아 앰버로 번쩍인다
+        FlashZone(zoneField, standard, (
+            Math.Clamp(Math.Round(regionPercent.X, 1) / 100.0, 0, 1),
+            Math.Clamp(Math.Round(regionPercent.Y, 1) / 100.0, 0, 1),
+            Math.Max(0.01, Math.Clamp(Math.Round(regionPercent.W, 1) / 100.0, 0, 1)),
+            Math.Max(0.01, Math.Clamp(Math.Round(regionPercent.H, 1) / 100.0, 0, 1))));
+        var replaced = removed > 0 ? $" (기존 {removed}개 교체)" : "";
+        Status(keepMode()
+            ? $"'{zoneField}' 필드 영역 등록됨{replaced} — 계속 드래그하거나 Esc로 해제"
+            : $"'{zoneField}' 필드 영역 등록됨{replaced} — 이제 이 영역 안의 검출만 인정합니다.");
     }
 
     // ---------------- 대시보드 / 페이지 슬롯 / CSV ----------------
+
+    /// <summary>세션 집계 — LOT 미매칭 페이지는 판정이 있어도 '미검사'(수동 LOT 선택 대기)로 센다.</summary>
+    private SessionStats CurrentStats()
+    {
+        var passedByPage = _outcomes
+            .Where(p => !_lotUnmatchedPages.Contains(p.Key))
+            .ToDictionary(p => p.Key, p => p.Value.Passed);
+        return SessionStats.Of(_pdf.IsOpen ? _pdf.PageCount : 0, passedByPage, _savedPages);
+    }
 
     private void UpdateDashboard()
     {
@@ -1457,8 +1757,12 @@ public partial class InspectorView : UserControl
         var check = _outcomes.Count - passed;
         PassCountText.Text = passed.ToString();
         CheckCountText.Text = check.ToString();
+        var stats = CurrentStats();
         ProgressCountText.Text = _pdf.IsOpen
-            ? $"검사 {_outcomes.Count} / {_pdf.PageCount} 페이지" : "검사 0 / 0 페이지";
+            ? $"검사 {stats.Inspected} / {stats.Total} · 미검사 {stats.Uninspected}"
+            : "검사 0 / 0 · 미검사 0";
+        ProgressCountText.Foreground =
+            (Brush)FindResource(_pdf.IsOpen && stats.Uninspected > 0 ? "WarnBrush" : "HintBrush");
         // 미저장 상시 표시 (UDInspect '● CSV 미저장 / ✓ CSV 저장됨' 규범)
         var unsaved = UnsavedCount;
         if (_outcomes.Count == 0) DirtyText.Text = "";
@@ -1477,6 +1781,8 @@ public partial class InspectorView : UserControl
     /// <summary>판정은 끝났지만 결과 이미지·이력이 저장되지 않은 페이지 수.</summary>
     public int UnsavedCount => _outcomes.Keys.Count(p => !_savedPages.Contains(p));
 
+    /// <summary>페이지 슬롯 5상태(OCR 대기 / 검사 대기 / 합격 / 확인 필요 / LOT 미매칭) + 저장됨 띠 + 현재 페이지.
+    /// 기호(✓ ! ?)를 숫자 앞에 붙여 색각·흑백에서도 구분된다.</summary>
     private void UpdatePageSlots()
     {
         if (!_pdf.IsOpen || _pdf.PageCount <= 1)
@@ -1484,11 +1790,16 @@ public partial class InspectorView : UserControl
             PageSlots.ItemsSource = null;
             return;
         }
-        var gray = new SolidColorBrush(Color.FromRgb(0xEF, 0xEF, 0xEF));
-        var green = new SolidColorBrush(Color.FromRgb(0xD7, 0xEF, 0xD7));  // verifier SN 슬롯 녹색
-        var orange = new SolidColorBrush(Color.FromRgb(0xFD, 0xEB, 0xD0));
-        var currentStroke = (Brush)FindResource("AccentBrush");
-        var normalStroke = new SolidColorBrush(Color.FromRgb(0xCF, 0xCF, 0xCF));
+        var idleFill = (Brush)FindResource("SlotIdleBrush");
+        var idleStroke = (Brush)FindResource("SlotBorderBrush");
+        var idleText = (Brush)FindResource("SlotIdleTextBrush");
+        var readyFill = (Brush)FindResource("PanelBrush");
+        var readyStroke = (Brush)FindResource("CardBorderBrush");
+        var passFill = (Brush)FindResource("ScannedBgBrush");
+        var checkFill = (Brush)FindResource("WarnBgBrush");
+        var lotStroke = (Brush)FindResource("WarnBrush");
+        var currentStroke = (Brush)FindResource("PrimaryBrush");
+        var normalText = (Brush)FindResource("TextBrush");
         var slots = new List<PageSlotVm>();
         // 페이지가 아주 많으면 슬롯이 읽을 수 없게 작아진다 — 현재 페이지 주변 60개만
         const int MaxSlots = 60;
@@ -1499,22 +1810,63 @@ public partial class InspectorView : UserControl
             first = Math.Clamp(_currentPage - MaxSlots / 2, 0, _pdf.PageCount - MaxSlots);
             last = first + MaxSlots;
         }
+        // 슬롯 폭이 18px 미만이면 숫자를 빼고 기호만 (겹침 방지)
+        var slotWidth = PageSlots.ActualWidth > 0 ? PageSlots.ActualWidth / (last - first) : 30;
+        var symbolOnly = slotWidth < 18;
         for (var page = first; page < last; page++)
         {
             var hasOutcome = _outcomes.TryGetValue(page, out var outcome);
-            var fill = !hasOutcome ? gray : outcome!.Passed ? green : orange;
-            var tip = !hasOutcome
-                ? (_analyses.ContainsKey(page) ? $"{page + 1}페이지: 검사 대기"
-                                               : $"{page + 1}페이지: OCR 대기")
-                : outcome!.Passed ? $"{page + 1}페이지: 합격 ({outcome.Record.Lot})"
-                                  : $"{page + 1}페이지: 확인 필요 ({outcome.Record.Lot})";
+            var lotUnmatched = _lotUnmatchedPages.Contains(page);
             var isCurrent = page == _currentPage;
+            var saved = _savedPages.Contains(page);
+            Brush fill;
+            Brush stroke;
+            double thickness;
+            string symbol;
+            string tip;
+            if (!hasOutcome)
+            {
+                var ready = _analyses.ContainsKey(page);
+                fill = ready ? readyFill : idleFill;
+                stroke = ready ? readyStroke : idleStroke;
+                thickness = 1;
+                symbol = "";
+                tip = ready ? $"{page + 1}페이지: 검사 대기" : $"{page + 1}페이지: OCR 대기";
+            }
+            else if (lotUnmatched)
+            {
+                fill = checkFill;
+                stroke = lotStroke;
+                thickness = 2;
+                symbol = "?";
+                tip = $"{page + 1}페이지: LOT 미매칭 (수동 선택 필요)";
+            }
+            else if (outcome!.Passed)
+            {
+                fill = passFill;
+                stroke = readyStroke;
+                thickness = 1;
+                symbol = "✓";
+                tip = $"{page + 1}페이지: 합격 ({outcome.Record.Lot})";
+            }
+            else
+            {
+                fill = checkFill;
+                stroke = readyStroke;
+                thickness = 1;
+                symbol = "!";
+                tip = $"{page + 1}페이지: 확인 필요 ({outcome.Record.Lot})";
+            }
+            if (saved) tip += " · 저장됨";
+            if (isCurrent) tip += " · 현재";
+            var number = symbolOnly && symbol.Length > 0 ? symbol : symbol + (page + 1);
             slots.Add(new PageSlotVm(
-                page, (page + 1).ToString(), tip, fill,
-                isCurrent ? currentStroke : normalStroke,
-                new Thickness(isCurrent ? 2 : 1),
-                new SolidColorBrush(hasOutcome
-                    ? Colors.Black : Color.FromRgb(0x9A, 0x9A, 0x9A))));
+                page, number, tip, fill,
+                isCurrent ? currentStroke : stroke,
+                new Thickness(isCurrent ? 3 : thickness),
+                hasOutcome ? normalText : idleText,
+                saved,
+                isCurrent ? FontWeights.Bold : FontWeights.Normal));
         }
         PageSlots.ItemsSource = slots;
     }
@@ -1524,40 +1876,34 @@ public partial class InspectorView : UserControl
         if (sender is FrameworkElement { Tag: int page }) Navigate(page);
     }
 
+    /// <summary>전체 페이지(미검사 포함) CSV — Core InspectionCsv 고정 열 + UTF-8 BOM + ="값" 텍스트 보호.
+    /// 확인 필요·미검사·미저장이 있으면 내보내기 전에 확인한다 (프로그램 표시는 참고값).</summary>
     private void OnExportCsv(object sender, RoutedEventArgs e)
     {
-        if (_outcomes.Count == 0)
+        if (!_pdf.IsOpen)
         {
-            Dialogs.Info(this, "내보낼 검사 결과가 없습니다.", "CSV");
+            Dialogs.Info(this, "내보낼 검사 결과가 없습니다 — PDF를 먼저 여세요.", "CSV");
             return;
         }
+        var stats = CurrentStats();
+        if (stats.NeedsConfirmation
+            && !Dialogs.Confirm(this, stats.ConfirmMessage(), "내보내기 전 확인"))
+            return;
         var dialog = new SaveFileDialog
         {
             Title = "검사 결과 CSV", Filter = "CSV 파일|*.csv",
             FileName = $"검사결과_{DateTime.Now:yyyyMMdd_HHmm}.csv",
         };
         if (dialog.ShowDialog() != true) return;
-        var lines = new List<string>
-        { "페이지,LOT,REF,규격,판정,필드요약,바코드요약" };
-        foreach (var (page, outcome) in _outcomes.OrderBy(p => p.Key))
-        {
-            var fieldSummary = string.Join(" / ", outcome.Fields.Values
-                .Where(f => f.Expected is not null)
-                .Select(f => $"{f.Field} {f.Found}:{f.Expected}"));
-            var barcodeSummary = string.Join(" / ", outcome.BarcodeChecks
-                .Select(c => $"{c.Field} {(c.Matched ? "OK" : "NG")}"));
-            static string Escape(string value) =>
-                value.Contains(',') || value.Contains('"')
-                    ? "\"" + value.Replace("\"", "\"\"") + "\"" : value;
-            lines.Add(string.Join(",",
-                (page + 1).ToString(), Escape(outcome.Record.Lot),
-                Escape(outcome.Record.Ref), Escape(outcome.Standard.DisplayName),
-                outcome.Passed ? "합격" : "확인필요",
-                Escape(fieldSummary), Escape(barcodeSummary)));
-        }
-        File.WriteAllText(dialog.FileName, string.Join("\r\n", lines),
-                          System.Text.Encoding.UTF8);
-        Status($"CSV 저장됨: {dialog.FileName}");
+        var rows = Enumerable.Range(0, _pdf.PageCount).Select(page => (
+            page,
+            _outcomes.TryGetValue(page, out var outcome) ? outcome : null,
+            _savedFile.TryGetValue(page, out var img) ? img : null));
+        var textProtect = _config.SectionBool("export", "csv_text_protect", true);
+        var csv = InspectionCsv.Build(rows, _pdf.Path ?? "", App.InformationalVersion, textProtect);
+        ExportGuard.Run("CSV", dialog.FileName,
+            () => File.WriteAllText(dialog.FileName, csv, new System.Text.UTF8Encoding(true)),
+            Status);
     }
 
     // ---------------- OCR 교정 등록 ----------------
@@ -1726,29 +2072,107 @@ public partial class InspectorView : UserControl
 
     // ---------------- 저장 ----------------
 
+    private static string DefaultSaveDir() =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "LaVIS_결과");
+
+    private string? _saveDirWarnedFor;
+
+    /// <summary>결과 저장 폴더 — 설정값이 올바른 절대 경로가 아니면 기본 폴더로 폴백하고 한 번만 경고한다.</summary>
     private string SaveDir()
     {
-        var configured = _config.GetString("save_directory");
-        return configured.Length > 0 ? configured
-            : Path.Combine(Environment.GetFolderPath(
-                Environment.SpecialFolder.UserProfile), "LaVIS_결과");
+        var configured = _config.GetString("save_directory").Trim();
+        if (configured.Length == 0) return DefaultSaveDir();
+        if (PathRules.IsValidDirectory(configured)) return configured;
+        if (_saveDirWarnedFor != configured)
+        {
+            _saveDirWarnedFor = configured;
+            Status($"저장 경로가 올바르지 않아 기본 폴더에 저장합니다: {DefaultSaveDir()} (설정값: {configured})",
+                   StatusLevel.Warn);
+            AppLog.Warn($"save_directory 무효 → 기본 폴더 폴백: '{configured}'");
+        }
+        return DefaultSaveDir();
+    }
+
+    /// <summary>폴더 접근 가능 여부를 UI를 막지 않고 확인 (네트워크 드라이브 끊김 대비 3초 타임아웃).
+    /// 폴더가 아직 없어도 상위 폴더에 닿으면 접근 가능으로 본다(첫 저장 때 만들어진다).</summary>
+    private static async Task<bool> ProbeDirectoryAsync(string dir)
+    {
+        var probe = Task.Run(() =>
+        {
+            try
+            {
+                if (Directory.Exists(dir)) return true;
+                var parent = Path.GetDirectoryName(Path.GetFullPath(dir));
+                return parent is { Length: > 0 } && Directory.Exists(parent);
+            }
+            catch (Exception) { return false; }
+        });
+        var finished = await Task.WhenAny(probe, Task.Delay(3000));
+        return finished == probe && probe.Result;
+    }
+
+    /// <summary>저장 폴더 접근 확인 — 실패/타임아웃이면 경고하고(옵션) 자동 저장을 해제한다.</summary>
+    private async Task VerifySaveDirAsync(bool disableAutoSaveOnFailure)
+    {
+        var dir = SaveDir();
+        if (await ProbeDirectoryAsync(dir)) return;
+        Status($"저장 폴더에 접근할 수 없습니다 (네트워크 드라이브 연결 확인): {dir}", StatusLevel.Warn);
+        AppLog.Warn($"저장 폴더 접근 실패/타임아웃: {dir}");
+        if (disableAutoSaveOnFailure && AutoSaveCheck.IsChecked == true)
+            AutoSaveCheck.IsChecked = false;   // OnAutoSaveToggled가 설정에 반영
     }
 
     private void OnPickSaveDir(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFolderDialog { Title = "결과 저장 폴더" };
         if (dialog.ShowDialog() != true) return;
+        if (!PathRules.IsValidDirectory(dialog.FolderName))
+        {
+            Dialogs.Warn(this, $"올바른 절대 경로가 아닙니다: {dialog.FolderName}", "저장 경로");
+            return;
+        }
         _config.Settings["save_directory"] = dialog.FolderName;
         _config.SaveSettings();
+        _saveDirWarnedFor = null;
         Status($"저장 경로: {dialog.FolderName}");
+        _ = VerifySaveDirAsync(disableAutoSaveOnFailure: true);
+    }
+
+    /// <summary>결과 저장 폴더를 탐색기로 연다 (없으면 만든다).</summary>
+    private void OnOpenSaveDir(object sender, RoutedEventArgs e)
+    {
+        var dir = SaveDir();
+        try
+        {
+            Directory.CreateDirectory(dir);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            { FileName = "explorer.exe", Arguments = $"\"{dir}\"", UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Status($"폴더를 열 수 없습니다: {ExportGuard.Describe(ex, dir)}", StatusLevel.Warn);
+            AppLog.Warn($"폴더 열기 실패: {dir} — {ex.Message}");
+        }
     }
 
     private bool _loadingConfig;
 
-    /// <summary>툴바 옵션은 UDInspect처럼 바꾸는 즉시 저장 (설정 창을 거치지 않음).</summary>
+    /// <summary>툴바 옵션은 UDInspect처럼 바꾸는 즉시 저장 (설정 창을 거치지 않음).
+    /// 켤 때 저장 경로가 무효면 체크를 해제하고 경고, 유효하면 접근 확인(비차단)을 시작한다.</summary>
     private void OnAutoSaveToggled(object sender, RoutedEventArgs e)
     {
         if (_loadingConfig || _config is null) return;
+        if (AutoSaveCheck.IsChecked == true)
+        {
+            var configured = _config.GetString("save_directory").Trim();
+            if (configured.Length > 0 && !PathRules.IsValidDirectory(configured))
+            {
+                AutoSaveCheck.IsChecked = false;   // 재진입 → 아래 저장 분기에서 false 기록
+                Status($"자동 저장을 켤 수 없습니다 — 저장 경로가 올바르지 않습니다: {configured} ([저장 경로]로 다시 지정)",
+                       StatusLevel.Warn);
+                return;
+            }
+        }
         try
         {
             _config.Settings["auto_save_default"] =
@@ -1760,6 +2184,7 @@ public partial class InspectorView : UserControl
             Status($"설정 저장 실패 (재실행 시 이전 설정으로 돌아갈 수 있음): {ShortMessage(ex.Message)}",
                    StatusLevel.Error);
         }
+        if (AutoSaveCheck.IsChecked == true) _ = VerifySaveDirAsync(disableAutoSaveOnFailure: true);
     }
 
     private void OnSaveCurrent(object sender, RoutedEventArgs e)
@@ -1768,6 +2193,17 @@ public partial class InspectorView : UserControl
         {
             Dialogs.Info(this, "저장할 검사 결과가 없습니다.", "저장");
             return;
+        }
+        // 같은 판정이 이미 저장돼 있으면 확인 (기본 '아니오') — 새 번호 파일·이력 행이 의도치 않게 늘지 않게
+        if (_savedSignature.TryGetValue(_currentPage, out var savedSig)
+            && savedSig == outcome.Signature())
+        {
+            var saved = _savedFile.TryGetValue(_currentPage, out var file)
+                ? Path.GetFileName(file) : "저장됨";
+            if (!Dialogs.Confirm(this,
+                    $"이 페이지의 동일한 판정이 이미 저장되어 있습니다 ({saved}).\n" +
+                    "다시 저장하면 새 번호로 파일과 이력이 추가됩니다. 저장할까요?", "결과 저장"))
+                return;
         }
         SaveOutcome(_currentPage, outcome, RenderProcessed(_currentPage), notify: true);
     }
@@ -1778,7 +2214,10 @@ public partial class InspectorView : UserControl
         var counter = _history?.NextFileCounter() ?? 1;
         var filename = Annotate.MakeResultFilename(
             counter, outcome.Record.Lot, outcome.Record.Ref, outcome.Passed);
-        var path = Path.Combine(SaveDir(), filename);
+        var dir = SaveDir();
+        // 같은 이름이 있으면 _(2), _(3)… 로 비켜 간다 — 기존 결과 이미지를 덮어쓰지 않는다
+        var path = PathRules.UniquePath(Path.Combine(dir, filename));
+        filename = Path.GetFileName(path);
         try
         {
             Annotate.SaveAnnotatedJpeg(image, outcome, _standards.FieldColors, path,
@@ -1788,13 +2227,17 @@ public partial class InspectorView : UserControl
         }
         catch (Exception ex)
         {
-            var reason = ExportGuard.Describe(ex, SaveDir());
+            // 원인별 안내 (권한/경로/디스크/네트워크) — 자동 저장은 상태바+로그, 수동 저장만 대화상자
+            var reason = ExportGuard.Describe(ex, dir);
             if (notify) Dialogs.Error(this, reason, "저장 실패");
             else { Status($"자동 저장 실패: {reason}", StatusLevel.Error); AppLog.Error("자동 저장 실패", ex); }
             return;
         }
         _savedPages.Add(page);
+        _savedSignature[page] = outcome.Signature();
+        _savedFile[page] = path;
         UpdateDashboard();
+        UpdatePageSlots();   // 저장됨 띠
         try { _history?.RecordInspection(outcome, path, "pdf", _pdf.Path, page); }
         catch (Exception ex)
         {

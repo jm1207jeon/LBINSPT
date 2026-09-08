@@ -44,7 +44,8 @@
                 <Style TargetType="DataGridRow">
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding Low}" Value="True">
-                            <Setter Property="Foreground" Value="{StaticResource DangerBrush}"/>
+                            <!-- 저신뢰 행: 오버레이의 저신뢰 파선(주황)과 같은 의미색 -->
+                            <Setter Property="Foreground" Value="{StaticResource WarnBrush}"/>
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>

@@ -224,12 +224,10 @@ public static class Annotate
                                             bool passed, DateOnly? when = null)
     {
         var date = when ?? DateOnly.FromDateTime(DateTime.Today);
-        static string Safe(string? value, string fallback)
-        {
-            var cleaned = new string((value ?? "")
-                .Where(c => char.IsLetterOrDigit(c) || c is '-' or '_').ToArray());
-            return cleaned.Length > 0 ? cleaned : fallback;
-        }
+        // 파일명 줄기 정제: 영숫자·'-'·'_'만, 40자 절단 (PathRules.SanitizeFileStem) — 긴 LOT/REF로
+        // 경로 길이 한계를 넘거나 OS 금지 문자가 들어가지 않게. 남는 게 없으면 NOLOT/NOREF.
+        static string Safe(string? value, string fallback) =>
+            PathRules.SanitizeFileStem(value, 40, fallback);
         var suffix = passed ? "Passed" : "Check";
         return $"{counter:D3}_{Safe(lot, "NOLOT")}_{Safe(refValue, "NOREF")}_" +
                $"{date:yyyyMMdd}_{suffix}.jpg";

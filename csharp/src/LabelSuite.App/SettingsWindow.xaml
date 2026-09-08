@@ -198,7 +198,7 @@
                             </DataGrid>
                             <TextBlock Style="{StaticResource HintText}"
                                        Text="예: 이름=CE마크, 패턴=CE0123 / 기대횟수를 비우면 판정에 반영하지 않고 검출 수만 표시합니다. '규격 자동'에 규격 키(MDR/MDD/BSC/A00/A02/중국)를 넣으면 이 값이 라벨에서 검출될 때 그 규격이 자동 선택됩니다 (예: 패턴 Rev.A00 → 규격 A00). 수동으로 규격 버튼을 누르면 그 페이지는 수동 선택이 우선합니다."/>
-                            <TextBlock Text="필드 검출 영역 (등록 필드는 영역 안 검출만 인정 — 검사 화면 [필드 영역 등록] 버튼으로 드래그/클릭 등록):"
+                            <TextBlock Text="필드 검출 영역 (검사 탭에서 드래그·클릭으로 등록 — 여기서는 확인·삭제 · 등록 필드는 영역 안 검출만 인정):"
                                        Margin="0,8,0,2"/>
                             <DataGrid x:Name="ZonesGrid" IsReadOnly="False"
                                       AutoGenerateColumns="False" CanUserAddRows="True"

@@ -173,4 +173,18 @@ public class OcrCacheTests
         Assert.StartsWith("007_L1_R2_", name);
         Assert.EndsWith("_Check.jpg", name);
     }
+
+    [Fact]
+    public void LongLotIsTruncatedInFilename()
+    {
+        var longLot = new string('A', 60) + "<>:\"|?*" + new string('9', 10);
+        var name = Annotate.MakeResultFilename(3, longLot, "REF-1", true,
+                                               new DateOnly(2026, 9, 8));
+        var lotPart = name.Split('_')[1];
+        Assert.Equal(40, lotPart.Length);
+        Assert.Equal(new string('A', 40), lotPart);
+        Assert.Equal("003_" + new string('A', 40) + "_REF-1_20260908_Passed.jpg", name);
+        // 금지 문자만 있는 값은 폴백
+        Assert.StartsWith("004_NOLOT_NOREF_", Annotate.MakeResultFilename(4, "<>?", "|*", false));
+    }
 }

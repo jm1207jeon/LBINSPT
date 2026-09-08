@@ -89,6 +89,30 @@ public class ThemeTokenTests(ITestOutputHelper output)
             : $"Theme.xaml 미참조 토큰 {unused.Count}개 (실패 아님): {string.Join(", ", unused)}");
     }
 
+    /// <summary>화면 범례·점선 색(Theme.xaml 오버레이 토큰)과 저장 이미지 색(Core Annotate 상수)이 같은 hex여야
+    /// 검사자가 화면에서 본 색 그대로 저장본을 읽는다.</summary>
+    [Theory]
+    [InlineData("OverlayBarcodeBrush", 0, 128, 128)]
+    [InlineData("OverlayFormBrush", 128, 0, 160)]
+    [InlineData("OverlayLowConfBrush", 255, 140, 0)]
+    public void OverlayColorsMatchCoreConstants(string key, int r, int g, int b)
+    {
+        var core = key switch
+        {
+            "OverlayBarcodeBrush" => Annotate.BarcodeBoxColor,
+            "OverlayFormBrush" => Annotate.FormBoxColor,
+            _ => Annotate.LowConfidenceColor,
+        };
+        // 기대값(InlineData)은 상수가 조용히 바뀌는 것도 잡는다
+        Assert.Equal((r, g, b), ((int)core.Red, (int)core.Green, (int)core.Blue));
+        if (!AppSourceLocator.TryFind(out var app)) return;
+        var theme = File.ReadAllText(Path.Combine(app, "Theme.xaml"));
+        var match = Regex.Match(theme, $@"x:Key=""{key}""\s+Color=""#([0-9A-Fa-f]{{6}})""");
+        Assert.True(match.Success, $"Theme.xaml에 {key} 정의 없음");
+        var expected = $"{core.Red:X2}{core.Green:X2}{core.Blue:X2}";
+        Assert.Equal(expected, match.Groups[1].Value.ToUpperInvariant());
+    }
+
     [Fact]
     public void NoInlineHexColorsInViewXaml()
     {
