@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using LabelSuite.App.Services;
 using LabelSuite.Core;
 using Microsoft.Win32;
@@ -935,6 +936,18 @@ public partial class InspectorView : UserControl
         }
     }
 
+    /// <summary>판정 배지를 앰버로 번쩍인 뒤 목표색으로 페이드 (650ms) — "방금 판정이 바뀌었다"는
+    /// 피드백. UDInspect의 행 하이라이트 페이드와 같은 규범.</summary>
+    private void FlashBadge(SolidColorBrush target)
+    {
+        var amber = (Color)FindResource("FlashAmberColor");
+        var brush = new SolidColorBrush(Color.FromArgb(200, amber.R, amber.G, amber.B));
+        StatusBadge.Background = brush;
+        brush.BeginAnimation(SolidColorBrush.ColorProperty,
+            new ColorAnimation(target.Color, TimeSpan.FromMilliseconds(650))
+            { FillBehavior = FillBehavior.HoldEnd });
+    }
+
     private void ShowOutcome(InspectionOutcome outcome, PageAnalysis? analysis = null)
     {
         _lastAnalysisShown = analysis;
@@ -942,13 +955,13 @@ public partial class InspectorView : UserControl
         {
             StatusBadgeText.Text = $"✓ 합격 (PASSED) · 규격 {outcome.Standard.DisplayName}";
             StatusBadgeText.Foreground = (Brush)FindResource("SuccessBrush");
-            StatusBadge.Background = (Brush)FindResource("SuccessBgBrush");
+            FlashBadge((SolidColorBrush)FindResource("SuccessBgBrush"));
         }
         else
         {
             StatusBadgeText.Text = $"⚠ 확인 필요 (CHECK) · 규격 {outcome.Standard.DisplayName}";
             StatusBadgeText.Foreground = (Brush)FindResource("WarnBrush");
-            StatusBadge.Background = (Brush)FindResource("WarnBgBrush");
+            FlashBadge((SolidColorBrush)FindResource("WarnBgBrush"));
         }
         FieldGrid.ItemsSource = outcome.Fields.Values
             .Select(f => new FieldRowVm(
