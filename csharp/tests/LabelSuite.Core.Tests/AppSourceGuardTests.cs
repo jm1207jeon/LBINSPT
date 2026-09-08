@@ -138,3 +138,42 @@ public class AppSourceGuardTests
             "SettingsWindow.xaml에 Tag가 없는 범위표 경로: " + string.Join(", ", missing));
     }
 }
+
+/// <summary>XAML 컴파일(MC3072) 사전 차단 — Control 전용 속성(TabIndex·IsTabStop·Foreground·Font*)을
+/// Panel/Border/도형/Image 요소에 직접 쓰면 Windows CI에서만 실패한다. 첨부 속성 표기
+/// (KeyboardNavigation.TabIndex, TextElement.Foreground)는 허용.</summary>
+public class XamlControlOnlyAttributeTests
+{
+    private static readonly string[] NonControlTags =
+        ["StackPanel", "WrapPanel", "DockPanel", "Grid", "UniformGrid", "Canvas",
+         "Border", "Rectangle", "Ellipse", "Path", "Line", "Image", "Viewbox"];
+
+    // Control(또는 TextBlock)에만 있는 직접 속성 — 위 요소에 쓰면 MC3072
+    private static readonly string[] ControlOnly =
+        ["TabIndex", "IsTabStop", "HorizontalContentAlignment", "VerticalContentAlignment",
+         "Foreground", "FontSize", "FontWeight", "FontFamily", "FontStyle"];
+
+    [Fact]
+    public void ControlOnlyAttributesNotUsedOnPanelsOrShapes()
+    {
+        if (!AppSourceLocator.TryFind(out var app)) return;
+        var offenders = new List<string>();
+        foreach (var file in Directory.GetFiles(app, "*.xaml", SearchOption.AllDirectories))
+        {
+            var doc = System.Xml.Linq.XDocument.Load(file);
+            foreach (var el in doc.Descendants().Where(e => NonControlTags.Contains(e.Name.LocalName)))
+            {
+                var bad = el.Attributes()
+                    .Where(a => a.Name.Namespace == System.Xml.Linq.XNamespace.None)   // 첨부 속성(X.Y)은 LocalName에 '.'이 있어 제외됨
+                    .Select(a => a.Name.LocalName)
+                    .Where(ControlOnly.Contains)
+                    .ToList();
+                if (bad.Count > 0)
+                    offenders.Add($"{Path.GetFileName(file)}: <{el.Name.LocalName}> {string.Join(",", bad)}");
+            }
+        }
+        Assert.True(offenders.Count == 0,
+            "Control 전용 속성이 비-Control 요소에 쓰였습니다 (MC3072). 첨부 속성(KeyboardNavigation.TabIndex 등)으로 바꾸세요:\n"
+            + string.Join("\n", offenders));
+    }
+}

@@ -289,7 +289,7 @@
                     <DockPanel Margin="0,6,0,0">
                         <TextBlock DockPanel.Dock="Left" Text="규격:" Width="34"
                                    VerticalAlignment="Top" Margin="0,6,0,0"/>
-                        <WrapPanel x:Name="StandardPanel" TabIndex="3"
+                        <WrapPanel x:Name="StandardPanel" KeyboardNavigation.TabIndex="3"
                                    KeyboardNavigation.TabNavigation="Local"
                                    AutomationProperties.Name="규격 선택"/>
                     </DockPanel>
