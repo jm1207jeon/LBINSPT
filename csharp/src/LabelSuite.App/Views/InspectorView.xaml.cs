@@ -754,6 +754,7 @@ public partial class InspectorView : UserControl
         var manualStandard = _manualStandardPages.TryGetValue(page, out var chosenStd)
             && _standards.Standards.ContainsKey(chosenStd) ? chosenStd : null;
 
+        var lotUnmatched = false;
         // 페이지별 LOT 매칭 — 수동 선택 페이지는 그때의 선택을 복원하고,
         // 그 외 페이지는 매번 라벨의 LOT을 다시 읽어 자동 선택한다.
         if (_manualLotPages.Contains(page))
@@ -766,10 +767,13 @@ public partial class InspectorView : UserControl
                 _suppressEvents = false;
             }
             LotMatchLabel.Text = "수동";
+            LotMatchLabel.Foreground = (Brush)FindResource("SuccessBrush");
+            LotMatchLabel.ToolTip = "이 페이지는 사용자가 직접 고른 LOT으로 검사합니다";
         }
         else if (_records.Count > 0)
         {
             var match = _engine.MatchLot(analysis.Words, _records);
+            lotUnmatched = match is null;
             if (match is not null)
             {
                 var index = _records.FindIndex(r => r.Lot == match.Lot);
@@ -789,8 +793,19 @@ public partial class InspectorView : UserControl
                     "exact" => "자동(정확)", "suffix_unique" => "자동(끝4자리)",
                     _ => "자동(유사)",
                 };
+                LotMatchLabel.ToolTip = $"라벨에서 읽은 '{match.Candidate}' ↔ 목록 LOT {match.Lot} ({match.MatchType}, 신뢰도 {match.Confidence}%)";
+                LotMatchLabel.Foreground = (Brush)FindResource("SuccessBrush");
             }
-            // 이 페이지에서 LOT 후보를 못 찾으면 현재 선택 유지
+            else
+            {
+                // 라벨에서 LOT 후보를 못 찾음 — 이전 선택을 그대로 검사하면 다른 LOT 라벨이
+                // '합격'으로 보일 수 있다(거짓 합격). 명시 경고 + 아래에서 '확인 필요' 강제.
+                LotMatchLabel.Text = "⚠ 미매칭";
+                LotMatchLabel.Foreground = (Brush)FindResource("WarnBrush");
+                LotMatchLabel.ToolTip = "이 페이지에서 목록의 LOT을 읽지 못해 이전 선택 LOT으로 검사합니다. LOT 위치를 확인하거나 수동으로 LOT을 고르세요.";
+                Status($"p{page + 1}: 라벨에서 LOT을 찾지 못했습니다 — 이전 선택({CurrentRecord()?.Lot})으로 검사하며 판정은 '확인 필요'로 표시됩니다.",
+                       StatusLevel.Warn);
+            }
         }
 
         // 커스텀 필드 값 → 규격 자동 매칭 (예: 라벨에서 Rev.A00 검출 → 규격 A00)
@@ -851,6 +866,9 @@ public partial class InspectorView : UserControl
         }
         var standardName = _selectedStandard ?? _standards.Standards.Keys.First();
         var barcodeChecks = BarcodeDetector.CrossCheckHits(analysis.Barcodes, record);
+        if (lotUnmatched)
+            barcodeChecks.Add(new CrossCheckResult("LOT 매칭", "LOT", "(라벨에서 LOT 미검출)",
+                                                   record.Lot, Matched: false));
         // 사전 등록 기준정보(마스터 DB) 대조
         if (_history?.GetMaster(record.Pn) is { } master)
             barcodeChecks.AddRange(MasterCheck.Check(master, record, analysis.Barcodes));
