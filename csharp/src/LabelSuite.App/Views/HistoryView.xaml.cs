@@ -11,6 +11,11 @@ namespace LabelSuite.App.Views;
 
 public partial class HistoryView : UserControl
 {
+    public event Action<string, StatusLevel>? StatusMessage;
+
+    private void Status(string message, StatusLevel level = StatusLevel.Info) =>
+        StatusMessage?.Invoke(message, level);
+
     private AppConfig _config = null!;
     private HistoryDb? _db;
 
@@ -63,8 +68,7 @@ public partial class HistoryView : UserControl
         if (Table.SelectedItem is not RowVm row) return;
         if (row.ImagePath.Length == 0 || !File.Exists(row.ImagePath))
         {
-            MessageBox.Show("저장된 이미지 파일을 찾을 수 없습니다.", "이미지 없음",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
+            Dialogs.Info(this, "저장된 이미지 파일을 찾을 수 없습니다.", "이미지 없음");
             return;
         }
         Process.Start(new ProcessStartInfo(row.ImagePath) { UseShellExecute = true });
@@ -76,8 +80,7 @@ public partial class HistoryView : UserControl
         var lots = _db.Lots();
         if (lots.Count == 0)
         {
-            MessageBox.Show("저장된 검사 이력이 없습니다.", "리포트",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
+            Dialogs.Info(this, "저장된 검사 이력이 없습니다.", "리포트");
             return;
         }
         var lot = LotFilter.Text.Trim();
@@ -85,10 +88,10 @@ public partial class HistoryView : UserControl
         if (lot.Length == 0)
         {
             var preview = string.Join(", ", lots.Take(10));
-            MessageBox.Show(
+            Dialogs.Info(this, 
                 $"LOT 필터에 리포트를 만들 LOT을 입력하세요.\n보유 LOT: {preview}" +
                 (lots.Count > 10 ? " …" : ""),
-                "리포트", MessageBoxButton.OK, MessageBoxImage.Information);
+                "리포트");
             return;
         }
         var dialog = new SaveFileDialog
@@ -98,7 +101,6 @@ public partial class HistoryView : UserControl
         };
         if (dialog.ShowDialog() != true) return;
         var count = Report.ExportLotReport(_db, lot, dialog.FileName);
-        MessageBox.Show($"LOT {lot} 검사 {count}건을 내보냈습니다.\n{dialog.FileName}",
-                        "리포트 완료", MessageBoxButton.OK, MessageBoxImage.Information);
+        Status($"LOT {lot} 검사 {count}건 리포트 저장 완료: {dialog.FileName}");
     }
 }

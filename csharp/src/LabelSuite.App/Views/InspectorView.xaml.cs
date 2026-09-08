@@ -242,14 +242,14 @@ public partial class InspectorView : UserControl
     {
         if (!_pdf.IsOpen)
         {
-            MessageBox.Show("PDF를 먼저 여세요.", "양식 학습");
+            Dialogs.Info(this, "PDF를 먼저 여세요.", "양식 학습");
             return;
         }
         var imageRules = _formRules
             .Where(r => r.UseImage && r.Name.Trim().Length > 0).ToList();
         if (imageRules.Count == 0)
         {
-            MessageBox.Show(
+            Dialogs.Info(this,
                 "'이미지 사용'이 켜진 양식 규칙이 없습니다.\n" +
                 "설정 → 라벨 양식 자동 감지에서 규칙을 추가하세요.", "양식 학습");
             return;
@@ -262,20 +262,29 @@ public partial class InspectorView : UserControl
         var okButton = new Button
         {
             Content = "이 양식으로 학습", MinWidth = 110, IsDefault = true,
-            HorizontalAlignment = HorizontalAlignment.Right,
+            Style = (Style)FindResource("PrimaryButton"),
+            ToolTip = "현재 페이지의 규칙 영역 이미지를 이 양식의 기준 템플릿으로 저장합니다 (기존 템플릿은 교체)",
         };
+        var cancelButton = new Button { Content = "취소", IsCancel = true, MinWidth = 70 };
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        buttons.Children.Add(okButton);
+        buttons.Children.Add(cancelButton);
         var panel = new StackPanel { Margin = new Thickness(12) };
         panel.Children.Add(new TextBlock
         { Text = "현재 페이지를 어느 양식의 기준 이미지로 학습할까요?" });
+        combo.ToolTip = "설정 › 규격·양식 감지 › 라벨 양식 자동 감지에서 '이미지' 사용이 켜진 규칙";
         panel.Children.Add(combo);
-        panel.Children.Add(okButton);
+        panel.Children.Add(buttons);
         var dialog = new Window
         {
             Title = "양식 이미지 학습", Content = panel,
             SizeToContent = SizeToContent.WidthAndHeight,
             Owner = Window.GetWindow(this),
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            ResizeMode = ResizeMode.NoResize,
+            ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false,
         };
         okButton.Click += (_, _) => dialog.DialogResult = true;
         if (dialog.ShowDialog() != true || combo.SelectedIndex < 0) return;
@@ -291,8 +300,8 @@ public partial class InspectorView : UserControl
             ReinspectCurrent();
         }
         else
-            MessageBox.Show("규칙 영역이 너무 작습니다. 설정에서 영역(%)을 확인하세요.",
-                            "양식 학습");
+            Dialogs.Warn(this, "규칙 영역이 너무 작습니다. 설정에서 영역(%)을 확인하세요.",
+                         "양식 학습");
     }
 
     /// <summary>설정의 동일값 패턴 규칙 (fields.same_value).</summary>
@@ -485,13 +494,11 @@ public partial class InspectorView : UserControl
             _config.SaveSettings();
             LoadRecords(records);
             if (warnings.Count > 0)
-                MessageBox.Show(string.Join("\n", warnings.Take(20)), "목록 경고",
-                                MessageBoxButton.OK, MessageBoxImage.Warning);
+                Dialogs.Warn(this, string.Join("\n", warnings.Take(20)), "목록 경고");
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "목록 오류",
-                            MessageBoxButton.OK, MessageBoxImage.Error);
+            Dialogs.Error(this, ex.Message, "목록 오류");
         }
     }
 
@@ -549,8 +556,7 @@ public partial class InspectorView : UserControl
         try { _pdf.Open(path); }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "PDF 오류",
-                            MessageBoxButton.OK, MessageBoxImage.Error);
+            Dialogs.Error(this, ex.Message, "PDF 오류");
             return;
         }
         _currentPage = 0;
@@ -715,10 +721,10 @@ public partial class InspectorView : UserControl
         _lastFailureMessage = message;
         _lastFailureShownAt = DateTime.Now;
         _worker.NewGeneration();   // 대기 중인 프리페치 잡 폐기 (재과금·연쇄 실패 방지)
-        MessageBox.Show(
+        Dialogs.Warn(this,
             $"{message}\n\n남은 페이지의 자동 OCR을 중단했습니다. 설정(OCR 엔진·AWS " +
             "자격증명)을 확인한 뒤 페이지를 이동하면 다시 시도합니다.",
-            "OCR 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+            "OCR 실패");
     }
 
     private static string ShortMessage(string message)
@@ -938,12 +944,14 @@ public partial class InspectorView : UserControl
                     ? $"\n처음 보는 문구: {string.Join(", ", report.NewTokens.Take(6))}"
                       + (report.NewTokens.Count > 6 ? " …" : "")
                     : "");
-            var answer = MessageBox.Show(
+            // 버튼 라벨이 동작을 말하도록 (Enter = 학습 안 함 — 오조작으로 이상 라벨이 학습되지 않게)
+            var choice = ChoiceDialog.Show(Window.GetWindow(this), "라벨 유형 이상 감지",
                 $"이 라벨이 지금까지 학습된 유형과 다릅니다.\n\n{report.Summary}{detail}\n\n" +
-                "라벨 개정 등 정상적인 변경이면 [예]를 눌러 이 라벨을 새 유형으로 " +
-                "학습하세요. 인쇄 오류가 의심되면 [아니오]를 누르고 라벨을 확인하세요.",
-                "라벨 유형 이상 감지", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-            if (answer == MessageBoxResult.Yes && _typeLearnedPages.Add(page))
+                "인쇄 오류가 의심되면 라벨을 확인하세요. 라벨 개정 등 정상적인 변경이면 " +
+                "새 유형으로 학습할 수 있습니다.",
+                ("라벨을 확인하겠습니다 (학습 안 함)", ChoiceStyle.Default, true),
+                ("정상 개정 — 새 유형으로 학습", ChoiceStyle.Caution, false));
+            if (choice == 1 && _typeLearnedPages.Add(page))
                 _profiler.Learn(formatKey, analysis.Words, record);
         }
         else if (outcome.Passed && _typeLearnedPages.Add(page))
@@ -1304,7 +1312,7 @@ public partial class InspectorView : UserControl
                 && y0 >= w.Bbox.Y - 4 && y0 <= w.Bbox.Y + w.Bbox.H + 4);
             if (word is null)
             {
-                MessageBox.Show("클릭 위치에서 인식된 객체가 없습니다.\n" +
+                Dialogs.Info(this, "클릭 위치에서 인식된 객체가 없습니다.\n" +
                                 "드래그로 영역을 직접 지정할 수도 있습니다.", "필드 영역 등록");
                 return;
             }
@@ -1372,14 +1380,22 @@ public partial class InspectorView : UserControl
         AddRow("적용 규격 (전체 = 모든 규격):", standardCombo);
         AddRow("새 커스텀 필드 이름:", nameBox);
         AddRow("새 커스텀 필드 패턴 (찾을 값):", patternBox);
-        panel.Children.Add(okButton);
+        okButton.Style = (Style)FindResource("PrimaryButton");
+        var cancelButton = new Button { Content = "취소", IsCancel = true, MinWidth = 70 };
+        var buttonRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        buttonRow.Children.Add(okButton);
+        buttonRow.Children.Add(cancelButton);
+        panel.Children.Add(buttonRow);
         var dialog = new Window
         {
             Title = "필드 영역 등록", Content = panel,
             SizeToContent = SizeToContent.WidthAndHeight,
             Owner = Window.GetWindow(this),
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            ResizeMode = ResizeMode.NoResize,
+            ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false,
         };
         okButton.Click += (_, _) => dialog.DialogResult = true;
         if (dialog.ShowDialog() != true) { ZoneModeButton.IsChecked = false; return; }
@@ -1394,7 +1410,7 @@ public partial class InspectorView : UserControl
             var pattern = patternBox.Text.Trim();
             if (name.Length == 0 || pattern.Length == 0)
             {
-                MessageBox.Show("커스텀 필드 이름과 패턴을 입력하세요.", "필드 영역 등록");
+                Dialogs.Info(this, "커스텀 필드 이름과 패턴을 입력하세요.", "필드 영역 등록");
                 return;
             }
             if (fields["custom"] is not System.Text.Json.Nodes.JsonArray customArray)
@@ -1512,8 +1528,7 @@ public partial class InspectorView : UserControl
     {
         if (_outcomes.Count == 0)
         {
-            MessageBox.Show("내보낼 검사 결과가 없습니다.", "CSV",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
+            Dialogs.Info(this, "내보낼 검사 결과가 없습니다.", "CSV");
             return;
         }
         var dialog = new SaveFileDialog
@@ -1578,15 +1593,15 @@ public partial class InspectorView : UserControl
                 .OrderByDescending(t => InspectionEngine.SimilarityScore(t, term, 95))
                 .Take(12)
                 .ToList();
-            var choice = MessageBox.Show(
+            var choice = ChoiceDialog.Show(Window.GetWindow(this), "미검출 진단",
                 DiagnoseMissingField(row.Field, term, analysis) +
-                "\n\n[예] 이 페이지의 OCR 인식 로그를 열어 해당 구간이 실제로 어떻게 " +
-                "읽혔는지 확인하고 교정을 등록합니다.\n" +
-                "[아니오] 인식 강화 파라미터(대비 보정 + 렌더 배율 5.0 + 최소 신뢰도 0)를 " +
-                "적용하고 이 PDF를 다시 OCR합니다.",
-                "미검출 진단", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
-            if (choice == MessageBoxResult.Cancel) return;
-            if (choice == MessageBoxResult.No)
+                "\n\nOCR 인식 로그에서 해당 구간이 실제로 어떻게 읽혔는지 확인하고 교정을 " +
+                "등록하거나, 인식 강화 파라미터(대비 보정 + 렌더 배율 5.0 + 최소 신뢰도 0)를 " +
+                "적용해 이 PDF를 다시 OCR할 수 있습니다.",
+                ("OCR 로그 열기", ChoiceStyle.Primary, true),
+                ("인식 강화 후 이 PDF 전체 재OCR (AWS 과금 발생)", ChoiceStyle.Caution, false));
+            if (choice < 0) return;
+            if (choice == 1)
             {
                 ApplyRecognitionBoost();
                 return;
@@ -1612,7 +1627,7 @@ public partial class InspectorView : UserControl
         if (!_analyses.TryGetValue(_currentPage, out var analysis)
             || _displayed is null)
         {
-            MessageBox.Show("이 페이지의 OCR이 아직 끝나지 않았습니다.", "OCR 로그");
+            Dialogs.Info(this, "이 페이지의 OCR이 아직 끝나지 않았습니다.", "OCR 로그");
             return;
         }
         var log = new OcrLogWindow(analysis.Words,
@@ -1751,8 +1766,7 @@ public partial class InspectorView : UserControl
     {
         if (!_pdf.IsOpen || !_outcomes.TryGetValue(_currentPage, out var outcome))
         {
-            MessageBox.Show("저장할 검사 결과가 없습니다.", "저장",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
+            Dialogs.Info(this, "저장할 검사 결과가 없습니다.", "저장");
             return;
         }
         SaveOutcome(_currentPage, outcome, RenderProcessed(_currentPage), notify: true);
@@ -1774,8 +1788,9 @@ public partial class InspectorView : UserControl
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "저장 실패",
-                            MessageBoxButton.OK, MessageBoxImage.Error);
+            var reason = ExportGuard.Describe(ex, SaveDir());
+            if (notify) Dialogs.Error(this, reason, "저장 실패");
+            else { Status($"자동 저장 실패: {reason}", StatusLevel.Error); AppLog.Error("자동 저장 실패", ex); }
             return;
         }
         _savedPages.Add(page);
@@ -1788,8 +1803,6 @@ public partial class InspectorView : UserControl
             return;
         }
         Status($"저장됨: {filename}");
-        if (notify)
-            MessageBox.Show($"저장됨: {filename}", "저장 완료",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
+        if (notify) FlashBadge((SolidColorBrush)FindResource("ScannedBgBrush"));   // 정보성 팝업 대신 시각 피드백
     }
 }

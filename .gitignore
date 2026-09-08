@@ -11,3 +11,6 @@ dist/
 csharp/**/bin/
 csharp/**/obj/
 csharp/**/publish/
+
+# Claude Code 에이전트 워크트리·세션 로컬 파일
+.claude/worktrees/

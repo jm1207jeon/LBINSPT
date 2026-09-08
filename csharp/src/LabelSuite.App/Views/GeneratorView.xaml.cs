@@ -106,8 +106,7 @@ public partial class GeneratorView : UserControl
             status.Foreground = (Brush)FindResource("DangerBrush");
             UpdateButtons();
             if (!silent)
-                MessageBox.Show($"{FileLabels[key]}\n{ex.Message}", "파일 오류",
-                                MessageBoxButton.OK, MessageBoxImage.Warning);
+                Dialogs.Warn(this, $"{FileLabels[key]}\n{ex.Message}", "파일 오류");
         }
     }
 
@@ -127,9 +126,9 @@ public partial class GeneratorView : UserControl
         {
             var key = IdentifyFileKey(path);
             if (key is null)
-                MessageBox.Show(
+                Dialogs.Warn(this, 
                     $"{Path.GetFileName(path)}\n필요한 시트를 찾지 못했습니다. 버튼으로 직접 선택해 주세요.",
-                    "파일 판별 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    "파일 판별 실패");
             else LoadFile(key, path, silent: false);
         }
     }
@@ -230,10 +229,10 @@ public partial class GeneratorView : UserControl
         var selected = CheckedDates();
         if (_frames["product"] is null && _frames["bsc"] is null)
         {
-            var answer = MessageBox.Show(
-                "품목번호/BSC 리스트가 없어 GTIN·REF를 조회할 수 없습니다.\n그래도 생성할까요?",
-                "확인", MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (answer != MessageBoxResult.Yes) return;
+            if (!Dialogs.Confirm(this,
+                    "품목번호/BSC 리스트가 없어 GTIN·REF를 조회할 수 없습니다.\n" +
+                    "생성된 목록의 GTIN·REF 칸이 비어 검사에서 '확인 필요'가 늘어납니다.\n\n그래도 생성할까요?",
+                    "리스트 생성 확인")) return;
         }
         GenerateButton.IsEnabled = false;
         Status("리스트 생성 중…");
@@ -250,8 +249,7 @@ public partial class GeneratorView : UserControl
         catch (Exception ex)
         {
             UpdateButtons();
-            MessageBox.Show($"리스트 생성 중 오류: {ex.Message}", "오류",
-                            MessageBoxButton.OK, MessageBoxImage.Error);
+            Dialogs.Error(this, $"리스트 생성 중 오류: {ex.Message}", "오류");
             return;
         }
         PreviewGrid.ItemsSource = _result.Records;
@@ -266,8 +264,8 @@ public partial class GeneratorView : UserControl
                       $"(경고 {_result.WarningCount}, 오류 {_result.ErrorCount})";
         Status(summary);
         if (_result.WarningCount + _result.ErrorCount > 0)
-            MessageBox.Show(summary + "\n자세한 내용은 경고/오류 패널을 확인하세요.",
-                            "생성 완료", MessageBoxButton.OK, MessageBoxImage.Information);
+            Dialogs.Info(this, summary + "\n자세한 내용은 경고/오류 패널을 확인하세요.",
+                            "생성 완료");
     }
 
     private void OnSaveXlsx(object sender, RoutedEventArgs e)
@@ -288,8 +286,7 @@ public partial class GeneratorView : UserControl
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "저장 실패",
-                            MessageBoxButton.OK, MessageBoxImage.Error);
+            Dialogs.Error(this, ex.Message, "저장 실패");
             return;
         }
         _config.Settings["last_list_path"] = dialog.FileName;

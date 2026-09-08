@@ -119,13 +119,11 @@ public partial class SettingsWindow : Window
     private void OnClearGlyphs(object sender, RoutedEventArgs e)
     {
         // 파괴적 동작: 건수 표시 + 기본 버튼 '아니오' (Enter 오조작 방지)
-        if (MessageBox.Show(
+        if (!Dialogs.Confirm(this,
                 $"학습된 글자 패턴을 모두 삭제할까요?\n" +
                 $"글자 {_glyphs.CharCount}종 / 템플릿 {_glyphs.TemplateCount}개가 삭제되며 되돌릴 수 없습니다.\n" +
                 "(삭제 전 [학습 데이터 내보내기]로 보관할 수 있습니다)",
-                "패턴 초기화", MessageBoxButton.YesNo, MessageBoxImage.Warning,
-                MessageBoxResult.No)
-            != MessageBoxResult.Yes) return;
+                "패턴 초기화")) return;
         _glyphs.Clear();
         UpdateGlyphStatus();
     }
@@ -142,16 +140,15 @@ public partial class SettingsWindow : Window
         try
         {
             var info = LearningBundle.Export(dialog.FileName, _glyphs, _corrections);
-            MessageBox.Show(
+            Dialogs.Info(this, 
                 $"내보내기 완료\n글자 패턴: {info.GlyphChars}종 / 템플릿 {info.GlyphTemplates}개\n" +
                 $"교정 사전: {info.Corrections}건\n\n이 파일을 다른 PC의 LaVIS에서 " +
                 "[학습 데이터 가져오기]로 불러오면 동일한 인식 성능을 사용할 수 있습니다.",
-                "학습 데이터 내보내기", MessageBoxButton.OK, MessageBoxImage.Information);
+                "학습 데이터 내보내기");
         }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
         {
-            MessageBox.Show($"내보내기 실패: {ex.Message}", "학습 데이터 내보내기",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            Dialogs.Error(this, $"내보내기 실패: {ex.Message}", "학습 데이터 내보내기");
         }
     }
 
@@ -175,16 +172,15 @@ public partial class SettingsWindow : Window
         {
             var manifest = PresetBundle.Export(dialog.FileName, _config, name);
             _config.Settings["last_preset_name"] = name;
-            MessageBox.Show(this,
+            Dialogs.Info(this,
                 $"프리셋 '{manifest.Name}' 내보내기 완료\n포함: {string.Join(", ", manifest.Contents)}\n\n" +
                 "다른 PC의 LaVIS 설정 › 규격·양식 감지 › [프리셋 가져오기]로 적용할 수 있습니다.",
-                "프리셋 내보내기", MessageBoxButton.OK, MessageBoxImage.Information);
+                "프리셋 내보내기");
         }
         catch (Exception ex)
         {
             AppLog.Error("프리셋 내보내기 실패", ex);
-            MessageBox.Show(this, $"내보내기 실패: {ex.Message}", "프리셋 내보내기",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            Dialogs.Error(this, $"내보내기 실패: {ex.Message}", "프리셋 내보내기");
         }
     }
 
@@ -200,34 +196,34 @@ public partial class SettingsWindow : Window
         try { manifest = PresetBundle.Inspect(dialog.FileName); }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "프리셋 가져오기", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Dialogs.Warn(this, ex.Message, "프리셋 가져오기");
             return;
         }
         // 되돌리기 어려운 동작: 내용을 보여 주고 기본 버튼 '아니오'
-        var answer = MessageBox.Show(this,
+        var proceed = Dialogs.Confirm(this,
             $"프리셋 '{manifest.Name}' ({manifest.ExportedAt})\n" +
             (manifest.Note.Length > 0 ? $"메모: {manifest.Note}\n" : "") +
             $"포함: {string.Join(", ", manifest.Contents)}\n\n" +
             "현재 규격·필드 규칙·영역·양식 감지·학습 데이터가 이 프리셋으로 교체됩니다.\n" +
             "(현재 상태는 데이터 폴더의 backup-preset-시각 폴더에 보관됩니다)\n" +
             "적용을 위해 LaVIS가 다시 시작됩니다. 계속할까요?",
-            "프리셋 가져오기", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
-        if (answer != MessageBoxResult.Yes) return;
+            "프리셋 가져오기");
+        if (!proceed) return;
         try
         {
             var applied = PresetBundle.Import(dialog.FileName, _config);
             AppLog.Info($"프리셋 적용: {applied.Name} (백업 {applied.BackupDirectory})");
-            MessageBox.Show(this,
+            Dialogs.Info(this,
                 $"프리셋 '{applied.Name}' 적용 완료. 이전 상태는\n{applied.BackupDirectory}\n에 보관되었습니다.\n\n확인을 누르면 LaVIS가 다시 시작됩니다.",
-                "프리셋 가져오기", MessageBoxButton.OK, MessageBoxImage.Information);
+                "프리셋 가져오기");
             DialogResult = false;   // 설정 창의 미저장 편집은 버림 (재시작으로 새 상태 로드)
             App.Restart();
         }
         catch (Exception ex)
         {
             AppLog.Error("프리셋 가져오기 실패", ex);
-            MessageBox.Show(this, $"가져오기 실패: {ex.Message}\n현재 설정은 변경되지 않았거나 backup-preset 폴더에서 복원할 수 있습니다.",
-                "프리셋 가져오기", MessageBoxButton.OK, MessageBoxImage.Error);
+            Dialogs.Error(this, $"가져오기 실패: {ex.Message}\n현재 설정은 변경되지 않았거나 backup-preset 폴더에서 복원할 수 있습니다.",
+                "프리셋 가져오기");
         }
     }
 
@@ -254,14 +250,13 @@ public partial class SettingsWindow : Window
                 zip.CreateEntryFromFile(file, name);
                 count++;
             }
-            MessageBox.Show(this, $"파일 {count}개를 백업했습니다.\n{dialog.FileName}\n(검사 이력 DB와 OCR 캐시는 제외)",
-                "데이터 폴더 백업", MessageBoxButton.OK, MessageBoxImage.Information);
+            Dialogs.Info(this, $"파일 {count}개를 백업했습니다.\n{dialog.FileName}\n(검사 이력 DB와 OCR 캐시는 제외)",
+                "데이터 폴더 백업");
         }
         catch (Exception ex)
         {
             AppLog.Error("데이터 폴더 백업 실패", ex);
-            MessageBox.Show(this, $"백업 실패: {ex.Message}", "데이터 폴더 백업",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            Dialogs.Error(this, $"백업 실패: {ex.Message}", "데이터 폴더 백업");
         }
     }
 
@@ -285,16 +280,15 @@ public partial class SettingsWindow : Window
                     Wrong = entry.Wrong, Right = entry.Right,
                     Field = entry.Field ?? "", LearnedAt = entry.LearnedAt ?? "",
                 });
-            MessageBox.Show(
+            Dialogs.Info(this, 
                 $"가져오기 완료\n새 글자 템플릿 {info.GlyphTemplates}개 병합 " +
                 $"(이미 있는 패턴은 유지)\n교정 사전 {info.Corrections}건 반영",
-                "학습 데이터 가져오기", MessageBoxButton.OK, MessageBoxImage.Information);
+                "학습 데이터 가져오기");
         }
         catch (Exception ex) when (ex is System.IO.IOException
             or System.IO.InvalidDataException or UnauthorizedAccessException)
         {
-            MessageBox.Show($"가져오기 실패: {ex.Message}", "학습 데이터 가져오기",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            Dialogs.Error(this, $"가져오기 실패: {ex.Message}", "학습 데이터 가져오기");
         }
     }
 

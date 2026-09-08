@@ -102,16 +102,14 @@ public partial class OcrLogWindow : Window
             .OrderBy(r => int.Parse(r.Order)).ToList();
         if (selected.Count < 2)
         {
-            MessageBox.Show("Ctrl 클릭으로 병합할 단어를 2개 이상 선택하세요.",
-                            "병합 학습", MessageBoxButton.OK,
-                            MessageBoxImage.Information);
+            Dialogs.Info(this, "Ctrl 클릭으로 병합할 단어를 2개 이상 선택하세요.",
+                            "병합 학습");
             return;
         }
         var phrase = string.Join(" ", selected.Select(r => r.Text));
         if (!_merges.Add(selected.Select(r => r.Text)))
         {
-            MessageBox.Show("이미 등록된 병합 패턴입니다.", "병합 학습",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
+            Dialogs.Info(this, "이미 등록된 병합 패턴입니다.", "병합 학습");
             return;
         }
         _changed = true;
@@ -125,22 +123,19 @@ public partial class OcrLogWindow : Window
     {
         if (LogGrid.SelectedItem is not RowVm row)
         {
-            MessageBox.Show("교정할 단어(잘못 읽힌 값)를 목록에서 선택하세요.",
-                            "교정 등록", MessageBoxButton.OK,
-                            MessageBoxImage.Information);
+            Dialogs.Info(this, "교정할 단어(잘못 읽힌 값)를 목록에서 선택하세요.",
+                            "교정 등록");
             return;
         }
         var right = RightBox.Text.Trim();
         if (right.Length == 0)
         {
-            MessageBox.Show("올바른 값을 입력하세요.", "교정 등록",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
+            Dialogs.Info(this, "올바른 값을 입력하세요.", "교정 등록");
             return;
         }
         if (row.Text == right)
         {
-            MessageBox.Show("선택한 단어와 올바른 값이 동일합니다.", "교정 등록",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
+            Dialogs.Info(this, "선택한 단어와 올바른 값이 동일합니다.", "교정 등록");
             return;
         }
         _corrections.Add(row.Text, right,

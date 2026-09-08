@@ -51,8 +51,7 @@ public partial class MasterDbWindow : Window
             kept.Add(row.Pn.Trim());
         }
         foreach (var pn in _originalPns.Except(kept)) _db.DeleteMaster(pn);
-        MessageBox.Show($"기준정보 {kept.Count}건 저장됨.", "저장 완료",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
+        SaveNote.Text = $"기준정보 {kept.Count}건 저장됨 {DateTime.Now:HH:mm:ss}";
         DialogResult = true;
     }
 

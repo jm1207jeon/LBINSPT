@@ -84,7 +84,7 @@
                                     MouseLeftButtonDown="OnPageSlotClick"
                                     Tag="{Binding PageIndex}" ToolTip="{Binding Tip}">
                                 <TextBlock Text="{Binding Number}" HorizontalAlignment="Center"
-                                           VerticalAlignment="Center" FontSize="11"
+                                           VerticalAlignment="Center" FontSize="{StaticResource CaptionSize}"
                                            Foreground="{Binding TextBrush}"/>
                             </Border>
                         </DataTemplate>
@@ -107,9 +107,9 @@
                                    HorizontalAlignment="Left" VerticalAlignment="Top"
                                    RenderOptions.BitmapScalingMode="HighQuality"/>
                             <Canvas x:Name="ViewerOverlayCanvas" IsHitTestVisible="False">
-                                <Rectangle x:Name="RubberBand" Stroke="Red"
+                                <Rectangle x:Name="RubberBand" Stroke="{StaticResource RubberStrokeBrush}"
                                            StrokeThickness="2" StrokeDashArray="4 2"
-                                           Fill="#22FF0000" Visibility="Collapsed"/>
+                                           Fill="{StaticResource RubberFillBrush}" Visibility="Collapsed"/>
                             </Canvas>
                         </Grid>
                     </ScrollViewer>
@@ -146,7 +146,7 @@
                            Foreground="{StaticResource CountOrangeBrush}"/>
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock x:Name="ProgressCountText" Text="검사 0 / 0 페이지"
-                               FontSize="15" FontWeight="Bold" Foreground="{StaticResource HintBrush}"
+                               FontSize="{StaticResource SubCountSize}" FontWeight="Bold" Foreground="{StaticResource HintBrush}"
                                ToolTip="판정이 끝난 페이지 / 전체 페이지"/>
                     <!-- 미저장 상시 표시: 종료·PDF 교체 전에 저장을 유도 -->
                     <TextBlock x:Name="DirtyText" Text="" FontWeight="Bold" Margin="0,2,0,0"
@@ -203,7 +203,7 @@
             <Border Grid.Row="2" x:Name="StatusBadge" Style="{StaticResource BadgeBorder}"
                     Margin="4,2,4,2">
                 <TextBlock x:Name="StatusBadgeText" Text="검사 대기" FontSize="17"
-                           FontWeight="Bold" Foreground="Gray" TextWrapping="Wrap"/>
+                           FontWeight="Bold" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
             </Border>
 
             <GroupBox Grid.Row="3" Header="필드별 검출 (더블클릭: 미검출 진단 · OCR 오인식 교정 등록)">

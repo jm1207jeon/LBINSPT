@@ -32,14 +32,12 @@ public partial class CorrectionDialog : Window
         var right = RightBox.Text.Trim();
         if (wrong.Length == 0 || right.Length == 0)
         {
-            MessageBox.Show("잘못 읽힌 값과 올바른 값을 모두 입력하세요.", "교정",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
+            Dialogs.Info(this, "잘못 읽힌 값과 올바른 값을 모두 입력하세요.", "교정");
             return;
         }
         if (wrong == right)
         {
-            MessageBox.Show("두 값이 동일합니다.", "교정",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
+            Dialogs.Info(this, "두 값이 동일합니다.", "교정");
             return;
         }
         _corrections.Add(wrong, right, _field);

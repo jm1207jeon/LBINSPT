@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
     <!-- ============================================================
          LaVIS 패밀리 디자인 토큰 — 자매 제품 UDInspect(2D-Verifier)와 동일한 규범.
          원칙: 커스텀 컨트롤 템플릿 없이 기본 WPF 크롬 + 색·굵기·여백만으로 위계를 만든다.
@@ -23,10 +24,8 @@
     <!-- 팔레트: 브랜드 (UDInspect 아이콘·버튼과 동일) -->
     <SolidColorBrush x:Key="InkBrush" Color="#222B36"/>         <!-- 아이콘 격자/잉크 -->
     <SolidColorBrush x:Key="PrimaryBrush" Color="#1A6FB5"/>     <!-- 주 동작 파랑 -->
-    <SolidColorBrush x:Key="PrimaryHoverBrush" Color="#155E9C"/>
     <SolidColorBrush x:Key="PrimarySoftBrush" Color="#E3F0FB"/> <!-- 파란 칩 배경 -->
     <SolidColorBrush x:Key="AccentBrush" Color="#1A5276"/>      <!-- 네이비 강조 글씨 -->
-    <SolidColorBrush x:Key="AccentHoverBrush" Color="#154360"/>
     <SolidColorBrush x:Key="AccentSoftBrush" Color="#EAF2F8"/>
     <SolidColorBrush x:Key="SoftPanelBrush" Color="#F3F6FA"/>   <!-- 연파랑 패널 -->
     <SolidColorBrush x:Key="SoftPanelBorderBrush" Color="#B9C4D0"/>
@@ -57,6 +56,23 @@
     <SolidColorBrush x:Key="ImageBgBrush" Color="#1E1E1E"/>     <!-- 어두운 이미지 영역 -->
     <SolidColorBrush x:Key="ImageHintBrush" Color="#9E9E9E"/>
     <SolidColorBrush x:Key="OverlayDimBrush" Color="#66000000"/><!-- 창 안 오버레이 딤 -->
+    <SolidColorBrush x:Key="CardBorderBrush" Color="#C8CCD2"/>  <!-- 선택 카드 보통 테두리 -->
+    <!-- 페이지 슬롯 5상태 -->
+    <SolidColorBrush x:Key="SlotIdleBrush" Color="#EFEFEF"/>
+    <SolidColorBrush x:Key="SlotBorderBrush" Color="#CFCFCF"/>
+    <SolidColorBrush x:Key="SlotIdleTextBrush" Color="#9A9A9A"/>
+    <!-- 영역 등록 러버밴드 (UDInspect 강제 스캔 박스와 동일한 주황 반투명) -->
+    <SolidColorBrush x:Key="RubberStrokeBrush" Color="#96FF9800"/>
+    <SolidColorBrush x:Key="RubberFillBrush" Color="#18FF9800"/>
+    <!-- 오버레이 색 — Core Annotate 상수(BarcodeBoxColor/FormBoxColor/LowConfidenceColor)와 동기화 (ThemeTokenTests가 검증) -->
+    <SolidColorBrush x:Key="OverlayBarcodeBrush" Color="#008080"/>
+    <SolidColorBrush x:Key="OverlayFormBrush" Color="#8000A0"/>
+    <SolidColorBrush x:Key="OverlayLowConfBrush" Color="#FF8C00"/>
+    <!-- 크기 토큰 -->
+    <sys:Double x:Key="BigCountSize">56</sys:Double>
+    <sys:Double x:Key="ReadoutSize">24</sys:Double>
+    <sys:Double x:Key="SubCountSize">15</sys:Double>
+    <sys:Double x:Key="CaptionSize">11</sys:Double>
 
     <!-- 기본 위젯: UDInspect App.xaml과 동일한 최소 스타일 -->
     <Style TargetType="Button">
@@ -120,6 +136,14 @@
         <Setter Property="Padding" Value="12,5"/>
     </Style>
 
+    <!-- 툴바 기능군 구분선 -->
+    <Style x:Key="VSep" TargetType="Separator">
+        <Setter Property="Width" Value="1"/>
+        <Setter Property="Height" Value="22"/>
+        <Setter Property="Margin" Value="6,0"/>
+        <Setter Property="Background" Value="{StaticResource GridLineBrush}"/>
+    </Style>
+
     <!-- 텍스트 위계 -->
     <Style x:Key="HintText" TargetType="TextBlock">
         <Setter Property="FontSize" Value="12"/>
@@ -127,7 +151,7 @@
         <Setter Property="TextWrapping" Value="Wrap"/>
     </Style>
     <Style x:Key="CaptionText" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontSize" Value="{StaticResource CaptionSize}"/>
         <Setter Property="Foreground" Value="{StaticResource HintBrush}"/>
     </Style>
     <Style x:Key="LinkHintText" TargetType="TextBlock">
@@ -141,7 +165,7 @@
     </Style>
     <!-- 큰 숫자 집계: UDInspect 멀티 스캔 상단(56px) -->
     <Style x:Key="BigCount" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="48"/>
+        <Setter Property="FontSize" Value="{StaticResource BigCountSize}"/>
         <Setter Property="FontWeight" Value="Bold"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
@@ -149,11 +173,11 @@
         <Setter Property="FontSize" Value="14"/>
         <Setter Property="FontWeight" Value="Bold"/>
         <Setter Property="VerticalAlignment" Value="Bottom"/>
-        <Setter Property="Margin" Value="6,0,22,9"/>
+        <Setter Property="Margin" Value="8,0,28,10"/>
     </Style>
     <!-- 판독값(큰 글씨) -->
     <Style x:Key="ReadoutText" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="24"/>
+        <Setter Property="FontSize" Value="{StaticResource ReadoutSize}"/>
         <Setter Property="FontWeight" Value="Bold"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
     </Style>
@@ -193,7 +217,7 @@
 
     <!-- 메인 창 안 오버레이 카드: 딤(#66000000) 위에 뜨는 선택 패널 (별도 창 대신) -->
     <Style x:Key="OverlayCard" TargetType="Border">
-        <Setter Property="Background" Value="#F4F6F9"/>
+        <Setter Property="Background" Value="{StaticResource SoftPanelBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
         <Setter Property="BorderThickness" Value="2"/>
         <Setter Property="CornerRadius" Value="10"/>
@@ -238,8 +262,8 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
-                    <Border x:Name="border" Background="White"
-                            BorderBrush="#C8CCD2" BorderThickness="2" Padding="9,3"
+                    <Border x:Name="border" Background="{StaticResource PanelBrush}"
+                            BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="2" Padding="9,3"
                             CornerRadius="6">
                         <ContentPresenter HorizontalAlignment="Center"
                                           VerticalAlignment="Center"/>
@@ -265,6 +289,11 @@
                             <Setter TargetName="border" Property="BorderBrush"
                                     Value="{StaticResource SoftPanelBorderBrush}"/>
                         </MultiTrigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="border" Property="BorderBrush"
+                                    Value="{StaticResource AccentBrush}"/>
+                            <Setter TargetName="border" Property="BorderThickness" Value="3"/>
+                        </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.45"/>
                         </Trigger>

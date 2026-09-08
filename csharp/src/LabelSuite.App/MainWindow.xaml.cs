@@ -37,6 +37,7 @@ public partial class MainWindow : Window
 
         Generator.StatusMessage += ShowStatus;
         Inspector.StatusMessage += ShowStatus;
+        HistoryPage.StatusMessage += ShowStatus;
         Inspector.AwsStatusChanged += OnAwsStatus;
         Inspector.ProgressChanged += OnProgress;
         Generator.ListGenerated += records =>
@@ -65,13 +66,11 @@ public partial class MainWindow : Window
         {
             var unsaved = Inspector.UnsavedCount;
             if (unsaved == 0) return;
-            var answer = MessageBox.Show(this,
-                $"판정된 페이지 중 {unsaved}건의 결과가 아직 저장되지 않았습니다.\n" +
-                "([결과 저장] 또는 [자동 저장]으로 결과 이미지·이력이 저장됩니다)\n\n" +
-                "그래도 종료하시겠습니까?",
-                "종료 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning,
-                MessageBoxResult.No);
-            if (answer != MessageBoxResult.Yes) e.Cancel = true;
+            if (!Dialogs.Confirm(this,
+                    $"판정된 페이지 중 {unsaved}건의 결과가 아직 저장되지 않았습니다.\n" +
+                    "([결과 저장] 또는 [자동 저장]으로 결과 이미지·이력이 저장됩니다)\n\n" +
+                    "그래도 종료하시겠습니까?", "종료 확인"))
+                e.Cancel = true;
         };
         Closed += (_, _) =>
         {
@@ -83,11 +82,11 @@ public partial class MainWindow : Window
                 "설정 파일이 이 프로그램보다 새 버전에서 만들어졌습니다 — 일부 항목이 무시될 수 있습니다. LaVIS를 업데이트하세요.",
                 StatusLevel.Warn);
         if (Config.RecoveredFiles.Count > 0)
-            Loaded += (_, _) => MessageBox.Show(
+            Loaded += (_, _) => Dialogs.Warn(this,
                 $"손상된 설정 파일을 기본값으로 복구했습니다: " +
                 $"{string.Join(", ", Config.RecoveredFiles)}\n" +
                 "이전 파일은 같은 폴더에 .corrupt-시각 이름으로 보관되어 있습니다.",
-                "설정 복구", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "설정 복구");
     }
 
     /// <summary>이력 DB가 손상돼 열리지 않으면 보관 후 새로 만든다 — DB 하나 때문에
@@ -103,10 +102,10 @@ public partial class MainWindow : Window
                     File.Move(path, $"{path}.corrupt-{DateTime.Now:yyyyMMdd-HHmmss}",
                               overwrite: true);
                 var db = new HistoryDb(path);
-                MessageBox.Show(
+                Dialogs.Warn(null,
                     $"검사 이력 DB를 열 수 없어 새로 만들었습니다.\n원인: {first.Message}\n" +
                     "이전 DB는 .corrupt-시각 이름으로 보관되어 있습니다.",
-                    "이력 DB 복구", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    "이력 DB 복구");
                 return db;
             }
             catch (Exception) { throw first; }
