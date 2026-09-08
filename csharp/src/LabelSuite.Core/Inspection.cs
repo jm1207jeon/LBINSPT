@@ -29,8 +29,29 @@ public sealed class InspectionOutcome
     public required StandardSpec Standard { get; init; }
     public Dictionary<string, FieldResult> Fields { get; } = [];
     public List<CrossCheckResult> BarcodeChecks { get; init; } = [];
+    /// <summary>검사 시 사용한 추가 검색어 (판정 서명에 포함).</summary>
+    public string SearchTerm { get; init; } = "";
     public bool Passed => Fields.Values.All(f => f.Passed) && BarcodeChecks.All(c => c.Matched);
     public IEnumerable<TextMatch> AllMatches => Fields.Values.SelectMany(f => f.Matches);
+
+    /// <summary>판정 내용의 서명(SHA1 앞 16자) — 같은 페이지를 다시 방문·재검사해도 판정이 같으면
+    /// 자동 저장이 중복 파일·이력을 만들지 않게 하는 비교 키. 필드/바코드 순서와 무관하다.</summary>
+    public string Signature()
+    {
+        var parts = new List<string>
+        {
+            Standard.Name, Record.Lot, Record.Ref, Passed ? "P" : "C",
+        };
+        parts.AddRange(Fields.Values.OrderBy(f => f.Field, StringComparer.Ordinal)
+            .Select(f => $"{f.Field}:{f.Found}/{(f.Expected is { } e ? e.ToString() : "-")}"));
+        parts.AddRange(BarcodeChecks
+            .OrderBy(c => c.Field, StringComparer.Ordinal).ThenBy(c => c.BarcodeValue, StringComparer.Ordinal)
+            .Select(c => $"{c.Field}={c.BarcodeValue}:{(c.Matched ? 1 : 0)}"));
+        parts.Add(SearchTerm.Trim());
+        var bytes = System.Security.Cryptography.SHA1.HashData(
+            System.Text.Encoding.UTF8.GetBytes(string.Join("|", parts)));
+        return Convert.ToHexString(bytes)[..16].ToLowerInvariant();
+    }
 }
 
 public sealed record LotMatchResult(
@@ -135,6 +156,10 @@ public sealed class InspectionEngine(StandardsBundle standards,
         var sawGs1 = false;
         foreach (var hit in barcodes)
         {
+            // GS1 외형(GS 구분자·(01)·01+14자리)인 바코드가 하나라도 있으면 바코드가 판정 원천이다 —
+            // 해석에 실패해도 OCR 텍스트로 폴백하지 않는다(매치 0 → 확인 필요). 폴백은 GS1 바코드가
+            // 페이지에 전혀 없을 때만.
+            if (hit.IsGs1 || BarcodeDetector.LooksGs1(hit.Text)) sawGs1 = true;
             Gs1Message message;
             try { message = Gs1.Parse(hit.Text); }
             catch (Gs1ParseException) { continue; }
@@ -219,6 +244,7 @@ public sealed class InspectionEngine(StandardsBundle standards,
         {
             Record = record, Standard = standard,
             BarcodeChecks = barcodeChecks?.ToList() ?? [],
+            SearchTerm = extraSearch ?? "",
         };
         foreach (var (fieldName, term) in terms)
         {

@@ -100,7 +100,7 @@ public static class Annotate
     {
         style ??= OverlayStyle.Default;
         using var canvas = new SKCanvas(image);
-        var teal = new SKColor(0, 128, 128);
+        var teal = BarcodeBoxColor;
         using var stroke = new SKPaint
         {
             Color = teal, Style = SKPaintStyle.Stroke,
@@ -134,7 +134,7 @@ public static class Annotate
     {
         style ??= OverlayStyle.Default;
         using var canvas = new SKCanvas(image);
-        var orange = new SKColor(255, 140, 0);
+        var orange = LowConfidenceColor;
         using var fill = new SKPaint
         { Color = orange.WithAlpha(45), Style = SKPaintStyle.Fill };
         using var stroke = new SKPaint
@@ -157,11 +157,21 @@ public static class Annotate
     }
 
     /// <summary>우상단 필드별 found/expected 요약 박스 (저장본용).</summary>
+    /// <summary>오버레이 색 — WPF Theme.xaml의 OverlayBarcodeBrush/OverlayFormBrush/OverlayLowConfBrush와
+    /// 동기화된다 (ThemeTokenTests가 hex 일치를 검증). 저장 이미지와 화면 범례가 같은 색을 쓰기 위함.</summary>
+    public static readonly SKColor BarcodeBoxColor = new(0, 128, 128);
+    public static readonly SKColor FormBoxColor = new(128, 0, 160);
+    public static readonly SKColor LowConfidenceColor = new(255, 140, 0);
+
     public static void DrawSummaryBox(SKBitmap image, InspectionOutcome outcome)
     {
         using var canvas = new SKCanvas(image);
         var lines = new List<(string Text, bool Ok)>
         { ($"[{outcome.Standard.Name}] {(outcome.Passed ? "PASSED" : "CHECK")}", outcome.Passed) };
+        // 2번째 줄: 화면 배지의 사유줄과 같은 문구 (저장 이미지만 봐도 왜 확인 필요인지 알 수 있게)
+        var reason = InspectionSummary.Describe(outcome);
+        if (reason.Length > 0)
+            lines.Add((reason.Length > 34 ? reason[..33] + "…" : reason, outcome.Passed));
         foreach (var field in outcome.Fields.Values.Where(f => f.Expected is not null))
             lines.Add(($"{field.Field}: {field.Found}/{field.Expected} " +
                        (field.Passed ? "OK" : "NG"), field.Passed));

@@ -183,8 +183,19 @@ public static class BarcodeDetector
             if (!hit.IsGs1 && !LooksGs1(hit.Text)) continue;
             Gs1Message message;
             try { message = Gs1.Parse(hit.Text); }
-            catch (Gs1ParseException) { continue; }
+            catch (Gs1ParseException)
+            {
+                // 바코드는 읽혔으나 구조를 해석하지 못함 — 조용히 넘기면 '바코드 없음'처럼 보여
+                // OCR 폴백으로 거짓 합격이 날 수 있으므로 불일치 행으로 남긴다.
+                var raw = hit.Text.Replace(Gs1.GS.ToString(), "<GS>");
+                checks.Add(new CrossCheckResult(hit.Symbology, "GS1 해석",
+                    raw.Length > 40 ? raw[..40] + "…" : raw, "해석 가능한 GS1 구조", Matched: false));
+                continue;
+            }
             checks.AddRange(BarcodeCrossCheck.Check(message, record, hit.Symbology));
+            if (message.Partial)
+                checks.Add(new CrossCheckResult(hit.Symbology, "미등록 AI",
+                    string.Join(", ", message.UnknownAis), "(참고)", Matched: true));
         }
         return checks;
     }
