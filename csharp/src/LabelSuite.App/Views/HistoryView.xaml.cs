@@ -28,9 +28,13 @@ public partial class HistoryView : UserControl
         Refresh();
     }
 
-    private sealed record RowVm(string Ts, string Lot, string Ref, string Pn,
+    private sealed record RowVm(long Id, string Ts, string Lot, string Ref, string Pn,
                                 string Standard, string Page, string Verdict,
                                 string ImagePath);
+
+    /// <summary>지금까지 표시한 이력 id — 새로 저장돼 처음 나타나는 행만 번쩍이기 위해 유지.</summary>
+    private readonly HashSet<long> _knownIds = [];
+    private bool _loadedOnce;
 
     public void Refresh()
     {
@@ -39,10 +43,16 @@ public partial class HistoryView : UserControl
         { 1 => true, 2 => false, _ => null };
         var lot = LotFilter.Text.Trim();
         var rows = _db.Query(lot: lot.Length > 0 ? lot : null, passed: passed);
-        Table.ItemsSource = rows.Select(r => new RowVm(
-            r.Ts.Replace('T', ' '), r.Lot, r.Ref, r.Pn, r.Standard,
+        var vms = rows.Select(r => new RowVm(
+            r.Id, r.Ts.Replace('T', ' '), r.Lot, r.Ref, r.Pn, r.Standard,
             r.Page is { } page ? (page + 1).ToString() : "",
             r.Passed ? "합격" : "확인 필요", r.ImagePath)).ToList();
+        Table.ItemsSource = vms;
+        // 첫 로드는 전부 '새 행'이므로 제외 — 이후 검사에서 저장된 행만 앰버로 650ms
+        var fresh = _loadedOnce ? vms.Where(v => !_knownIds.Contains(v.Id)).ToList() : new List<RowVm>();
+        foreach (var vm in vms) _knownIds.Add(vm.Id);
+        _loadedOnce = true;
+        foreach (var vm in fresh) UiFx.FlashRow(Table, vm);
     }
 
     private void OnFilterKeyDown(object sender, KeyEventArgs e)
@@ -100,7 +110,13 @@ public partial class HistoryView : UserControl
             FileName = $"검사리포트_{lot}.xlsx",
         };
         if (dialog.ShowDialog() != true) return;
-        var count = Report.ExportLotReport(_db, lot, dialog.FileName);
-        Status($"LOT {lot} 검사 {count}건 리포트 저장 완료: {dialog.FileName}");
+        // 파일 잠김(엑셀에서 열림)·권한·디스크 부족은 상태바 오류로 보고 — 이력은 그대로 유지
+        var db = _db;
+        var count = 0;
+        ExportGuard.Run($"LOT {lot} 검사 리포트", dialog.FileName,
+                        () => count = Report.ExportLotReport(db, lot, dialog.FileName),
+                        (message, level) => Status(
+                            level == StatusLevel.Info ? $"LOT {lot} 검사 {count}건 리포트 저장 완료: {dialog.FileName}" : message,
+                            level));
     }
 }

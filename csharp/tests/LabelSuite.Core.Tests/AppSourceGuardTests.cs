@@ -56,4 +56,85 @@ public class AppSourceGuardTests
         Assert.True(Regex.IsMatch(source, @"StatusMessage\?\.Invoke\(message,\s*level\)"),
                     $"{file}: Status() 헬퍼가 StatusMessage?.Invoke(message, level)로 전달해야 합니다.");
     }
+
+    private static IEnumerable<string> AppSources(string app, string pattern) =>
+        Directory.EnumerateFiles(app, pattern, SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                        && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"));
+
+    private static string Rel(string app, string file) =>
+        Path.GetRelativePath(app, file).Replace('\\', '/');
+
+    /// <summary>대화상자 규범: MessageBox.Show는 Services/Dialogs.cs(Owner·기본 '아니오' 강제)와
+    /// App.xaml.cs(부팅 실패 — 창이 없음)에서만. 나머지는 Dialogs.Confirm/Info/Warn/Error 또는 ChoiceDialog.</summary>
+    [Fact]
+    public void MessageBoxOnlyThroughDialogs()
+    {
+        if (!AppSourceLocator.TryFind(out var app)) return;
+        string[] allowed = ["Services/Dialogs.cs", "App.xaml.cs"];
+        var offenders = AppSources(app, "*.cs")
+            .Where(f => !allowed.Contains(Rel(app, f)))
+            .Where(f => File.ReadAllText(f).Contains("MessageBox.Show("))
+            .Select(f => Rel(app, f))
+            .ToList();
+        Assert.True(offenders.Count == 0,
+            "MessageBox.Show 직접 호출 — Dialogs.* 로 바꾸세요: " + string.Join(", ", offenders));
+    }
+
+    /// <summary>예/아니오 확인은 Dialogs.Confirm(기본 '아니오')만 — Enter 오조작으로 삭제·학습·과금 방지.</summary>
+    [Fact]
+    public void YesNoOnlyInDialogs()
+    {
+        if (!AppSourceLocator.TryFind(out var app)) return;
+        var offenders = AppSources(app, "*.cs")
+            .Where(f => Rel(app, f) != "Services/Dialogs.cs")
+            .Where(f => File.ReadAllText(f).Contains("MessageBoxButton.YesNo"))
+            .Select(f => Rel(app, f))
+            .ToList();
+        Assert.True(offenders.Count == 0,
+            "MessageBoxButton.YesNo 직접 사용 — Dialogs.Confirm 으로 바꾸세요: " + string.Join(", ", offenders));
+    }
+
+    /// <summary>모든 모달 창은 Esc로 닫혀야 한다: 루트가 Window인 XAML마다 IsCancel="True" 버튼 ≥1
+    /// (MainWindow.xaml은 주 창이라 제외).</summary>
+    [Fact]
+    public void EveryWindowXamlHasCancelButton()
+    {
+        if (!AppSourceLocator.TryFind(out var app)) return;
+        var offenders = new List<string>();
+        foreach (var file in AppSources(app, "*.xaml"))
+        {
+            if (Path.GetFileName(file) == "MainWindow.xaml") continue;
+            var text = File.ReadAllText(file);
+            var root = Regex.Match(text, @"<(?!\?|!--)([A-Za-z][\w:.]*)");
+            if (!root.Success || root.Groups[1].Value != "Window") continue;
+            if (!text.Contains("IsCancel=\"True\"")) offenders.Add(Rel(app, file));
+        }
+        Assert.True(offenders.Count == 0,
+            "IsCancel=\"True\" 버튼이 없는 Window (Esc로 닫히지 않음): " + string.Join(", ", offenders));
+    }
+
+    /// <summary>SettingsWindow.xaml의 Tag(설정 경로)는 SettingRanges.All 또는 save_directory에 있어야 하고,
+    /// 범위표의 단일 값 경로는 (UI에 노출하지 않는 예외 목록을 빼고) 모두 입력란을 가져야 한다.</summary>
+    [Fact]
+    public void SettingsXamlTagsMatchSettingRanges()
+    {
+        if (!AppSourceLocator.TryFind(out var app)) return;
+        var path = Path.Combine(app, "SettingsWindow.xaml");
+        if (!File.Exists(path)) return;
+        var tags = Regex.Matches(File.ReadAllText(path), @"<TextBox[^>]*\bTag=""([^""]+)""")
+            .Select(m => m.Groups[1].Value).ToHashSet();
+        var known = SettingRanges.All.Select(d => d.Path).Append("save_directory").ToHashSet();
+        var unknown = tags.Where(t => !known.Contains(t)).ToList();
+        Assert.True(unknown.Count == 0,
+            "SettingRanges에 없는 Tag (InputRules가 배선하지 못함): " + string.Join(", ", unknown));
+
+        // UI 입력란이 없는 설정 (캐시 크기 등 — settings.json 직접 편집 항목)
+        string[] notInUi = ["ocr_cache_max_entries", "page_image_cache_pages"];
+        var missing = SettingRanges.All.Select(d => d.Path)
+            .Where(p => !p.Contains("[]") && !notInUi.Contains(p) && !tags.Contains(p))
+            .ToList();
+        Assert.True(missing.Count == 0,
+            "SettingsWindow.xaml에 Tag가 없는 범위표 경로: " + string.Join(", ", missing));
+    }
 }

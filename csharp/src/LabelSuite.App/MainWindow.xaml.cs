@@ -94,6 +94,16 @@ public partial class MainWindow : Window
                 $"{string.Join(", ", Config.RecoveredFiles)}\n" +
                 "이전 파일은 같은 폴더에 .corrupt-시각 이름으로 보관되어 있습니다.",
                 "설정 복구");
+        if (Config.Corrections.Count > 0)
+        {
+            // 로드 시 허용 범위로 보정된 항목 — 전체 내역은 app.log, 상태바에는 앞 3개 요약 (조용히 바뀌지 않게)
+            AppLog.Warn("설정 보정 내역:\n  " + string.Join("\n  ", Config.Corrections));
+            var summary = string.Join(", ", Config.Corrections.Take(3));
+            if (Config.Corrections.Count > 3) summary += " …";
+            Loaded += (_, _) => ShowStatus(
+                $"설정 {Config.Corrections.Count}개 항목을 허용 범위로 보정했습니다: {summary} (app.log 참조)",
+                StatusLevel.Warn);
+        }
     }
 
     /// <summary>이력 DB가 손상돼 열리지 않으면 보관 후 새로 만든다 — DB 하나 때문에

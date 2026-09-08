@@ -24,6 +24,40 @@ public partial class GeneratorView : UserControl
     private void Status(string message, StatusLevel level = StatusLevel.Info) =>
         StatusMessage?.Invoke(message, level);
 
+    /// <summary>미리보기 행 — LabelRecord + 묶음 교대 플래그 (제조일·PN이 바뀔 때마다 토글).</summary>
+    public sealed class RowVm
+    {
+        public string Lot { get; init; } = "";
+        public string Products { get; init; } = "";
+        public string Pn { get; init; } = "";
+        public string Ref { get; init; } = "";
+        public string MfgDate { get; init; } = "";
+        public string ExpDate { get; init; } = "";
+        public string Gtin { get; init; } = "";
+        public string Standard { get; init; } = "";
+        public bool GroupAlt { get; init; }
+    }
+
+    private static List<RowVm> BuildRows(IReadOnlyList<LabelRecord> records)
+    {
+        var rows = new List<RowVm>(records.Count);
+        var alt = false;
+        (string, string)? previous = null;
+        foreach (var r in records)
+        {
+            var key = (r.MfgDate, r.Pn);
+            if (previous is { } p && p != key) alt = !alt;
+            previous = key;
+            rows.Add(new RowVm
+            {
+                Lot = r.Lot, Products = r.Products, Pn = r.Pn, Ref = r.Ref,
+                MfgDate = r.MfgDate, ExpDate = r.ExpDate, Gtin = r.Gtin,
+                Standard = r.Standard ?? "", GroupAlt = alt,
+            });
+        }
+        return rows;
+    }
+
     public GeneratorView() => InitializeComponent();
 
     public void Initialize(AppConfig config)
@@ -219,8 +253,14 @@ public partial class GeneratorView : UserControl
         return dates;
     }
 
-    private void UpdateButtons() =>
+    private void UpdateButtons()
+    {
         GenerateButton.IsEnabled = _frames["schedule"] is not null && CheckedDates().Count > 0;
+        // 비활성 상태에서는 '왜 눌리지 않는지'를 툴팁으로 (ToolTipService.ShowOnDisabled)
+        GenerateButton.ToolTip = GenerateButton.IsEnabled
+            ? "선택한 제조일의 주문을 검사 목록으로 만듭니다"
+            : "주문일정 체크리스트를 열고 제조일을 선택하면 활성화됩니다";
+    }
 
     // ---------- 생성/저장/핸드오프 ----------
 
@@ -252,7 +292,8 @@ public partial class GeneratorView : UserControl
             Dialogs.Error(this, $"리스트 생성 중 오류: {ex.Message}", "오류");
             return;
         }
-        PreviewGrid.ItemsSource = _result.Records;
+        PreviewGrid.ItemsSource = BuildRows(_result.Records);
+        PreviewGroup.Header = $"미리보기 (같은 제조일·PN끼리 묶음 표시 · {_result.Records.Count}건)";
         IssuesBox.Text = _result.Issues.Count > 0
             ? string.Join("\n", _result.Issues.Select(
                 i => $"[{i.Severity}] {i.RowIndex}행 {i.Lot}: {i.Message}"))
@@ -280,18 +321,14 @@ public partial class GeneratorView : UserControl
             FileName = $"Label Inspection List_{tag}.xlsx",
         };
         if (dialog.ShowDialog() != true) return;
-        try
-        {
-            Schema.SaveInspectionList(_result.Records, dialog.FileName);
-        }
-        catch (Exception ex)
-        {
-            Dialogs.Error(this, ex.Message, "저장 실패");
+        // 파일 잠김(엑셀에서 열림)·권한·디스크 부족은 팝업 대신 상태바 오류로 — 생성된 목록은 그대로 유지
+        var records = _result.Records;
+        if (!ExportGuard.Run("검사 목록", dialog.FileName,
+                             () => Schema.SaveInspectionList(records, dialog.FileName),
+                             Status))
             return;
-        }
         _config.Settings["last_list_path"] = dialog.FileName;
         _config.SaveSettings();
-        Status($"저장 완료: {dialog.FileName}");
     }
 
     private void OnSendToInspector(object sender, RoutedEventArgs e)

@@ -117,6 +117,14 @@ public partial class OcrLogWindow : Window
         BuildRows();
         Refresh();
         CountText.Text += $"  ·  병합됨: \"{phrase}\"";
+        // 병합된 행을 선택하고 앰버로 번쩍여 '어디로 합쳐졌는지' 보여 준다
+        var merged = LogGrid.Items.OfType<RowVm>().FirstOrDefault(r => r.Text == phrase)
+                     ?? LogGrid.Items.OfType<RowVm>().FirstOrDefault(r => r.Text.Contains(phrase));
+        if (merged is not null)
+        {
+            LogGrid.SelectedItem = merged;
+            UiFx.FlashRow(LogGrid, merged);
+        }
     }
 
     private void OnRegister(object sender, RoutedEventArgs e)

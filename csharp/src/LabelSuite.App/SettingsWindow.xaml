@@ -11,25 +11,26 @@
                     Style="{StaticResource PrimaryButton}" Padding="18,5"/>
             <Button DockPanel.Dock="Left" Content="설정 폴더 열기" Click="OnOpenConfigFolder"
                     ToolTip="settings.json · standards.json · 학습 데이터가 있는 폴더를 탐색기로 엽니다"/>
-            <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" Style="{StaticResource HintText}"
+            <TextBlock x:Name="SettingsNote" VerticalAlignment="Center" Margin="10,0,0,0" Style="{StaticResource HintText}"
                        Text="저장하면 즉시 적용되고 다음 실행에도 유지됩니다."/>
         </DockPanel>
 
-        <TabControl>
-            <TabItem Header="  일반 · 저장 · AWS  ">
+        <TabControl x:Name="SettingsTabs">
+            <TabItem Header="  일반 · 저장 · AWS  "
+                     ToolTip="결과 저장 경로 · 유효기간 · OCR 프리페치 / 결과 이미지 배율·품질 / AWS 리전·프로필 인증">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                    <GroupBox Header="일반">
+                    <GroupBox Header="일반 (결과 저장 경로 · 유효기간 · OCR 프리페치)">
                         <StackPanel>
                             <TextBlock Text="결과 저장 경로 (재실행 시에도 유지됩니다)"/>
                             <DockPanel>
                                 <Button DockPanel.Dock="Right" Content="찾아보기"
                                         Click="OnBrowseSaveDir"/>
-                                <TextBox x:Name="SaveDirBox"/>
+                                <TextBox x:Name="SaveDirBox" Tag="save_directory"/>
                             </DockPanel>
                             <WrapPanel Margin="0,6,0,0">
                                 <TextBlock Text="유효기간(개월):" VerticalAlignment="Center"/>
-                                <TextBox x:Name="ShelfLifeBox" Width="60"/>
+                                <TextBox x:Name="ShelfLifeBox" Tag="shelf_life_months" Width="60"/>
                                 <TextBlock Text="   OCR 프리페치:" VerticalAlignment="Center"/>
                                 <ComboBox x:Name="PrefetchCombo" Width="130">
                                     <ComboBoxItem Content="전체 페이지"/>
@@ -43,21 +44,24 @@
                                        Text="유효기간: EXP = MFG + 기간 - 1일"/>
                         </StackPanel>
                     </GroupBox>
-                    <GroupBox Header="결과/사진 저장">
+                    <GroupBox Header="결과 이미지 저장 (파일명 ###_LOT_REF_날짜_판정.jpg · 자동 저장 기본값)">
                         <StackPanel>
                             <WrapPanel>
                                 <TextBlock Text="저장 이미지 배율:" VerticalAlignment="Center"/>
-                                <TextBox x:Name="SaveScaleBox" Width="46"/>
+                                <TextBox x:Name="SaveScaleBox" Tag="save_scale" Width="46"/>
                                 <TextBlock Text="   저장 JPEG 품질:" VerticalAlignment="Center"/>
-                                <TextBox x:Name="SaveJpegQualityBox" Width="46"/>
+                                <TextBox x:Name="SaveJpegQualityBox" Tag="jpeg_quality" Width="46"/>
                                 <CheckBox x:Name="AutoSaveDefaultCheck" Content="자동 저장 기본 켜기"
                                           Margin="16,2,0,2"/>
                             </WrapPanel>
                             <TextBlock Style="{StaticResource HintText}"
                                        Text="배율 0.5 = 원본의 50% 크기로 저장 (용량 절약). 파일명: ###_LOT_REF_날짜_판정.jpg"/>
+                            <CheckBox x:Name="CsvTextProtectCheck" Margin="0,6,0,0"
+                                      Content="엑셀 숫자 변환 방지 (CSV 내보내기 시 LOT·GTIN 등을 =&quot;값&quot; 으로 래핑)"
+                                      ToolTip="켜면 CSV를 엑셀로 열어도 LOT 앞자리 0과 GTIN 14자리가 유지됩니다. 외부 도구(pandas 등)로 읽을 때는 =&quot;…&quot; 래핑을 벗겨야 하므로 끌 수 있습니다"/>
                         </StackPanel>
                     </GroupBox>
-                    <GroupBox Header="AWS Textract">
+                    <GroupBox Header="AWS Textract (OCR 엔진이 AWS일 때만 사용)">
                         <StackPanel>
                             <WrapPanel>
                                 <TextBlock Text="리전:" VerticalAlignment="Center"/>
@@ -75,42 +79,47 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem Header="  OCR 엔진 · 교정  ">
+            <TabItem Header="  OCR 엔진 · 교정  "
+                     ToolTip="엔진 선택(AWS/패턴/ONNX), 전송·신뢰도 설정, 교정 사전·병합 규칙">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                    <GroupBox Header="OCR 설정 (인식 정밀도 / 속도)">
+                    <GroupBox Header="OCR 설정 (엔진 선택 · 전송 크기 · 신뢰도 알람)">
                         <StackPanel>
-                            <WrapPanel Margin="0,0,0,4">
-                                <TextBlock Text="OCR 엔진:" VerticalAlignment="Center"
-                                           FontWeight="Bold"/>
-                                <ComboBox x:Name="OcrEngineCombo" Width="200" Margin="6,0">
-                                    <ComboBoxItem Content="AWS Textract (클라우드)"/>
-                                    <ComboBoxItem Content="패턴 학습 (로컬·무료)"/>
-                                    <ComboBoxItem Content="ONNX RapidOCR (로컬·무료)"/>
-                                </ComboBox>
-                                <TextBlock x:Name="GlyphStatusText" VerticalAlignment="Center"
-                                           Margin="10,0,6,0" Foreground="Gray"/>
-                                <Button Content="패턴 초기화" Click="OnClearGlyphs" Style="{StaticResource DangerButton}"
-                                        ToolTip="학습된 글자 패턴을 모두 삭제합니다"/>
-                            </WrapPanel>
+                            <!-- 파괴적 버튼은 우측 끝에 분리 (UDInspect 규범: 빨강은 멀리) -->
+                            <DockPanel Margin="0,0,0,4" LastChildFill="True">
+                                <Button DockPanel.Dock="Right" Content="패턴 초기화" Click="OnClearGlyphs"
+                                        Style="{StaticResource DangerButton}" Margin="24,0,0,0"
+                                        ToolTip="학습된 글자 패턴을 모두 삭제합니다 (되돌릴 수 없음 · [취소]로도 복구되지 않음 — 확인 대화상자가 표시됩니다)"/>
+                                <WrapPanel>
+                                    <TextBlock Text="OCR 엔진:" VerticalAlignment="Center"
+                                               FontWeight="Bold"/>
+                                    <ComboBox x:Name="OcrEngineCombo" Width="200" Margin="6,0">
+                                        <ComboBoxItem Content="AWS Textract (클라우드)"/>
+                                        <ComboBoxItem Content="패턴 학습 (로컬·무료)"/>
+                                        <ComboBoxItem Content="ONNX RapidOCR (로컬·무료)"/>
+                                    </ComboBox>
+                                    <TextBlock x:Name="GlyphStatusText" VerticalAlignment="Center"
+                                               Margin="10,0,6,0" Foreground="{StaticResource MutedBrush}"/>
+                                </WrapPanel>
+                            </DockPanel>
                             <WrapPanel Margin="0,0,0,4">
                                 <Button Content="학습 데이터 내보내기" Click="OnExportLearning"
                                         ToolTip="글자 패턴 + 교정 사전을 파일 하나로 내보냅니다 (다른 PC 이식용)"/>
-                                <Button Content="학습 데이터 가져오기" Click="OnImportLearning"
-                                        ToolTip="다른 PC에서 내보낸 학습 데이터를 현재 데이터에 병합합니다"/>
+                                <Button Content="학습 데이터 가져오기" Click="OnImportLearning" Style="{StaticResource CautionButton}"
+                                        ToolTip="다른 PC에서 내보낸 학습 데이터를 현재 데이터에 병합합니다 (가져오는 즉시 반영되며 [취소]로 되돌릴 수 없음)"/>
                             </WrapPanel>
                             <TextBlock Style="{StaticResource HintText}"
                                        Margin="0,0,0,6"
                                        Text="패턴 학습: AWS로 검사할 때 글자 모양을 자동 학습 → 이후 무료·오프라인·초고속 인식. ONNX: 학습 없이 바로 쓰는 범용 로컬 OCR."/>
                             <WrapPanel>
                                 <TextBlock Text="PDF 렌더 배율:" VerticalAlignment="Center"/>
-                                <TextBox x:Name="RenderZoomBox" Width="50"/>
+                                <TextBox x:Name="RenderZoomBox" Tag="pdf_render_zoom" Width="50"/>
                                 <TextBlock Text="   전송 최대 크기(px):" VerticalAlignment="Center"/>
-                                <TextBox x:Name="OcrMaxDimBox" Width="60"/>
+                                <TextBox x:Name="OcrMaxDimBox" Tag="ocr.max_dimension" Width="60"/>
                                 <TextBlock Text="   전송 JPEG 품질:" VerticalAlignment="Center"/>
-                                <TextBox x:Name="OcrJpegQualityBox" Width="46"/>
+                                <TextBox x:Name="OcrJpegQualityBox" Tag="ocr.jpeg_quality" Width="46"/>
                                 <TextBlock Text="   최소 신뢰도(%):" VerticalAlignment="Center"/>
-                                <TextBox x:Name="OcrMinConfBox" Width="46"/>
+                                <TextBox x:Name="OcrMinConfBox" Tag="ocr.min_confidence" Width="46"/>
                             </WrapPanel>
                             <WrapPanel Margin="0,4,0,0">
                                 <CheckBox x:Name="ContrastStretchCheck"
@@ -125,9 +134,9 @@
                                 <CheckBox x:Name="QualityAlarmCheck"
                                           Content="저신뢰 OCR 알람 (해당 단어 주황 하이라이트)"/>
                                 <TextBlock Text="   단어 임계(%):" VerticalAlignment="Center"/>
-                                <TextBox x:Name="LowWordConfBox" Width="46"/>
+                                <TextBox x:Name="LowWordConfBox" Tag="ocr.low_word_confidence" Width="46"/>
                                 <TextBlock Text="   평균 임계(%):" VerticalAlignment="Center"/>
-                                <TextBox x:Name="LowAvgConfBox" Width="46"/>
+                                <TextBox x:Name="LowAvgConfBox" Tag="ocr.low_avg_confidence" Width="46"/>
                             </WrapPanel>
                             <TextBlock Style="{StaticResource HintText}"
                                        Text="페이지 평균 신뢰도가 평균 임계 미만이거나, 단어 임계 미만인 단어가 30%를 넘으면 배지·상태바에 알람을 띄우고 해당 단어를 주황 파선 박스로 표시합니다."/>
@@ -165,10 +174,11 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem Header="  검출 필드 · 영역  ">
+            <TabItem Header="  검출 필드 · 영역  "
+                     ToolTip="검사 대상 필드 켜기/끄기, 커스텀 필드, 필드 검출 영역·문자 제약·동일값 패턴, 라벨 유형 학습">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                    <GroupBox Header="OCR 대상 필드">
+                    <GroupBox Header="OCR 대상 필드 (기본 6종 LOT/PN/REF/MFG DATE/EXP DATE/GTIN — LOT은 끌 수 없음)">
                         <StackPanel>
                             <TextBlock Text="검사에서 제외할 내장 필드 (LOT은 매칭 기준이라 제외 불가):"
                                        Margin="0,0,0,2"/>
@@ -236,7 +246,7 @@
                                 <CheckBox x:Name="TypeLearningCheck"
                                           Content="라벨 유형 학습·이상 알람"/>
                                 <TextBlock Text="   판정 시작 표본 수:" VerticalAlignment="Center"/>
-                                <TextBox x:Name="TypeMinSamplesBox" Width="46"/>
+                                <TextBox x:Name="TypeMinSamplesBox" Tag="type_learning.min_samples" Width="46"/>
                             </WrapPanel>
                             <TextBlock Style="{StaticResource HintText}"
                                        Text="검사할 때마다 라벨 전체 OCR 문구를 유형(PN+규격)별로 축적하고, 표본이 쌓인 뒤 기존 유형과 다른 라벨(고정 문구 누락·처음 보는 문구 다수)이 나오면 알람을 띄웁니다."/>
@@ -245,7 +255,8 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem Header="  규격 · 양식 감지  ">
+            <TabItem Header="  규격 · 양식 감지  "
+                     ToolTip="프리셋 내보내기/가져오기 · 데이터 백업, 규격별 기대 출현 횟수, 라벨 양식 자동 감지 규칙">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                     <GroupBox Header="프리셋 (규격 + 필드 규칙 + 영역 + 양식 감지 + 학습 데이터를 한 파일로)">
@@ -262,7 +273,7 @@
                                        Text="프리셋 = 제품군/라인별 검사 세팅 단위. 학습 데이터만 옮기려면 [OCR 엔진·교정] 탭의 학습 데이터 내보내기(.lslearn)를 쓰세요. 프리셋에는 저장 폴더·AWS 프로필·최근 파일 같은 PC 고유값은 들어가지 않습니다."/>
                         </StackPanel>
                     </GroupBox>
-                    <GroupBox Header="검사 기준 (규격별 필드 기대 출현 횟수 — 더블클릭으로 수정)">
+                    <GroupBox Header="검사 기준 (규격별 기대 출현 횟수 — 더블클릭 수정, 0 = 검사 안 함)">
                         <DataGrid x:Name="CountsGrid" IsReadOnly="False"
                                   AutoGenerateColumns="True" CanUserAddRows="False"
                                   Height="200"/>
@@ -290,16 +301,17 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem Header="  표시  ">
+            <TabItem Header="  표시  "
+                     ToolTip="바운딩 박스 두께·투명도·번호, 필드별 색상 (저장 이미지·화면 공통)">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                    <GroupBox Header="바운딩 박스 표시">
+                    <GroupBox Header="바운딩 박스 표시 (저장 이미지·화면 공통)">
                         <StackPanel>
                             <WrapPanel>
                                 <TextBlock Text="테두리 두께:" VerticalAlignment="Center"/>
-                                <TextBox x:Name="OverlayThicknessBox" Width="40"/>
+                                <TextBox x:Name="OverlayThicknessBox" Tag="overlay.thickness" Width="40"/>
                                 <TextBlock Text="   채움 투명도(0~255):" VerticalAlignment="Center"/>
-                                <TextBox x:Name="OverlayAlphaBox" Width="46"/>
+                                <TextBox x:Name="OverlayAlphaBox" Tag="overlay.fill_alpha" Width="46"/>
                                 <CheckBox x:Name="OverlayNumbersCheck" Content="번호 표시"
                                           Margin="16,2,0,2"/>
                             </WrapPanel>

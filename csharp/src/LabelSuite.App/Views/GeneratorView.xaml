@@ -60,16 +60,21 @@
                           Background="{StaticResource PanelBrush}"/>
             </GroupBox>
 
+            <!-- 버튼 위계: 파랑(주 동작)은 화면당 하나 — 리스트 생성. 보내기는 네이비 강조, 저장은 기본 크롬 -->
             <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,10,0,0">
                 <Button x:Name="GenerateButton" Content="리스트 생성" IsEnabled="False"
                         Style="{StaticResource PrimaryButton}" Click="OnGenerate"
-                        ToolTip="선택한 제조일의 주문을 검사 목록으로 만듭니다"/>
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="주문일정 체크리스트를 열고 제조일을 선택하면 활성화됩니다"/>
                 <Button x:Name="SaveButton" Content="엑셀로 저장" IsEnabled="False"
-                        Margin="8,0,0,0" Click="OnSaveXlsx"/>
+                        Margin="8,0,0,0" Click="OnSaveXlsx"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="생성된 목록을 xlsx로 저장합니다 — 검사 탭 [목록 열기]로 다시 불러올 수 있음"/>
                 <Button x:Name="SendButton" Content="검사 탭으로 보내기 →" IsEnabled="False"
-                        Style="{StaticResource PrimaryButton}" Margin="8,0,0,0"
+                        Style="{StaticResource AccentButton}" Margin="8,0,0,0"
                         Click="OnSendToInspector"
-                        ToolTip="생성된 목록을 라벨 검사 탭에 올리고 그 탭으로 이동합니다"/>
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="생성된 목록을 라벨 검사 탭에 올리고 그 탭으로 이동합니다 (목록을 먼저 생성하세요)"/>
             </StackPanel>
         </Grid>
 
@@ -80,7 +85,7 @@
                 <RowDefinition Height="12"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
-            <GroupBox Grid.Row="0" Header="미리보기">
+            <GroupBox Grid.Row="0" x:Name="PreviewGroup" Header="미리보기">
                 <DataGrid x:Name="PreviewGrid">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="LOT" Binding="{Binding Lot}"/>
@@ -92,6 +97,17 @@
                         <DataGridTextColumn Header="GTIN" Binding="{Binding Gtin}"/>
                         <DataGridTextColumn Header="STANDARD" Binding="{Binding Standard}"/>
                     </DataGrid.Columns>
+                    <!-- 같은 제조일·PN 묶음이 바뀔 때마다 배경을 교대로 — 묶음 경계를 눈으로 구분 -->
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding GroupAlt}" Value="True">
+                                    <Setter Property="Background"
+                                            Value="{StaticResource GroupAltBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.RowStyle>
                 </DataGrid>
             </GroupBox>
             <GroupBox Grid.Row="2" Header="경고/오류">

@@ -101,6 +101,11 @@ public partial class SettingsWindow : Window
 
     private readonly ObservableCollection<MergeVm> _mergeRows = [];
 
+    /// <summary>현재 무효한 입력란 (InputRules가 유지) — 비어 있어야 저장할 수 있다.</summary>
+    private readonly HashSet<TextBox> _invalid = [];
+    private bool _rulesWired;
+    private string _noteDefault = "";
+
     public SettingsWindow(AppConfig config, OcrCorrections corrections,
                           GlyphLibrary glyphs, WordMergeRules merges)
     {
@@ -110,6 +115,54 @@ public partial class SettingsWindow : Window
         _glyphs = glyphs;
         _merges = merges;
         LoadValues();
+        Loaded += (_, _) => WireInputRules();
+    }
+
+    /// <summary>Tag="설정경로"가 붙은 TextBox를 논리 트리에서 찾아 InputRules에 자동 배선한다
+    /// (탭이 아직 표시되지 않아도 논리 자식은 존재하므로 전 탭 일괄).</summary>
+    private void WireInputRules()
+    {
+        if (_rulesWired) return;
+        _rulesWired = true;
+        _noteDefault = SettingsNote.Text;
+        foreach (var box in TaggedTextBoxes(this))
+            InputRules.AttachByTag(box, _invalid);
+    }
+
+    private static IEnumerable<TextBox> TaggedTextBoxes(DependencyObject root)
+    {
+        foreach (var child in LogicalTreeHelper.GetChildren(root))
+        {
+            if (child is not DependencyObject node) continue;
+            if (node is TextBox { Tag: string tag } box && tag.Length > 0) yield return box;
+            foreach (var nested in TaggedTextBoxes(node)) yield return nested;
+        }
+    }
+
+    /// <summary>무효 입력이 있으면 안내문을 붉게 바꾸고 해당 탭으로 옮겨 포커스 — 저장 차단(true).</summary>
+    private bool BlockSaveIfInvalid()
+    {
+        if (_invalid.Count == 0)
+        {
+            SettingsNote.Text = _noteDefault.Length > 0 ? _noteDefault : SettingsNote.Text;
+            SettingsNote.ClearValue(TextBlock.ForegroundProperty);
+            SettingsNote.ClearValue(TextBlock.FontWeightProperty);
+            return false;
+        }
+        var labels = string.Join(", ", _invalid.Select(InputRules.LabelOf).Distinct());
+        SettingsNote.Text = $"저장 안 됨 — 붉게 표시된 입력값을 고치세요: {labels}";
+        SettingsNote.Foreground = (System.Windows.Media.Brush)FindResource("StatusErrorBrush");
+        SettingsNote.FontWeight = FontWeights.Bold;
+        var first = _invalid.First();
+        for (DependencyObject? node = first; node is not null; node = LogicalTreeHelper.GetParent(node))
+            if (node is TabItem tab) { SettingsTabs.SelectedItem = tab; break; }
+        // 탭 전환 직후에는 내용이 아직 그려지지 않았을 수 있으므로 레이아웃 뒤에 포커스
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
+        {
+            first.Focus();
+            first.SelectAll();
+        });
+        return true;
     }
 
     private void UpdateGlyphStatus() =>
@@ -271,6 +324,9 @@ public partial class SettingsWindow : Window
         if (dialog.ShowDialog() != true) return;
         try
         {
+            // 가져오기 전 교정 키를 기억해 두고, 새로 생긴 행만 앰버로 번쩍인다 (UDInspect FlashRow 규범)
+            var before = _correctionRows
+                .Select(vm => (vm.Wrong, vm.Right, vm.Field)).ToHashSet();
             var info = LearningBundle.Import(dialog.FileName, _glyphs, _corrections);
             UpdateGlyphStatus();
             _correctionRows.Clear();
@@ -280,7 +336,10 @@ public partial class SettingsWindow : Window
                     Wrong = entry.Wrong, Right = entry.Right,
                     Field = entry.Field ?? "", LearnedAt = entry.LearnedAt ?? "",
                 });
-            Dialogs.Info(this, 
+            foreach (var vm in _correctionRows)
+                if (!before.Contains((vm.Wrong, vm.Right, vm.Field)))
+                    UiFx.FlashRow(CorrectionsGrid, vm);
+            Dialogs.Info(this,
                 $"가져오기 완료\n새 글자 템플릿 {info.GlyphTemplates}개 병합 " +
                 $"(이미 있는 패턴은 유지)\n교정 사전 {info.Corrections}건 반영",
                 "학습 데이터 가져오기");
@@ -460,6 +519,7 @@ public partial class SettingsWindow : Window
         SaveScaleBox.Text = _config.GetDouble("save_scale", 0.5).ToString("F2");
         SaveJpegQualityBox.Text = _config.GetInt("jpeg_quality", 90).ToString();
         AutoSaveDefaultCheck.IsChecked = _config.GetBool("auto_save_default", false);
+        CsvTextProtectCheck.IsChecked = _config.SectionBool("export", "csv_text_protect", true);
     }
 
     private void OnBrowseSaveDir(object sender, RoutedEventArgs e)
@@ -484,11 +544,19 @@ public partial class SettingsWindow : Window
     private void OnOpenConfigFolder(object sender, RoutedEventArgs e) =>
         Process.Start(new ProcessStartInfo(_config.Directory) { UseShellExecute = true });
 
-    private static int ParseInt(string text, int fallback, int min, int max) =>
-        int.TryParse(text, out var v) ? Math.Clamp(v, min, max) : fallback;
+    /// <summary>범위표(Core SettingRanges)의 단일 출처로 정수 해석 — 범위 밖은 clamp, 해석 불가는 기본값.
+    /// 무효 입력은 BlockSaveIfInvalid가 먼저 막으므로 여기에는 정상 값만 도달한다.</summary>
+    private static int RangeInt(string path, string text) =>
+        SettingRanges.Find(path)!.ParseInt(text);
+
+    private static double RangeDouble(string path, string text) =>
+        SettingRanges.Find(path)!.ParseDouble(text);
 
     private void OnSave(object sender, RoutedEventArgs e)
     {
+        WireInputRules();   // Loaded 전에 저장을 누른 경우에도 검증이 동작하도록
+        if (BlockSaveIfInvalid()) return;   // 붉은 입력란이 있으면 창을 닫지 않고 안내
+
         foreach (var grid in new[] { CustomFieldsGrid, FieldColorsGrid, CorrectionsGrid,
                                      CountsGrid, CharsetsGrid, SameValueGrid,
                                      FormRulesGrid, ZonesGrid, MergesGrid })
@@ -497,29 +565,27 @@ public partial class SettingsWindow : Window
         var settings = _config.Settings;
         // 일반
         settings["save_directory"] = SaveDirBox.Text.Trim();
-        if (int.TryParse(ShelfLifeBox.Text, out var shelfLife) && shelfLife > 0)
-            settings["shelf_life_months"] = shelfLife;
+        settings["shelf_life_months"] = RangeInt("shelf_life_months", ShelfLifeBox.Text);
         settings["prefetch_policy"] = PrefetchCombo.SelectedIndex switch
         {
             1 => JsonValue.Create(1), 2 => JsonValue.Create(2),
             3 => JsonValue.Create(5), 4 => JsonValue.Create(0),
             _ => JsonValue.Create("all"),
         };
-        if (double.TryParse(RenderZoomBox.Text, out var zoom) && zoom is >= 1 and <= 8)
-            settings["pdf_render_zoom"] = zoom;
+        settings["pdf_render_zoom"] = RangeDouble("pdf_render_zoom", RenderZoomBox.Text);
 
         // OCR
         var ocr = _config.Section("ocr");
         ocr["engine"] = OcrEngineCombo.SelectedIndex switch
         { 1 => "pattern", 2 => "onnx", _ => "aws" };
-        ocr["max_dimension"] = ParseInt(OcrMaxDimBox.Text, 2000, 500, 4000);
-        ocr["jpeg_quality"] = ParseInt(OcrJpegQualityBox.Text, 85, 30, 100);
-        ocr["min_confidence"] = ParseInt(OcrMinConfBox.Text, 0, 0, 100);
+        ocr["max_dimension"] = RangeInt("ocr.max_dimension", OcrMaxDimBox.Text);
+        ocr["jpeg_quality"] = RangeInt("ocr.jpeg_quality", OcrJpegQualityBox.Text);
+        ocr["min_confidence"] = RangeInt("ocr.min_confidence", OcrMinConfBox.Text);
         ocr["contrast_stretch"] = ContrastStretchCheck.IsChecked == true;
         ocr["allow_confusables"] = ConfusablesCheck.IsChecked == true;
         ocr["quality_alarm"] = QualityAlarmCheck.IsChecked == true;
-        ocr["low_word_confidence"] = ParseInt(LowWordConfBox.Text, 70, 0, 100);
-        ocr["low_avg_confidence"] = ParseInt(LowAvgConfBox.Text, 80, 0, 100);
+        ocr["low_word_confidence"] = RangeInt("ocr.low_word_confidence", LowWordConfBox.Text);
+        ocr["low_avg_confidence"] = RangeInt("ocr.low_avg_confidence", LowAvgConfBox.Text);
 
         // 대상 필드
         var fields = _config.Section("fields");
@@ -565,11 +631,11 @@ public partial class SettingsWindow : Window
             {
                 ["name"] = vm.Name.Trim(),
                 ["pattern"] = vm.Pattern.Trim(),
-                ["min_instances"] = ParseInt(vm.Min, 2, 1, 20),
+                ["min_instances"] = RangeInt("fields.same_value[].min_instances", vm.Min),
             }).ToArray());
         var typeLearning = _config.Section("type_learning");
         typeLearning["enabled"] = TypeLearningCheck.IsChecked == true;
-        typeLearning["min_samples"] = ParseInt(TypeMinSamplesBox.Text, 5, 2, 100);
+        typeLearning["min_samples"] = RangeInt("type_learning.min_samples", TypeMinSamplesBox.Text);
 
         // 라벨 양식 자동 감지 규칙
         static double ParsePercent(string text) =>
@@ -592,17 +658,18 @@ public partial class SettingsWindow : Window
 
         // 바운딩 박스
         var overlay = _config.Section("overlay");
-        overlay["thickness"] = ParseInt(OverlayThicknessBox.Text, 2, 1, 12);
-        overlay["fill_alpha"] = ParseInt(OverlayAlphaBox.Text, 90, 0, 255);
+        overlay["thickness"] = RangeInt("overlay.thickness", OverlayThicknessBox.Text);
+        overlay["fill_alpha"] = RangeInt("overlay.fill_alpha", OverlayAlphaBox.Text);
         overlay["show_numbers"] = OverlayNumbersCheck.IsChecked == true;
         if (_config.StandardsRaw["field_colors"] is JsonObject colorNode)
         {
+            const string rgbaPath = "overlay.colors[].rgba";
             foreach (var vm in _fieldColors)
                 if (colorNode[vm.Field] is JsonArray rgba)
                 {
-                    rgba[0] = ParseInt(vm.R, 128, 0, 255);
-                    rgba[1] = ParseInt(vm.G, 128, 0, 255);
-                    rgba[2] = ParseInt(vm.B, 128, 0, 255);
+                    rgba[0] = RangeInt(rgbaPath, vm.R);
+                    rgba[1] = RangeInt(rgbaPath, vm.G);
+                    rgba[2] = RangeInt(rgbaPath, vm.B);
                 }
         }
 
@@ -643,10 +710,10 @@ public partial class SettingsWindow : Window
         }
 
         // 저장 설정
-        if (double.TryParse(SaveScaleBox.Text, out var scale) && scale is > 0 and <= 1)
-            settings["save_scale"] = scale;
-        settings["jpeg_quality"] = ParseInt(SaveJpegQualityBox.Text, 90, 30, 100);
+        settings["save_scale"] = RangeDouble("save_scale", SaveScaleBox.Text);
+        settings["jpeg_quality"] = RangeInt("jpeg_quality", SaveJpegQualityBox.Text);
         settings["auto_save_default"] = AutoSaveDefaultCheck.IsChecked == true;
+        _config.Section("export")["csv_text_protect"] = CsvTextProtectCheck.IsChecked == true;
 
         _config.SaveSettings();
         _config.SaveStandards();
