@@ -20,8 +20,9 @@ public partial class GeneratorView : UserControl
     public event Action<string, StatusLevel>? StatusMessage;
     public event Action<List<LabelRecord>>? ListGenerated;
 
+    // StatusMessage 이벤트로 전달 — 자기 호출 금지 (치환 스크립트 사고 방지용 주석)
     private void Status(string message, StatusLevel level = StatusLevel.Info) =>
-        Status(message, level);
+        StatusMessage?.Invoke(message, level);
 
     public GeneratorView() => InitializeComponent();
 

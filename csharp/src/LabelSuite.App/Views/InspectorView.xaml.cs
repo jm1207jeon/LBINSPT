@@ -59,8 +59,9 @@ public partial class InspectorView : UserControl
     /// <summary>OCR 진행률 (완료 페이지, 전체 페이지) — 상태바 진행 표시용.</summary>
     public event Action<int, int>? ProgressChanged;
 
+    // StatusMessage 이벤트로 전달 — 자기 호출 금지 (치환 스크립트 사고 방지용 주석)
     private void Status(string message, StatusLevel level = StatusLevel.Info) =>
-        Status(message, level);
+        StatusMessage?.Invoke(message, level);
 
     private OcrCorrections _corrections = null!;
     private WordMergeRules _merges = null!;
