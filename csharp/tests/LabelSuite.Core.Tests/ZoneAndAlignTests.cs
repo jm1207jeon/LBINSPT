@@ -1,4 +1,5 @@
 // 필드 검출 영역 제한과 라벨 정렬(이형지 크롭·기울기 보정) 테스트.
+using System.Text.Json.Nodes;
 using LabelSuite.Core;
 using SkiaSharp;
 using Xunit;
@@ -70,6 +71,104 @@ public class FieldZoneTests : IDisposable
         var outcome = engine.Inspect(Record, "MDR",
             [WordAt("x-25090776", 0.33, 0.23)], pageSize: (1000, 1000));
         Assert.Equal(1, outcome.Fields["LOT"].Found);
+    }
+}
+
+public class FieldZoneStoreTests
+{
+    private static JsonObject Zone(string field, string standard, params double[] region) => new()
+    {
+        ["field"] = field, ["standard"] = standard,
+        ["region"] = new JsonArray(region.Select(v => (JsonNode)v).ToArray()),
+    };
+
+    private static JsonArray Seed() =>
+        [Zone("LOT", "", 10, 10, 20, 5), Zone("LOT", "", 50, 50, 20, 5), Zone("LOT", "A00", 1, 1, 2, 2),
+         Zone("PN", "", 30, 30, 10, 5)];
+
+    [Fact]
+    public void Upsert_Replace_RemovesSameFieldStandard()
+    {
+        var zones = Seed();
+        var removed = FieldZoneStore.Upsert(zones, Zone("LOT", "", 70, 70, 5, 5), replace: true);
+        Assert.Equal(2, removed);
+        Assert.Equal(3, zones.Count);
+        Assert.Equal(1, FieldZoneStore.CountFor(zones, "LOT", ""));
+        Assert.Equal(70, zones[^1]!["region"]![0]!.GetValue<double>());
+    }
+
+    [Fact]
+    public void Upsert_Add_KeepsBoth()
+    {
+        var zones = Seed();
+        Assert.Equal(0, FieldZoneStore.Upsert(zones, Zone("LOT", "", 70, 70, 5, 5), replace: false));
+        Assert.Equal(5, zones.Count);
+        Assert.Equal(3, FieldZoneStore.CountFor(zones, "LOT", ""));
+    }
+
+    [Fact]
+    public void Upsert_DifferentStandard_NotTouched()
+    {
+        var zones = Seed();
+        FieldZoneStore.Upsert(zones, Zone("LOT", "MDR", 70, 70, 5, 5), replace: true);
+        Assert.Equal(2, FieldZoneStore.CountFor(zones, "LOT", ""));
+        Assert.Equal(1, FieldZoneStore.CountFor(zones, "LOT", "A00"));
+        Assert.Equal(1, FieldZoneStore.CountFor(zones, "LOT", "MDR"));
+        Assert.Equal(1, FieldZoneStore.CountFor(zones, "PN", ""));
+    }
+
+    [Fact]
+    public void Upsert_FieldIsCaseInsensitive()
+    {
+        var zones = Seed();
+        Assert.Equal(2, FieldZoneStore.CountFor(zones, "lot", ""));
+        Assert.Equal(2, FieldZoneStore.Upsert(zones, Zone("lot", "", 70, 70, 5, 5), replace: true));
+        Assert.Equal(1, FieldZoneStore.CountFor(zones, "LOT", ""));
+    }
+
+    [Fact]
+    public void Upsert_ClonesZoneAlreadyAttachedElsewhere()
+    {
+        var zones = Seed();
+        // 이미 배열에 붙어 있는 노드를 다시 넣어도 예외 없이 복제되어 추가된다
+        FieldZoneStore.Upsert(zones, zones[0]!.AsObject(), replace: false);
+        Assert.Equal(5, zones.Count);
+        Assert.Equal(3, FieldZoneStore.CountFor(zones, "LOT", ""));
+    }
+
+    [Fact]
+    public void CountFor_Counts()
+    {
+        var zones = Seed();
+        Assert.Equal(2, FieldZoneStore.CountFor(zones, "LOT", ""));
+        Assert.Equal(1, FieldZoneStore.CountFor(zones, "LOT", "A00"));
+        Assert.Equal(0, FieldZoneStore.CountFor(zones, "GTIN", ""));
+        Assert.Equal(0, FieldZoneStore.CountFor([], "LOT", ""));
+    }
+
+    [Fact]
+    public void Remove_ByRegion()
+    {
+        var zones = Seed();
+        Assert.True(FieldZoneStore.Remove(zones, "LOT", "", [50, 50, 20, 5]));
+        Assert.Equal(3, zones.Count);
+        Assert.Equal(1, FieldZoneStore.CountFor(zones, "LOT", ""));
+        Assert.False(FieldZoneStore.Remove(zones, "LOT", "", [50, 50, 20, 5]));   // 이미 없음
+        Assert.False(FieldZoneStore.Remove(zones, "LOT", "", [10, 10, 20, 6]));   // 좌표 다름
+        Assert.False(FieldZoneStore.Remove(zones, "LOT", "A00", [10, 10, 20, 5]));   // 규격 다름
+        Assert.True(FieldZoneStore.Remove(zones, "lot", "", [10, 10, 20, 5]));   // 필드 대소문자 무시
+        Assert.Equal(0, FieldZoneStore.CountFor(zones, "LOT", ""));
+    }
+
+    [Fact]
+    public void TryRegion_RejectsBadShapes()
+    {
+        Assert.True(FieldZoneStore.TryRegion(Zone("LOT", "", 0, 0, 100, 100), out var r));
+        Assert.Equal([0, 0, 100, 100], r);
+        Assert.False(FieldZoneStore.TryRegion(Zone("LOT", "", 0, 0, 100), out _));
+        Assert.False(FieldZoneStore.TryRegion(Zone("LOT", "", 0, 0, 101, 5), out _));
+        Assert.False(FieldZoneStore.TryRegion(Zone("LOT", "", -1, 0, 10, 5), out _));
+        Assert.False(FieldZoneStore.TryRegion(new JsonObject { ["field"] = "LOT" }, out _));
     }
 }
 

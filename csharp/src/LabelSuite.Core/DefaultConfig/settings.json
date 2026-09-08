@@ -39,7 +39,8 @@
   "overlay": {
     "thickness": 2,
     "fill_alpha": 90,
-    "show_numbers": false
+    "show_numbers": false,
+    "show_zones": true
   },
   "fields": {
     "disabled": [],
@@ -64,5 +65,11 @@
   },
   "label_forms": {
     "rules": []
+  },
+  "zones": {
+    "keep_mode": false
+  },
+  "export": {
+    "csv_text_protect": true
   }
 }
