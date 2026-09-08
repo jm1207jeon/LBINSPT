@@ -7,7 +7,7 @@
         WindowStartupLocation="CenterScreen">
     <Grid>
     <DockPanel>
-        <!-- ===================== 상태바 (UDInspect 패밀리: 엔진 상태 | 메시지 3단계 | 진행률) ===================== -->
+        <!-- ===================== 상태바 (UDInspect 패밀리: 엔진 상태 | 메시지 3단계 | 진행률 | 버전 | 설정) ===================== -->
         <StatusBar DockPanel.Dock="Bottom" Height="30">
             <StatusBarItem>
                 <TextBlock x:Name="AwsStatusText" Text="OCR: 확인 중..." FontWeight="Bold"
@@ -30,22 +30,72 @@
             </StatusBarItem>
             <Separator/>
             <StatusBarItem>
+                <TextBlock x:Name="VersionText" Text="Rev.00" Style="{StaticResource CaptionText}"
+                           Cursor="Hand" Margin="4,0" MouseLeftButtonDown="OnShowAbout"
+                           ToolTip="클릭: 프로그램 정보 (버전 · 빌드 · 데이터 폴더 · 로그)"/>
+            </StatusBarItem>
+            <StatusBarItem>
                 <Button Content="⚙ 설정" Padding="14,2" Margin="0" Click="OnOpenSettings"
-                        ToolTip="OCR 엔진 · 검출 필드 · 규격 · 양식 감지 · 표시 설정"/>
+                        ToolTip="일반·저장·AWS / OCR 엔진·교정 / 검출 필드·영역 / 규격·양식 감지 / 표시"/>
             </StatusBarItem>
         </StatusBar>
 
         <TabControl x:Name="Tabs">
-            <TabItem Header="  목록 생성  ">
+            <TabItem Header="  목록 생성  " ToolTip="주문일정·품목번호·BSC 엑셀에서 검사 목록을 만듭니다">
                 <views:GeneratorView x:Name="Generator"/>
             </TabItem>
-            <TabItem Header="  라벨 검사  ">
+            <TabItem Header="  라벨 검사  " ToolTip="라벨 PDF를 열어 OCR·바코드로 규격 대조 검사합니다">
                 <views:InspectorView x:Name="Inspector"/>
             </TabItem>
-            <TabItem Header="  검사 이력  ">
+            <TabItem Header="  검사 이력  " ToolTip="저장된 검사 결과를 조회하고 LOT 리포트를 내보냅니다">
                 <views:HistoryView x:Name="HistoryPage"/>
             </TabItem>
         </TabControl>
     </DockPanel>
+
+    <!-- 프로그램 정보 오버레이 (UDInspect 국가 선택 오버레이와 같은 패턴: 별도 창 대신 메인 창 안 딤 + 카드) -->
+    <Grid x:Name="AboutHost" Visibility="Collapsed" Background="{StaticResource OverlayDimBrush}"
+          MouseLeftButtonDown="OnAboutDimClick">
+        <Border Style="{StaticResource OverlayCard}" MaxWidth="560" HorizontalAlignment="Center"
+                VerticalAlignment="Center" MouseLeftButtonDown="OnAboutCardClick">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Image Source="{StaticResource LavisLogo}" Width="96" Height="96" Margin="0,0,16,0"/>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="LaVIS" FontSize="22" FontWeight="Bold"/>
+                        <TextBlock Text="Label Verification &amp; Inspection System Rev.00" FontSize="14"
+                                   Foreground="{StaticResource AccentBrush}"/>
+                        <TextBlock x:Name="AboutVersionText" Style="{StaticResource HintText}" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+                <Grid Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="빌드" FontWeight="Bold" Margin="0,2,12,2"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1" x:Name="AboutBuildText" Margin="0,2"/>
+                    <TextBlock Grid.Row="1" Text=".NET" FontWeight="Bold" Margin="0,2,12,2"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" x:Name="AboutRuntimeText" Margin="0,2"/>
+                    <TextBlock Grid.Row="2" Text="데이터 폴더" FontWeight="Bold" Margin="0,2,12,2"/>
+                    <TextBlock Grid.Row="2" Grid.Column="1" x:Name="AboutDataDirText" Margin="0,2" TextWrapping="Wrap"/>
+                    <TextBlock Grid.Row="3" Text="로그" FontWeight="Bold" Margin="0,2,12,2"/>
+                    <TextBlock Grid.Row="3" Grid.Column="1" x:Name="AboutLogText" Margin="0,2" TextWrapping="Wrap"/>
+                </Grid>
+                <TextBlock Style="{StaticResource HintText}" Margin="0,12,0,0"
+                           Text="LaVIS는 검사 보조 도구입니다 — 프로그램 표시는 참고용이며 최종 합격·불합격 판정은 검사자가 합니다."/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                    <Button Content="데이터 폴더 열기" Click="OnAboutOpenData"
+                            ToolTip="설정·규격·학습 데이터·이력 DB가 있는 %APPDATA%\LaVIS 폴더"/>
+                    <Button Content="로그 열기" Click="OnAboutOpenLog"
+                            ToolTip="상태바 경고·오류와 예외가 기록되는 app.log"/>
+                    <Button Content="닫기 (Esc)" Click="OnAboutClose" Style="{StaticResource PrimaryButton}"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
     </Grid>
 </Window>

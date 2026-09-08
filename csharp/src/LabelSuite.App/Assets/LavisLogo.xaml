@@ -1,0 +1,97 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- LaVIS 로고 (docs/lavis_icon.svg 전사) — UDInspect 패밀리 아이콘 언어:
+         검사 대상(라벨 카드 #222B36/#8A949E) + 파랑 돋보기(#1A6FB5) + 초록 체크(#2E9E4F).
+         About 오버레이·빈 뷰어 자리표시에 벡터로 사용한다 (해상도 무관). -->
+    <DrawingImage x:Key="LavisLogo">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <!-- 카드 그림자 + 카드 -->
+                <GeometryDrawing Brush="#29000000">
+                    <GeometryDrawing.Geometry>
+                        <RectangleGeometry Rect="16,24,180,176" RadiusX="14" RadiusY="14"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#FFFFFFFF">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFB9C4D0" Thickness="4"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <RectangleGeometry Rect="12,18,180,176" RadiusX="14" RadiusY="14"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <!-- 필드 이름 (잉크) -->
+                <GeometryDrawing Brush="#FF222B36">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <RectangleGeometry Rect="30,40,38.5,12" RadiusX="4" RadiusY="4"/>
+                            <RectangleGeometry Rect="30,64,31.9,12" RadiusX="4" RadiusY="4"/>
+                            <RectangleGeometry Rect="30,88,40.7,12" RadiusX="4" RadiusY="4"/>
+                            <RectangleGeometry Rect="30,112,34.1,12" RadiusX="4" RadiusY="4"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <!-- 필드 값 (회색) -->
+                <GeometryDrawing Brush="#FF8A949E">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <RectangleGeometry Rect="78.5,40,78,12" RadiusX="4" RadiusY="4"/>
+                            <RectangleGeometry Rect="71.9,64,90,12" RadiusX="4" RadiusY="4"/>
+                            <RectangleGeometry Rect="80.7,88,84,12" RadiusX="4" RadiusY="4"/>
+                            <RectangleGeometry Rect="74.1,112,72,12" RadiusX="4" RadiusY="4"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <!-- 바코드 띠 -->
+                <GeometryDrawing Brush="#FF222B36">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <RectangleGeometry Rect="30,140,3,38"/>
+                            <RectangleGeometry Rect="41,140,3,38"/>
+                            <RectangleGeometry Rect="52,140,3,38"/>
+                            <RectangleGeometry Rect="66,140,9,38"/>
+                            <RectangleGeometry Rect="80,140,3,38"/>
+                            <RectangleGeometry Rect="88,140,3,38"/>
+                            <RectangleGeometry Rect="99,140,6,38"/>
+                            <RectangleGeometry Rect="112,140,6,38"/>
+                            <RectangleGeometry Rect="123,140,9,38"/>
+                            <RectangleGeometry Rect="137,140,3,38"/>
+                            <RectangleGeometry Rect="148,140,6,38"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <!-- 돋보기: 흰 여백 원 → 손잡이 → 렌즈 -->
+                <GeometryDrawing Brush="#FFFFFFFF">
+                    <GeometryDrawing.Geometry>
+                        <EllipseGeometry Center="169,163.8" RadiusX="74.1" RadiusY="74.1"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FF1A6FB5" Thickness="22.5" StartLineCap="Round" EndLineCap="Round"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <LineGeometry StartPoint="216.4,211.3" EndPoint="252.2,247.1"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#FFE8F3FC">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FF1A6FB5" Thickness="14.1"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <EllipseGeometry Center="169,163.8" RadiusX="61.4" RadiusY="61.4"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <!-- 체크 -->
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FF2E9E4F" Thickness="16.6" StartLineCap="Round" EndLineCap="Round" LineJoin="Round"/>
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M 138.2,165.1 L 161.6,189.6 L 202.8,138"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+</ResourceDictionary>

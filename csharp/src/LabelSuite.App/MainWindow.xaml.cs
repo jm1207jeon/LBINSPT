@@ -53,8 +53,15 @@ public partial class MainWindow : Window
         // 검사 탭 전역 단축키: ←/→ 페이지, WASD 이동, Q/E 줌 (텍스트 입력 중 제외)
         PreviewKeyDown += (_, e) =>
         {
+            if (e.Key == System.Windows.Input.Key.Escape && AboutHost.Visibility == Visibility.Visible)
+            {
+                AboutHost.Visibility = Visibility.Collapsed;
+                e.Handled = true;
+                return;
+            }
             if (Tabs.SelectedIndex == 1) Inspector.HandleGlobalKey(e);
         };
+        VersionText.Text = $"Rev.00 · v{App.DisplayVersion}";
         _alertTimer.Tick += (_, _) =>
         {
             if (DateTime.Now < _alertUntil) return;
@@ -162,6 +169,45 @@ public partial class MainWindow : Window
             ? (Brush)FindResource("SuccessBrush")
             : (Brush)FindResource("StatusErrorBrush");
     });
+
+    // ---------------- 프로그램 정보 오버레이 ----------------
+
+    private void OnShowAbout(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        AboutVersionText.Text = $"버전 {App.DisplayVersion}";
+        AboutBuildText.Text = App.InformationalVersion;
+        AboutRuntimeText.Text = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription;
+        AboutDataDirText.Text = AppConfig.DataDir();
+        AboutLogText.Text = AppLog.Path;
+        AboutHost.Visibility = Visibility.Visible;
+    }
+
+    private void OnAboutDimClick(object sender, System.Windows.Input.MouseButtonEventArgs e) =>
+        AboutHost.Visibility = Visibility.Collapsed;   // 정보 창이라 딤 클릭으로 닫아도 오클릭 위험 없음
+
+    private void OnAboutCardClick(object sender, System.Windows.Input.MouseButtonEventArgs e) =>
+        e.Handled = true;   // 카드 안 클릭은 닫기 아님
+
+    private void OnAboutClose(object sender, RoutedEventArgs e) =>
+        AboutHost.Visibility = Visibility.Collapsed;
+
+    private void OnAboutOpenData(object sender, RoutedEventArgs e) => OpenInExplorer(AppConfig.DataDir());
+
+    private void OnAboutOpenLog(object sender, RoutedEventArgs e)
+    {
+        if (!File.Exists(AppLog.Path)) { ShowStatus("아직 기록된 로그가 없습니다.", StatusLevel.Info); return; }
+        OpenInExplorer(AppLog.Path);
+    }
+
+    private void OpenInExplorer(string path)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
+            { UseShellExecute = true });
+        }
+        catch (Exception ex) { ShowStatus($"열 수 없습니다: {ex.Message}", StatusLevel.Error); }
+    }
 
     private void OnOpenSettings(object sender, RoutedEventArgs e)
     {

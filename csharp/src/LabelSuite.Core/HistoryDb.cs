@@ -11,6 +11,9 @@ public sealed record FieldRow(string Field, int? Expected, int Found, bool Passe
 
 public sealed class HistoryDb : IDisposable
 {
+    /// <summary>inspections.app_version에 기록할 빌드 식별자 — 앱 시작 시 CI 정보 버전으로 설정한다.</summary>
+    public static string AppVersion { get; set; } = "1.0.0";
+
     private const string SchemaSql = """
         CREATE TABLE IF NOT EXISTS inspections (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,7 +92,7 @@ public sealed class HistoryDb : IDisposable
         insert.Parameters.AddWithValue("$page", (object?)page ?? DBNull.Value);
         insert.Parameters.AddWithValue("$passed", outcome.Passed ? 1 : 0);
         insert.Parameters.AddWithValue("$img", imagePath);
-        insert.Parameters.AddWithValue("$ver", "1.0.0");
+        insert.Parameters.AddWithValue("$ver", AppVersion);
         var id = (long)insert.ExecuteScalar()!;
 
         foreach (var field in outcome.Fields.Values)

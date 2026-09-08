@@ -13,6 +13,8 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <Version>1.0.0</Version>
+    <!-- CI가 -p:InformationalVersion=<태그|sha7> 로 덮어쓴다 (About·이력 app_version에 표시) -->
+    <InformationalVersion Condition="'$(InformationalVersion)' == ''">1.0.0-local</InformationalVersion>
     <!-- 리눅스 CI에서도 컴파일 검증 가능 (실행은 Windows 전용) -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>

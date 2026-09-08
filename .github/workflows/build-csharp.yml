@@ -20,8 +20,40 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      # 소스 규약 가드: 뷰 상태 헬퍼 자기 재귀(=> Status( 줄바꿈 포함) 등 — 리눅스 테스트(AppSourceGuardTests)와 이중 안전망
+      - name: Source guard
+        shell: pwsh
+        run: |
+          $bad = Select-String -Path csharp/src/LabelSuite.App/Views/*.xaml.cs -Pattern 'void\s+Status\s*\([^)]*\)\s*=>\s*Status\s*\(' -AllMatches
+          $joined = Get-ChildItem csharp/src/LabelSuite.App/Views/*.xaml.cs | ForEach-Object {
+            $text = Get-Content $_ -Raw
+            if ($text -match 'void\s+Status\s*\([^)]*\)\s*=>\s*Status\s*\(') { $_.Name }
+          }
+          if ($bad -or $joined) { Write-Error "Status() 헬퍼가 자기 자신을 호출합니다: $joined"; exit 1 }
+          "source guard ok"
+
       - name: Run core tests
-        run: dotnet test csharp/tests/LabelSuite.Core.Tests -c Release --nologo
+        run: dotnet test csharp/tests/LabelSuite.Core.Tests -c Release --nologo --logger "trx;LogFileName=core-tests.trx" --results-directory test-results
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: core-test-results
+          path: test-results/*.trx
+          retention-days: 30
+
+      # 버전 라벨: 태그면 태그명(cs-v1.2.0), 아니면 커밋 sha 7자리 — 실행 파일 About·이력 app_version에 기록된다
+      - name: Resolve version label
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            "label=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
+          } else {
+            $short = "${{ github.sha }}".Substring(0, 7)
+            "label=$short" >> $env:GITHUB_OUTPUT
+          }
 
       # 단일 exe(자가 추출) 대신 체계적 폴더 배포:
       #   LaVIS/  ── LaVIS.exe + 런타임 DLL + models/(ONNX) + README.txt
@@ -30,15 +62,16 @@ jobs:
         run: >
           dotnet publish csharp/src/LabelSuite.App -c Release -r win-x64
           --self-contained true
+          -p:InformationalVersion=${{ steps.version.outputs.label }}
           -o publish/LaVIS
 
       - name: Add distribution README
         shell: pwsh
         run: |
           @"
-          LaVIS - 라벨 검증·검사 시스템 (Label Verification & Inspection System)
+          LaVIS - Label Verification & Inspection System Rev.00
           ================================
-          실행: LaVIS.exe
+          실행: LaVIS.exe   (검사 보조 도구 — 프로그램 표시는 참고용이며 최종 판정은 검사자가 합니다)
 
           [폴더 구성]
             LaVIS.exe        프로그램 본체
@@ -47,23 +80,29 @@ jobs:
 
           [사용자 데이터 - 프로그램 폴더와 분리 저장]
             %APPDATA%\LaVIS\
-              settings.json / standards.json / column_maps.json  설정
-              glyphs.json           학습된 글자 패턴
-              ocr_corrections.json  OCR 교정 사전
-              history.sqlite3       검사 이력/기준정보 DB
-              ocr_cache\            OCR 결과 캐시
+              settings.json / standards.json / column_maps.json  설정·규격·컬럼 매핑
+              glyphs.json              학습된 글자 패턴
+              ocr_corrections.json     OCR 교정 사전
+              word_merges.json         단어 병합 규칙
+              same_value_layouts.json  동일값 패턴 기준 레이아웃
+              form_templates.json      라벨 양식 이미지 템플릿
+              label_profiles.json      라벨 유형 학습 프로필
+              history.sqlite3          검사 이력/기준정보 DB
+              ocr_cache\               OCR 결과 캐시 (재생성 가능)
+              app.log / crash.log      운영 로그 / 예외 기록
+              backup-preset-*\         프리셋 가져오기 전 보관본
 
           [업데이트]
             이 폴더 전체를 새 버전으로 교체하면 됩니다.
             사용자 데이터는 %APPDATA%에 있으므로 그대로 유지됩니다.
             (구 LabelSuite 데이터는 첫 실행 시 자동으로 이전됩니다.)
 
-          [다른 PC로 학습 데이터 이식]
-            설정 → OCR 설정 → [학습 데이터 내보내기]로 만든 .lslearn 파일을
-            새 PC의 LaVIS에서 [학습 데이터 가져오기]로 불러오세요.
+          [다른 PC로 이식]
+            프리셋(규격+규칙+영역+양식+학습 데이터): 설정 → 규격·양식 감지 → [프리셋 내보내기] (.lavispreset)
+            학습 데이터만: 설정 → OCR 엔진·교정 → [학습 데이터 내보내기] (.lslearn)
           "@ | Out-File -FilePath publish/LaVIS/README.txt -Encoding utf8BOM
 
-      - name: Smoke check
+      - name: Smoke check and build identity
         shell: pwsh
         run: |
           if (-not (Test-Path "publish/LaVIS/LaVIS.exe")) {
@@ -76,17 +115,17 @@ jobs:
           }
           $total = (Get-ChildItem publish/LaVIS -Recurse | Measure-Object Length -Sum).Sum
           "폴더 전체 {0:N1} MB" -f ($total / 1MB)
+          $hash = (Get-FileHash publish/LaVIS/LaVIS.exe -Algorithm SHA256).Hash
+          $stamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'")
+          @"
 
-      - name: Resolve version label
-        id: version
-        shell: pwsh
-        run: |
-          if ("${{ github.ref_type }}" -eq "tag") {
-            "label=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
-          } else {
-            $short = "${{ github.sha }}".Substring(0, 7)
-            "label=$short" >> $env:GITHUB_OUTPUT
-          }
+          [빌드 식별]
+            버전:    ${{ steps.version.outputs.label }}
+            빌드:    $stamp
+            SHA-256: $hash  (LaVIS.exe)
+          "@ | Add-Content -Path publish/LaVIS/README.txt -Encoding utf8
+          "LaVIS.exe SHA-256 = $hash"
+          "sha256=$hash" >> $env:GITHUB_OUTPUT
 
       - name: Package zip
         shell: pwsh

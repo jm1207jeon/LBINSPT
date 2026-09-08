@@ -14,6 +14,25 @@ public partial class App : Application
     // 동시에 쓰면 파일이 깨질 수 있다 (UDInspect와 동일 규범).
     private Mutex? _singleInstance;
 
+    /// <summary>CI가 주입한 정보 버전(태그명 또는 커밋 sha7). 로컬 빌드는 '1.0.0-local'.</summary>
+    public static string InformationalVersion =>
+        typeof(App).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()?.InformationalVersion
+        ?? typeof(App).Assembly.GetName().Version?.ToString() ?? "?";
+
+    /// <summary>표시용 버전 — '+sha' 이후는 잘라낸다.</summary>
+    public static string DisplayVersion
+    {
+        get
+        {
+            var v = InformationalVersion;
+            var plus = v.IndexOf('+');
+            return plus > 0 ? v[..plus] : v;
+        }
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -26,7 +45,8 @@ public partial class App : Application
             Shutdown();
             return;
         }
-        AppLog.Info($"LaVIS 시작 (버전 {typeof(App).Assembly.GetName().Version})");
+        HistoryDb.AppVersion = InformationalVersion;   // 이력에 실제 빌드 식별자 기록
+        AppLog.Info($"LaVIS 시작 (버전 {InformationalVersion})");
         // UI 스레드 예외: 안내 후 계속 실행
         DispatcherUnhandledException += (_, args) =>
         {

@@ -30,6 +30,25 @@ public class HistoryDbTests : IDisposable
                                   "08806173612345", "08806173612345", true)]);
 
     [Fact]
+    public void AppVersionIsRecorded()
+    {
+        var previous = HistoryDb.AppVersion;
+        try
+        {
+            HistoryDb.AppVersion = "9.9.9-test";
+            var path = Path.Combine(_directory, "ver.sqlite3");
+            using (var db = new HistoryDb(path))
+                db.RecordInspection(SampleOutcome(), "/tmp/img.jpg", "pdf", "/tmp/a.pdf", 0);
+            using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}");
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT app_version FROM inspections LIMIT 1";
+            Assert.Equal("9.9.9-test", (string)command.ExecuteScalar()!);
+        }
+        finally { HistoryDb.AppVersion = previous; }
+    }
+
+    [Fact]
     public void RecordAndQuery()
     {
         using var db = new HistoryDb(Path.Combine(_directory, "history.sqlite3"));
