@@ -54,9 +54,10 @@
 - 자동 판정 제거, 기본 필드 확장, OCR 우선 GTIN, 좌표 입력식 영역 등록, 이형지 기준 기울기 보정, 타이틀 변경, 다크 테마·커스텀 템플릿 — 사용자 확정 규칙 또는 패밀리 디자인 원칙과 충돌.
 - 전자서명·감사추적·로그인 — '검사 보조 도구' 위치(GAMP 위험 낮음)와 충돌. C-01은 그 범위 안에서의 최소 형태.
 
-## 5. UDInspect 역이식 라운드 (별도 저장소 — 패치로 보관)
+## 5. UDInspect 역이식 라운드 (별도 저장소)
 
-LaVIS에서 먼저 생긴 장치 중 UDInspect에도 유효한 것을 되가져온 변경분을 `docs/udinspect_family_round.patch`에 두었다
-(이 세션에서는 2D-Verifier 저장소에 커밋할 권한이 없었음). 내용: Theme.xaml 토큰화(인라인 색 56곳), 상태바 경고 5초 고정,
+LaVIS에서 먼저 생긴 장치 중 UDInspect에도 유효한 것을 되가져온 변경분을 2D-Verifier 저장소의 브랜치
+`claude/lavis-family-insights`(커밋 메시지 `[skip ci]` — 브랜치 푸시만으로 latest-build 롤링 릴리스가 갱신되지 않게 함)에 푸시했고,
+같은 내용을 `docs/udinspect_family_round.patch`로도 보관했다. 내용: Theme.xaml 토큰화(인라인 색 56곳), 상태바 경고 5초 고정,
 About 오버레이·빌드 식별(InformationalVersion·SHA-256 BUILD_INFO.txt), 설정 백업/복원, 소스 규약 테스트(SourceGuardTests),
-`docs/LAVIS_FAMILY_ROUND.md`. 적용: 2D-Verifier 저장소에서 `git apply --index docs/udinspect_family_round.patch` 후 Windows CI 확인.
+`docs/LAVIS_FAMILY_ROUND.md`. 적용: 2D-Verifier에서 해당 브랜치를 기본 브랜치에 병합(PR)하면 Windows CI가 테스트·빌드한다.
