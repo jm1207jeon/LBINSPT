@@ -794,10 +794,17 @@ index 45b361a..a9ccb0c 100644
              </TabItem>
          </TabControl>
 diff --git a/src/ZebraScannerSuite/SettingsWindow.xaml.cs b/src/ZebraScannerSuite/SettingsWindow.xaml.cs
-index 1f5f89e..f9bfa10 100644
+index 1f5f89e..fd96b5b 100644
 --- a/src/ZebraScannerSuite/SettingsWindow.xaml.cs
 +++ b/src/ZebraScannerSuite/SettingsWindow.xaml.cs
-@@ -254,6 +254,97 @@ public partial class SettingsWindow : Window
+@@ -1,5 +1,6 @@
+ using System.Collections.ObjectModel;
+ using System.IO;
++using System.IO.Compression;
+ using System.Text;
+ using System.Windows;
+ using System.Windows.Controls;
+@@ -254,6 +255,97 @@ public partial class SettingsWindow : Window
  
      // ---------------- 저장 ----------------
  
