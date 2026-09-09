@@ -124,22 +124,15 @@ public static class ListGenerator
             .Distinct().OrderBy(d => d).ToList();
     }
 
-    private static string? StandardForCountry(string country,
-                                              IReadOnlyDictionary<string, string> map)
-    {
-        if (map.TryGetValue(country, out var standard))
-            return string.IsNullOrEmpty(standard) ? null : standard;
-        return map.TryGetValue("*", out var fallback) && !string.IsNullOrEmpty(fallback)
-            ? fallback : null;
-    }
-
     private static string Text(object? value) =>
         Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim() ?? "";
 
+    /// <summary>검사 목록 생성. 규격(STANDARD)은 더 이상 여기서 정하지 않는다 — 검사 탭이 라벨에 인쇄된
+    /// 문서번호(Rev.A00 · BSL-01 …)를 읽어 규격을 자동 선택한다. 날짜는 표준 표기(yyyy-MM-dd)로 저장하고
+    /// 검사 시 규격의 date_format으로 재표기된다.</summary>
     public static GenerationResult Generate(
         InputFrame schedule, InputFrame? product, InputFrame? bsc,
         ISet<DateOnly> selectedDates, ColumnMaps maps,
-        IReadOnlyDictionary<string, string> countryStandardMap,
         int shelfLifeMonths = 36)
     {
         var result = new GenerationResult
@@ -193,8 +186,7 @@ public static class ListGenerator
                 if (refWarning is not null)
                     result.Issues.Add(new RowIssue(excelRow, lot, "warning", refWarning));
 
-                var standard = StandardForCountry(country, countryStandardMap);
-                var dateFormat = standard == "BSC" ? "yyyy.MM.dd" : "yyyy-MM-dd";
+                const string dateFormat = Schema.DateFormatDefault;
                 var exp = ComputeExpDate(mfg.Value, shelfLifeMonths);
 
                 var isJapan = country == "일본";
@@ -246,7 +238,7 @@ public static class ListGenerator
                     lot, products, pn, refValue,
                     mfg.Value.ToString(dateFormat, CultureInfo.InvariantCulture),
                     exp.ToString(dateFormat, CultureInfo.InvariantCulture),
-                    gtin, standard));
+                    gtin));
             }
             catch (Exception ex)   // 행 단위 실패는 기록하고 계속 — 무단 소멸 금지
             {

@@ -118,44 +118,42 @@ public class BarcodeGtinTests : IDisposable
         "2024-05-10", "2027-05-09", "08806173612345", "MDR");
 
     [Fact]
-    public void GtinComesFromBarcodeReadingWhenAvailable()
+    public void DataMatrixDoesNotAffectGtinCount()
+    {
+        // DataMatrix는 박스만 표시 — 값이 다르든 같든 GTIN 카운트에 영향 없음 (인쇄 텍스트 기준)
+        var hits = new List<BarcodeHit>
+        {
+            new("GS1 DataMatrix", "(01)08806173612399(10)25090776", (100, 500, 80, 80), IsGs1: true),
+        };
+        var outcome = _engine.Inspect(Record, "MDR",
+            [new OcrWord("(01)08806173612345", (0, 0, 100, 10), 95)], barcodes: hits);
+        Assert.Equal(1, outcome.Fields["GTIN"].Found);
+        Assert.Equal((0, 0), (outcome.Fields["GTIN"].Matches[0].Word.Bbox.X,
+                              outcome.Fields["GTIN"].Matches[0].Word.Bbox.Y));
+    }
+
+    [Fact]
+    public void GtinCountIsTextBasedEvenWithGs1_128()
+    {
+        // GS1-128이 있어도 카운트는 인쇄된 (01)+14자리 텍스트 — 바코드 값은 검증 표에서 별도 대조
+        var hits = new List<BarcodeHit>
+        {
+            new("GS1-128", "]C10108806173612345" + "1025090776", (100, 500, 300, 60), IsGs1: true),
+        };
+        var outcome = _engine.Inspect(Record, "MDR",
+            [new OcrWord("(01)08806173612345", (0, 0, 100, 10), 95)], barcodes: hits);
+        Assert.Equal(1, outcome.Fields["GTIN"].Found);
+    }
+
+    [Fact]
+    public void NoPrintedGtinTextMeansZeroEvenWithBarcode()
     {
         var hits = new List<BarcodeHit>
         {
-            new("GS1 DataMatrix", "(01)08806173612345(10)25090776",
-                (100, 500, 80, 80), IsGs1: true),
+            new("GS1 DataMatrix", "(01)08806173612345(10)25090776", (100, 500, 80, 80), IsGs1: true),
         };
-        // OCR에는 GTIN 텍스트가 아예 없어도 바코드 리딩으로 검출된다
         var outcome = _engine.Inspect(Record, "MDR",
             [new OcrWord("LOT", (0, 0, 30, 10), 95)], barcodes: hits);
-        Assert.Equal(1, outcome.Fields["GTIN"].Found);
-        // 바운딩 박스는 바코드 위치
-        Assert.Equal((100, 500), (outcome.Fields["GTIN"].Matches[0].Word.Bbox.X,
-                                  outcome.Fields["GTIN"].Matches[0].Word.Bbox.Y));
-    }
-
-    [Fact]
-    public void BarcodeGtinMismatchYieldsZero()
-    {
-        var hits = new List<BarcodeHit>
-        {
-            new("GS1 DataMatrix", "(01)08806173612399(10)25090776",
-                (0, 0, 10, 10), IsGs1: true),
-        };
-        // 바코드가 존재하고 파싱됐지만 GTIN이 다르면 0건 — OCR 텍스트로
-        // 우연히 맞아도 폴백하지 않는다 (바코드가 기준)
-        var outcome = _engine.Inspect(Record, "MDR",
-            [new OcrWord("(01)08806173612345", (0, 0, 100, 10), 95)],
-            barcodes: hits);
         Assert.Equal(0, outcome.Fields["GTIN"].Found);
-    }
-
-    [Fact]
-    public void FallsBackToOcrWithoutGs1Barcode()
-    {
-        var outcome = _engine.Inspect(Record, "MDR",
-            [new OcrWord("(01)08806173612345", (0, 0, 100, 10), 95)],
-            barcodes: new List<BarcodeHit>());   // 바코드 미검출 → OCR 폴백
-        Assert.Equal(1, outcome.Fields["GTIN"].Found);
     }
 }

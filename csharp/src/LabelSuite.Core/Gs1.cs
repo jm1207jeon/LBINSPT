@@ -44,6 +44,7 @@ public static class Gs1
         };
 
     private static readonly Regex ParenAi = new(@"\(([0-9]{2,4})\)", RegexOptions.Compiled);
+    private static readonly HashSet<string> NumericAis = ["00", "01", "02", "11", "15", "17"];
 
     private static string StripSymbologyPrefix(string payload) =>
         payload.StartsWith(']') && payload.Length >= 3 ? payload[3..] : payload;
@@ -116,6 +117,9 @@ public static class Gs1
                     throw new Gs1ParseException(
                         $"AI({spec.Ai}) 값이 {fixedLen}자보다 짧습니다", pos);
                 value = payload.Substring(pos, fixedLen);
+                // 숫자 전용 고정장 AI(GTIN·날짜 등)에 숫자가 아닌 문자가 있으면 구조 오류 — 'ABC…'가 GTIN으로 대조되지 않게
+                if (NumericAis.Contains(spec.Ai[..2]) && !value.All(char.IsDigit))
+                    throw new Gs1ParseException($"AI({spec.Ai}) 값에 숫자가 아닌 문자가 있습니다", pos);
                 pos += fixedLen;
             }
             else
@@ -135,6 +139,18 @@ public static class Gs1
                 message.Partial ? $"등록된 AI가 없습니다 (미등록 AI: {string.Join(", ", message.UnknownAis)})"
                                 : "GS1 데이터가 비어 있습니다", 0);
         return message;
+    }
+
+    /// <summary>GS1-128 GTIN 추출 규칙(요청): 심볼로지 접두(]C1)·괄호 표기를 정리한 뒤 맨 앞이 AI(01)이면
+    /// 그 다음 14자리를 GTIN으로 본다 — 뒤따르는 (10) LOT 등의 구조가 깨져 있어도 GTIN만은 대조할 수 있다.
+    /// 앞이 (01)이 아니거나 14자리가 숫자가 아니면 null.</summary>
+    public static string? TryExtractGtin(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload)) return null;
+        var text = NormalizeParenthesized(StripSymbologyPrefix(payload.Trim()), []).TrimStart(GS);
+        if (text.Length < 16 || !text.StartsWith("01", StringComparison.Ordinal)) return null;
+        var gtin = text.Substring(2, 14);
+        return gtin.All(char.IsDigit) ? gtin : null;
     }
 
     /// <summary>GS1 날짜(YYMMDD). DD=00은 해당 월 말일. 파싱 불가 시 null.</summary>

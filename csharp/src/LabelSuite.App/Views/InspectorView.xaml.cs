@@ -47,6 +47,19 @@ public partial class InspectorView : UserControl
     private readonly HashSet<int> _manualLotPages = [];   // 사용자가 직접 LOT 고른 페이지
     private readonly Dictionary<int, int> _pageLotChoice = [];  // 페이지 → 수동 선택 인덱스
     private readonly Dictionary<int, string> _manualStandardPages = [];  // 페이지 → 수동 규격
+    /// <summary>페이지 → 검사에 실제 쓰인 규격 (문서번호 미감지 시 이전 규격 유지·결과 목록용).</summary>
+    private readonly Dictionary<int, string> _pageStandard = [];
+    /// <summary>페이지 → 검사에 쓰인 목록 인덱스(0-based).</summary>
+    private readonly Dictionary<int, int> _pageRecordIndex = [];
+    /// <summary>페이지 → 검사자 최종 처리(확인 합격) + 그때의 판정 서명(검색어 제외). 자동 판정은 _outcomes에 보존되며
+    /// 판정 근거가 바뀌면(서명 다름) 처리가 해제된다.</summary>
+    private readonly Dictionary<int, (InspectorVerdict Verdict, string Basis)> _overrides = [];
+    /// <summary>OCR 실패 페이지 — 자동 검사가 무한 대기하지 않게.</summary>
+    private readonly HashSet<int> _failedPages = [];
+    private ResultListWindow? _resultWindow;
+    private CancellationTokenSource? _autoCts;
+    /// <summary>판정·검사자 처리·저장 상태가 바뀔 때 (결과 목록 창 갱신).</summary>
+    public event Action? ResultsChanged;
 
     // 라벨 정렬(이형지 크롭·기울기 보정) 결과 캐시 — 반환 비트맵은 캐시 소유
     private readonly object _procLock = new();
@@ -357,10 +370,13 @@ public partial class InspectorView : UserControl
         $"|cs={_config.SectionBool("ocr", "contrast_stretch", false)}" +
         $"|zoom={_config.GetDouble("pdf_render_zoom", 4.0)}";
 
-    private void UpdateFormRowVisibility() =>
-        FormRow.Visibility = _formRules.Count > 0
-            || _engine.Options.CustomFields.Any(c => c.Standard is { Length: > 0 })
+    /// <summary>문서번호 줄은 항상 표시(내장 감지). '양식 학습' 버튼은 이미지 양식 규칙이 있을 때만.</summary>
+    private void UpdateFormRowVisibility()
+    {
+        FormRow.Visibility = Visibility.Visible;
+        LearnFormButton.Visibility = _formRules.Any(r => r.UseImage && r.Name.Trim().Length > 0)
             ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     public void ApplyConfig()
     {
@@ -393,6 +409,11 @@ public partial class InspectorView : UserControl
             _savedSignature.Clear();
             _savedFile.Clear();
             _lotUnmatchedPages.Clear();
+            _pageStandard.Clear();
+            _pageRecordIndex.Clear();
+            _overrides.Clear();   // 분석 기준이 바뀌면 검사자 확인도 다시
+            _failedPages.Clear();
+            _autoCts?.Cancel();
             if (_pdf.IsOpen)
             {
                 _worker.NewGeneration();
@@ -401,6 +422,7 @@ public partial class InspectorView : UserControl
             }
             UpdateDashboard();
             UpdatePageSlots();
+            ResultsChanged?.Invoke();
         }
         else ReinspectCurrent();
         DrawZones();
@@ -550,9 +572,7 @@ public partial class InspectorView : UserControl
         _manualLotPages.Add(_currentPage);
         _pageLotChoice[_currentPage] = LotCombo.SelectedIndex;
         LotMatchLabel.Text = "수동";
-        var record = CurrentRecord();
-        if (record?.Standard is { } standard) SelectStandard(standard);
-        ReinspectCurrent();
+        ReinspectCurrent();   // 규격은 목록 열이 아니라 라벨 문서번호로 정한다
     }
 
     private void OnSearchKeyDown(object sender, KeyEventArgs e)
@@ -606,10 +626,15 @@ public partial class InspectorView : UserControl
         _manualStandardPages.Clear();
         _typeLearnedPages.Clear();
         _typeAlarmPages.Clear();
+        _pageStandard.Clear();
+        _pageRecordIndex.Clear();
+        _overrides.Clear();
+        _failedPages.Clear();
+        _autoCts?.Cancel();
         ClearProcessed();
         _worker.NewGeneration();
         foreach (var button in new[] { FirstButton, PrevButton, NextButton, LastButton,
-                                       NextAttentionButton })
+                                       NextAttentionButton, AutoInspectButton, ResultListButton })
             button.IsEnabled = true;
         PdfNameLabel.Text = $"{Path.GetFileName(path)} · {_pdf.PageCount}페이지";
         Status($"PDF 로드: {Path.GetFileName(path)} ({_pdf.PageCount}페이지)");
@@ -617,6 +642,7 @@ public partial class InspectorView : UserControl
         UpdatePageSlots();
         ShowPage(0, fit: true);
         SubmitPrefetchJobs();
+        ResultsChanged?.Invoke();
     }
 
     private string CacheKeyForPage(int page) =>
@@ -686,10 +712,21 @@ public partial class InspectorView : UserControl
         Navigate(target.Value);
     }
 
-    /// <summary>페이지 상태: null=미검사(OCR 대기·LOT 미매칭), false=확인 필요, true=합격.</summary>
+    /// <summary>페이지 상태: null=미검사(OCR 대기·LOT 미매칭), false=확인 필요, true=합격(검사자 확인 포함).</summary>
     private bool? PageState(int page) =>
         _lotUnmatchedPages.Contains(page) ? null
-        : _outcomes.TryGetValue(page, out var outcome) ? outcome.Passed : null;
+        : _outcomes.TryGetValue(page, out var outcome) ? EffectivePassed(page, outcome) : null;
+
+    /// <summary>최종 판정 — 검사자 확인 합격이 있으면 그것, 없으면 자동 판정.</summary>
+    private bool EffectivePassed(int page, InspectionOutcome outcome) =>
+        _overrides.TryGetValue(page, out var o) ? o.Verdict.Passed : outcome.Passed;
+
+    private InspectorVerdict? OverrideOf(int page) =>
+        _overrides.TryGetValue(page, out var o) ? o.Verdict : null;
+
+    /// <summary>저장 중복 방지용 서명 — 자동 판정 서명 + 검사자 처리 여부.</summary>
+    private string PageSignature(int page, InspectionOutcome outcome) =>
+        outcome.Signature() + (_overrides.TryGetValue(page, out var o) ? (o.Verdict.Passed ? "|INSP:P" : "|INSP:F") : "");
 
     private void OnKeyDown(object sender, KeyEventArgs e) => HandleGlobalKey(e);
 
@@ -712,6 +749,12 @@ public partial class InspectorView : UserControl
         if (e.Key == Key.Escape && ZoneModeButton.IsChecked == true)
         {
             ZoneModeButton.IsChecked = false;
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == Key.Escape && _autoCts is not null)
+        {
+            _autoCts.Cancel();
             e.Handled = true;
             return;
         }
@@ -803,6 +846,7 @@ public partial class InspectorView : UserControl
         _cache.Put(key, analysis);   // 과금된 결과는 세대와 무관하게 저장
         if (generation != _worker.Generation) return;
         _analyses[page] = analysis;
+        _failedPages.Remove(page);
         UpdatePrefetchLabel();
         if (page == _currentPage && _pdf.IsOpen)
             RunInspection(page, analysis, RenderProcessed(page));
@@ -814,6 +858,7 @@ public partial class InspectorView : UserControl
     private void OnPageFailed(int generation, int page, string message)
     {
         if (generation != _worker.Generation) return;
+        _failedPages.Add(page);
         Status($"{page + 1}페이지 OCR 실패: {message}", StatusLevel.Error);
         if (page == _currentPage)
             ClearResultPanel($"OCR 실패 — {ShortMessage(message)}", StatusLevel.Warn);
@@ -862,127 +907,92 @@ public partial class InspectorView : UserControl
                                      Brush Fill, Brush Stroke, Thickness StrokeThickness,
                                      Brush TextBrush, bool Saved, FontWeight Weight);
 
-    private void RunInspection(int page, PageAnalysis analysis, SKBitmap image,
-                               bool fit = false)
+    /// <summary>페이지 검사의 순수 계산 결과 — UI 컨트롤을 건드리지 않아 자동 검사(전 페이지)에서도 쓴다.</summary>
+    private sealed record PageInspection(
+        InspectionOutcome Outcome, LabelRecord Record, int RecordIndex, LotMatchResult? LotMatch,
+        bool LotManual, bool LotUnmatched, string StandardKey, string StandardBasis,
+        StandardDetection? DocNumber, FormDetection? Form, string? CustomFieldName);
+
+    /// <summary>LOT·규격 결정 → 교차 검증 → 엔진 검사. 검사할 레코드를 정할 수 없으면 null.
+    /// 규격 우선순위: 이 페이지 수동 지정 > 라벨 문서번호(Rev.A00 · BSL-01 · PML-001(Rev.1)) > 양식 규칙 >
+    /// 커스텀 필드 매핑 > 이 페이지에 마지막으로 쓴 규격 > 현재 선택 규격. 목록의 STANDARD 열은 쓰지 않는다.</summary>
+    private PageInspection? ComputePage(int page, PageAnalysis analysis, SKBitmap image, int fallbackRecordIndex)
     {
-        // 이 페이지에서 사용자가 직접 고른 규격 — 모든 자동 선택보다 우선
         var manualStandard = _manualStandardPages.TryGetValue(page, out var chosenStd)
             && _standards.Standards.ContainsKey(chosenStd) ? chosenStd : null;
 
+        // ---- LOT: 수동 선택 페이지는 그때의 선택, 그 외는 라벨의 LOT을 읽어 자동 ----
+        var recordIndex = -1;
+        LotMatchResult? lotMatch = null;
+        var lotManual = false;
         var lotUnmatched = false;
-        // 페이지별 LOT 매칭 — 수동 선택 페이지는 그때의 선택을 복원하고,
-        // 그 외 페이지는 매번 라벨의 LOT을 다시 읽어 자동 선택한다.
-        if (_manualLotPages.Contains(page))
+        if (_manualLotPages.Contains(page) && _pageLotChoice.TryGetValue(page, out var stored) && stored >= 1)
         {
-            if (_pageLotChoice.TryGetValue(page, out var stored)
-                && LotCombo.SelectedIndex != stored)
-            {
-                _suppressEvents = true;
-                LotCombo.SelectedIndex = stored;
-                _suppressEvents = false;
-            }
-            LotMatchLabel.Text = "수동";
-            LotMatchLabel.Foreground = (Brush)FindResource("SuccessBrush");
-            LotMatchLabel.ToolTip = "이 페이지는 사용자가 직접 고른 LOT으로 검사합니다";
+            recordIndex = stored - 1;
+            lotManual = true;
         }
         else if (_records.Count > 0)
         {
-            var match = _engine.MatchLot(analysis.Words, _records);
-            lotUnmatched = match is null;
-            if (match is not null)
+            lotMatch = _engine.MatchLot(analysis.Words, _records);
+            if (lotMatch is not null) recordIndex = _records.FindIndex(r => r.Lot == lotMatch.Lot);
+            if (recordIndex < 0)
             {
-                var index = _records.FindIndex(r => r.Lot == match.Lot);
-                if (index >= 0)
-                {
-                    if (LotCombo.SelectedIndex != index + 1)
-                    {
-                        _suppressEvents = true;
-                        LotCombo.SelectedIndex = index + 1;
-                        _suppressEvents = false;
-                    }
-                    if (manualStandard is null && _records[index].Standard is { } std)
-                        SelectStandard(std);
-                }
-                LotMatchLabel.Text = match.MatchType switch
-                {
-                    "exact" => "자동(정확)", "suffix_unique" => "자동(끝4자리)",
-                    _ => "자동(유사)",
-                };
-                LotMatchLabel.ToolTip = $"라벨에서 읽은 '{match.Candidate}' ↔ 목록 LOT {match.Lot} ({match.MatchType}, 신뢰도 {match.Confidence}%)";
-                LotMatchLabel.Foreground = (Brush)FindResource("SuccessBrush");
-            }
-            else
-            {
-                // 라벨에서 LOT 후보를 못 찾음 — 이전 선택을 그대로 검사하면 다른 LOT 라벨이
-                // '합격'으로 보일 수 있다(거짓 합격). 명시 경고 + 아래에서 '확인 필요' 강제.
-                LotMatchLabel.Text = "⚠ 미매칭";
-                LotMatchLabel.Foreground = (Brush)FindResource("WarnBrush");
-                LotMatchLabel.ToolTip = "이 페이지에서 목록의 LOT을 읽지 못해 이전 선택 LOT으로 검사합니다. LOT 위치를 확인하거나 수동으로 LOT을 고르세요.";
-                Status($"p{page + 1}: 라벨에서 LOT을 찾지 못했습니다 — 이전 선택({CurrentRecord()?.Lot})으로 검사하며 판정은 '확인 필요'로 표시됩니다.",
-                       StatusLevel.Warn);
+                // 라벨에서 LOT 후보를 못 찾음 — 이전 선택을 그대로 검사하면 다른 LOT 라벨이 '합격'으로 보일 수
+                // 있다(거짓 합격). 이전 선택으로 검사하되 아래에서 '확인 필요'를 강제한다.
+                lotUnmatched = true;
+                lotMatch = null;
+                recordIndex = fallbackRecordIndex;
             }
         }
-        if (lotUnmatched) _lotUnmatchedPages.Add(page); else _lotUnmatchedPages.Remove(page);
+        if (recordIndex < 0 || recordIndex >= _records.Count) return null;
+        var record = _records[recordIndex];
 
-        // 커스텀 필드 값 → 규격 자동 매칭 (예: 라벨에서 Rev.A00 검출 → 규격 A00)
-        if (manualStandard is null)
-            foreach (var def in _engine.Options.CustomFields)
+        // ---- 규격 ----
+        StandardDetection? doc = null;
+        FormDetection? form = null;
+        string? customName = null;
+        var standardKey = manualStandard;
+        var basis = "수동";
+        if (standardKey is null)
+        {
+            doc = StandardDetector.Detect(_standards.Standards.Values, analysis.Words);
+            if (doc is { Standard: { } detected } && _standards.Standards.ContainsKey(detected))
             {
-                if (def.Standard is not { Length: > 0 } mapped
-                    || !_standards.Standards.ContainsKey(mapped)) continue;
-                if (_engine.CountCustomField(def, analysis.Words).Count == 0) continue;
-                SelectStandard(mapped);
-                if (FormRow.Visibility == Visibility.Visible)
-                {
-                    FormMatchLabel.Text =
-                        $"{def.Name} → {_standards.Spec(mapped).DisplayName}";
-                    FormMatchLabel.Foreground = (Brush)FindResource("SuccessBrush");
-                }
-                break;
+                standardKey = detected;
+                basis = "문서번호";
             }
-
-        // 라벨 양식 자동 감지 (설정된 위치의 텍스트/이미지 패턴) → 규격 자동 선택
-        FormDetection? detectedForm = null;
+        }
         if (_formRules.Count > 0)
         {
-            var form = _formDetector.Detect(_formRules, analysis.Words, image);
-            detectedForm = form;
-            if (form is not null)
+            form = _formDetector.Detect(_formRules, analysis.Words, image);
+            if (standardKey is null && form is { Standard.Length: > 0 }
+                && _standards.Standards.ContainsKey(form.Standard))
             {
-                FormMatchLabel.Text =
-                    $"{form.Name} ({form.Method} {form.Score * 100:F0}%)";
-                FormMatchLabel.Foreground = (Brush)FindResource("SuccessBrush");
-                if (manualStandard is null && form.Standard.Length > 0
-                    && _standards.Standards.ContainsKey(form.Standard))
-                    SelectStandard(form.Standard);
-            }
-            else
-            {
-                FormMatchLabel.Text = "미감지";
-                FormMatchLabel.Foreground = (Brush)FindResource("MutedBrush");
+                standardKey = form.Standard;
+                basis = "양식";
             }
         }
-
-        if (manualStandard is not null) SelectStandard(manualStandard);
-
-        var record = CurrentRecord();
-        if (record is null)
+        if (standardKey is null)
+            foreach (var def in _engine.Options.CustomFields)
+            {
+                if (def.Standard is not { Length: > 0 } mapped || !_standards.Standards.ContainsKey(mapped)) continue;
+                if (_engine.CountCustomField(def, analysis.Words).Count == 0) continue;
+                standardKey = mapped;
+                basis = "커스텀";
+                customName = def.Name;
+                break;
+            }
+        if (standardKey is null)
         {
-            SetViewerImage(image, fit);
-            if (_records.Count > 0) ClearResultPanel("LOT을 선택하면 검사를 시작합니다");
-            else ClearResultPanel("검사 목록을 먼저 로드하세요", StatusLevel.Warn);
-            return;
+            standardKey = _pageStandard.TryGetValue(page, out var previous) && _standards.Standards.ContainsKey(previous)
+                ? previous
+                : _selectedStandard is { } current && _standards.Standards.ContainsKey(current)
+                    ? current : _standards.Standards.Keys.First();
+            basis = doc is { Ambiguous: true } ? "모호" : "유지";
         }
 
-        if (_standards.Standards.Count == 0)
-        {
-            SetViewerImage(image, fit);
-            ClearResultPanel("규격 정의가 없습니다 — 설정 폴더의 standards.json을 확인하세요",
-                             StatusLevel.Warn);
-            return;
-        }
-        var standardName = _selectedStandard ?? _standards.Standards.Keys.First();
-        var barcodeChecks = BarcodeDetector.CrossCheckHits(analysis.Barcodes, record);
+        // ---- 교차 검증 + 검사 ----
+        var barcodeChecks = BarcodeDetector.CrossCheckHits(analysis.Barcodes, record);   // DataMatrix 제외
         if (lotUnmatched)
             barcodeChecks.Add(new CrossCheckResult("LOT 매칭", "LOT", "(라벨에서 LOT 미검출)",
                                                    record.Lot, Matched: false));
@@ -990,29 +1000,131 @@ public partial class InspectorView : UserControl
         if (_history?.GetMaster(record.Pn) is { } master)
             barcodeChecks.AddRange(MasterCheck.Check(master, record, analysis.Barcodes));
         // 동일값 패턴 검사 — 위치 이동을 보정해 객체별 값 상호 비교
-        var formatKey = $"{record.Pn}|{standardName}";
+        var formatKey = $"{record.Pn}|{standardKey}";
         if (_sameValueRules.Count > 0)
         {
             var sameValueResults = _sameValue.Check(formatKey, _sameValueRules,
                 _corrections.Apply(analysis.Words), (image.Width, image.Height));
             barcodeChecks.AddRange(SameValueChecker.ToCrossChecks(sameValueResults));
         }
-        var outcome = _engine.Inspect(record, standardName, analysis.Words,
-                                      barcodeChecks, SearchBox.Text,
-                                      (image.Width, image.Height),
-                                      analysis.Barcodes);
-        _outcomes[page] = outcome;
-        CheckLabelType(page, formatKey, analysis, record, outcome);
-        ShowOutcome(outcome, analysis);
+        var outcome = _engine.Inspect(record, standardKey, analysis.Words, barcodeChecks, SearchBox.Text,
+                                      (image.Width, image.Height), analysis.Barcodes);
+        return new PageInspection(outcome, record, recordIndex, lotMatch, lotManual, lotUnmatched,
+                                  standardKey, basis, doc, form, customName);
+    }
+
+    private void RunInspection(int page, PageAnalysis analysis, SKBitmap image, bool fit = false)
+    {
+        if (_standards.Standards.Count == 0)
+        {
+            SetViewerImage(image, fit);
+            ClearResultPanel("규격 정의가 없습니다 — 설정 폴더의 standards.json을 확인하세요", StatusLevel.Warn);
+            return;
+        }
+        var result = ComputePage(page, analysis, image, LotCombo.SelectedIndex - 1);
+        if (result is null)
+        {
+            _lotUnmatchedPages.Remove(page);
+            SetViewerImage(image, fit);
+            if (_records.Count > 0) ClearResultPanel("LOT을 선택하면 검사를 시작합니다");
+            else ClearResultPanel("검사 목록을 먼저 로드하세요", StatusLevel.Warn);
+            return;
+        }
+        StorePageResult(page, result);
+        ApplyPageUi(page, result, analysis, image, fit);
+        CheckLabelType(page, $"{result.Record.Pn}|{result.StandardKey}", analysis, result.Record, result.Outcome);
+        AutoSaveIfNeeded(page, result.Outcome, image);
+    }
+
+    /// <summary>계산 결과를 페이지 상태에 반영 (UI 컨트롤은 건드리지 않음 — 자동 검사 공용).
+    /// 판정 근거가 바뀌었거나 자동 판정이 합격이 되면 이전 검사자 확인 합격은 해제한다.</summary>
+    private void StorePageResult(int page, PageInspection result)
+    {
+        _outcomes[page] = result.Outcome;
+        _pageStandard[page] = result.StandardKey;
+        _pageRecordIndex[page] = result.RecordIndex;
+        if (result.LotUnmatched) _lotUnmatchedPages.Add(page); else _lotUnmatchedPages.Remove(page);
+        if (_overrides.TryGetValue(page, out var existing))
+        {
+            var basis = result.Outcome.Signature(includeSearch: false);
+            if (result.Outcome.Passed)
+                _overrides.Remove(page);   // 자동 판정이 합격이 됐으니 검사자 처리는 더 필요 없다
+            else if (existing.Basis != basis)
+            {
+                _overrides.Remove(page);
+                Status($"p{page + 1}: 판정 근거가 바뀌어 검사자 확인 합격이 해제되었습니다 — 다시 확인하세요.",
+                       StatusLevel.Warn);
+                AppLog.Warn($"p{page + 1} 검사자 확인 합격 해제 (판정 서명 변경) — 이전 사유: {existing.Verdict.Note}");
+            }
+        }
+    }
+
+    /// <summary>현재 페이지 화면 반영: LOT 콤보·매칭 표시, 규격 버튼·문서번호 줄, 판정 배지·표, 오버레이 이미지.</summary>
+    private void ApplyPageUi(int page, PageInspection result, PageAnalysis analysis, SKBitmap image, bool fit)
+    {
+        if (LotCombo.SelectedIndex != result.RecordIndex + 1)
+        {
+            _suppressEvents = true;
+            LotCombo.SelectedIndex = result.RecordIndex + 1;
+            _suppressEvents = false;
+        }
+        if (result.LotManual)
+        {
+            LotMatchLabel.Text = "수동";
+            LotMatchLabel.Foreground = (Brush)FindResource("SuccessBrush");
+            LotMatchLabel.ToolTip = "이 페이지는 사용자가 직접 고른 LOT으로 검사합니다";
+        }
+        else if (result.LotMatch is { } match)
+        {
+            LotMatchLabel.Text = match.MatchType switch
+            {
+                "exact" => "자동(정확)", "suffix_unique" => "자동(끝4자리)",
+                _ => "자동(유사)",
+            };
+            LotMatchLabel.ToolTip = $"라벨에서 읽은 '{match.Candidate}' ↔ 목록 LOT {match.Lot} ({match.MatchType}, 신뢰도 {match.Confidence}%)";
+            LotMatchLabel.Foreground = (Brush)FindResource("SuccessBrush");
+        }
+        else if (result.LotUnmatched)
+        {
+            LotMatchLabel.Text = "⚠ 미매칭";
+            LotMatchLabel.Foreground = (Brush)FindResource("WarnBrush");
+            LotMatchLabel.ToolTip = "이 페이지에서 목록의 LOT을 읽지 못해 이전 선택 LOT으로 검사합니다. LOT 위치를 확인하거나 수동으로 LOT을 고르세요.";
+            Status($"p{page + 1}: 라벨에서 LOT을 찾지 못했습니다 — 이전 선택({result.Record.Lot})으로 검사하며 판정은 '확인 필요'로 표시됩니다.",
+                   StatusLevel.Warn);
+        }
+
+        // 규격 버튼 + 문서번호 줄 (라벨에서 읽은 문서번호 → 규격)
+        SelectStandard(result.StandardKey);
+        var displayName = _standards.Spec(result.StandardKey).DisplayName;
+        string Names(IEnumerable<string> keys) =>
+            string.Join("/", keys.Select(k => _standards.Standards.TryGetValue(k, out var sp) ? sp.DisplayName : k));
+        var (formText, ok) = result.StandardBasis switch
+        {
+            "수동" => ($"수동 지정 → {displayName}", true),
+            "문서번호" => ($"{result.DocNumber!.MatchedText} → {displayName}", true),
+            "양식" => ($"양식 {result.Form!.Name} ({result.Form.Method} {result.Form.Score * 100:F0}%) → {displayName}", true),
+            "커스텀" => ($"{result.CustomFieldName} → {displayName}", true),
+            "모호" => ($"{result.DocNumber!.MatchedText} 감지 — Rev 미인식 (후보 {Names(result.DocNumber.Candidates)}) · {displayName} 유지, 규격 버튼으로 지정", false),
+            _ => ($"문서번호 미감지 — {displayName} 유지 (규격 버튼으로 지정)", false),
+        };
+        FormMatchLabel.Text = formText;
+        FormMatchLabel.Foreground = (Brush)FindResource(ok ? "SuccessBrush" : "WarnBrush");
+
+        var outcome = result.Outcome;
+        ShowOutcome(outcome, analysis, OverrideOf(page));
         using var annotated = Annotate.RenderOverlays(
             image, outcome.AllMatches, _standards.FieldColors, CurrentOverlayStyle());
-        // 검출된 바코드(DataMatrix·GS1-128 등)에도 박스 표시
+        // 검출된 바코드 박스 — DataMatrix는 위치 표시만(카운트·검증 제외), GS1-128은 표에서 대조
         Annotate.DrawBarcodeBoxes(annotated, analysis.Barcodes, CurrentOverlayStyle());
-        // 규격 자동 판별에 쓰인 양식명 OCR 영역도 박스 표시 (보라색)
-        if (detectedForm is { TextBbox: { } formBbox } detected)
-            Annotate.DrawTaggedBox(annotated, formBbox, $"양식: {detected.Name}",
+        // 규격 자동 선택에 쓰인 문서번호(또는 양식명) 영역 — 보라 박스
+        if (result.DocNumber is { Standard: not null } docBox)
+            Annotate.DrawTaggedBox(annotated, docBox.Bbox, $"문서번호: {docBox.MatchedText}",
                                    Annotate.FormBoxColor, CurrentOverlayStyle());
-        // 저신뢰 OCR 알람 — 유의미하게 낮으면 해당 단어를 주황 파선으로 하이라이트
+        else if (result.Form is { TextBbox: { } formBbox } detectedForm)
+            Annotate.DrawTaggedBox(annotated, formBbox, $"양식: {detectedForm.Name}",
+                                   Annotate.FormBoxColor, CurrentOverlayStyle());
+        // 저신뢰 OCR 알람 — 요청: 검출 필드가 아닌 단어에는 박스·신뢰도를 표시하지 않는다.
+        // 필드로 검출된 단어와 겹치는 저신뢰 단어만 주황 파선으로.
         if (_config.SectionBool("ocr", "quality_alarm", true))
         {
             var lowThreshold = _config.SectionInt("ocr", "low_word_confidence", 70);
@@ -1020,9 +1132,11 @@ public partial class InspectorView : UserControl
                 _config.SectionInt("ocr", "low_avg_confidence", 80), lowThreshold);
             if (quality.IsPoor)
             {
-                Annotate.HighlightLowConfidence(annotated,
-                    OcrQuality.LowConfidenceWords(analysis.Words, lowThreshold),
-                    CurrentOverlayStyle());
+                var matchedBoxes = outcome.AllMatches.Select(m => m.Word.Bbox).ToList();
+                var lowWords = OcrQuality.LowConfidenceWords(analysis.Words, lowThreshold)
+                    .Where(w => matchedBoxes.Any(b => Intersects(b, w.Bbox))).ToList();
+                if (lowWords.Count > 0)
+                    Annotate.HighlightLowConfidence(annotated, lowWords, CurrentOverlayStyle());
                 BadgeReasonText.Text += $" · ⚠ OCR 신뢰도 {quality.Average:F0}%";
                 Status($"⚠ p{page + 1}: {quality.Summary}", StatusLevel.Warn);
             }
@@ -1030,12 +1144,238 @@ public partial class InspectorView : UserControl
         SetViewerImage(annotated, fit);
         UpdateDashboard();
         UpdatePageSlots();
-        // 자동 저장: 같은 판정(서명 동일)이 이미 저장돼 있으면 건너뛴다 — 재방문·재검사마다
-        // 새 번호 파일과 이력 행이 쌓이지 않게 (페이지당 판정 1건 원칙)
+        ResultsChanged?.Invoke();
+    }
+
+    private static bool Intersects((int X, int Y, int W, int H) a, (int X, int Y, int W, int H) b) =>
+        a.X < b.X + b.W && b.X < a.X + a.W && a.Y < b.Y + b.H && b.Y < a.Y + a.H;
+
+    /// <summary>자동 저장: 같은 판정(서명 동일 — 검사자 처리 포함)이 이미 저장돼 있으면 건너뛴다 (페이지당 판정 1건 원칙).</summary>
+    private void AutoSaveIfNeeded(int page, InspectionOutcome outcome, SKBitmap image)
+    {
         if (AutoSaveCheck.IsChecked == true
             && (!_savedSignature.TryGetValue(page, out var savedSig)
-                || savedSig != outcome.Signature()))
+                || savedSig != PageSignature(page, outcome)))
             SaveOutcome(page, outcome, image, notify: false);
+    }
+
+    // ---------------- 자동 검사 (전 페이지) / 결과 목록 / 검사자 확인 합격 ----------------
+
+    private async void OnAutoInspect(object sender, RoutedEventArgs e)
+    {
+        if (_autoCts is not null) { _autoCts.Cancel(); return; }
+        if (!_pdf.IsOpen) { Dialogs.Info(this, "PDF를 먼저 여세요.", "자동 검사"); return; }
+        if (_records.Count == 0)
+        {
+            Dialogs.Info(this, "검사 목록을 먼저 로드하세요 — 라벨의 LOT을 목록과 대조해야 판정할 수 있습니다.", "자동 검사");
+            return;
+        }
+        if (_standards.Standards.Count == 0)
+        {
+            Dialogs.Warn(this, "규격 정의가 없습니다 — 설정 폴더의 standards.json을 확인하세요.", "자동 검사");
+            return;
+        }
+        var cts = new CancellationTokenSource();
+        _autoCts = cts;
+        AutoInspectButton.Content = "■ 자동 검사 중지";
+        AutoInspectButton.Style = (Style)FindResource("CautionButton");
+        try { await AutoInspectAllAsync(cts.Token); }
+        catch (OperationCanceledException)
+        {
+            Status("자동 검사 중지 — 지금까지의 판정은 유지됩니다.", StatusLevel.Warn);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("자동 검사 실패", ex);
+            Dialogs.Error(this, $"자동 검사 중 오류: {ex.Message}", "자동 검사");
+        }
+        finally
+        {
+            if (ReferenceEquals(_autoCts, cts)) _autoCts = null;
+            cts.Dispose();
+            AutoInspectButton.Content = "▶ 자동 검사";
+            AutoInspectButton.Style = (Style)FindResource("AccentButton");
+            UpdateDashboard();
+            UpdatePageSlots();
+            UpdatePrefetchLabel();
+            ResultsChanged?.Invoke();
+        }
+    }
+
+    /// <summary>전 페이지 순서대로 검사. OCR이 안 끝난 페이지는 기다린다(3분간 진척 없으면 중단).
+    /// 각 페이지는 소유 렌더(캐시 축출 안전)로 계산하고, 현재 페이지만 화면에 반영한다.</summary>
+    private async Task AutoInspectAllAsync(CancellationToken ct)
+    {
+        var total = _pdf.PageCount;
+        var generation = _worker.Generation;
+        EnsureAllPagesSubmitted();
+        var fallbackIndex = LotCombo.SelectedIndex - 1;
+        int passed = 0, check = 0, skipped = 0;
+        var startedAt = DateTime.Now;
+        var lastProgressAt = DateTime.Now;
+        var lastAnalyzed = _analyses.Count;
+        for (var page = 0; page < total; page++)
+        {
+            ct.ThrowIfCancellationRequested();
+            while (!_analyses.ContainsKey(page))
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!_pdf.IsOpen || _worker.Generation != generation) throw new OperationCanceledException();
+                if (_failedPages.Contains(page)) break;
+                if (_analyses.Count != lastAnalyzed) { lastAnalyzed = _analyses.Count; lastProgressAt = DateTime.Now; }
+                else if (DateTime.Now - lastProgressAt > TimeSpan.FromMinutes(3))
+                {
+                    Status($"자동 검사 중단 — p{page + 1} OCR이 3분간 진행되지 않았습니다 (OCR 엔진·네트워크 확인)",
+                           StatusLevel.Error);
+                    throw new OperationCanceledException();
+                }
+                Status($"자동 검사 대기 — p{page + 1} OCR 중… (OCR 완료 {_analyses.Count}/{total})");
+                await Task.Delay(300, ct);
+            }
+            if (!_analyses.TryGetValue(page, out var analysis)) { skipped++; continue; }
+            var pageCopy = page;
+            using var image = await Task.Run(() => RenderProcessedForAnalysis(pageCopy), ct);
+            ct.ThrowIfCancellationRequested();
+            if (!_pdf.IsOpen || _worker.Generation != generation) throw new OperationCanceledException();
+            var result = ComputePage(page, analysis, image, fallbackIndex);
+            if (result is null) { skipped++; continue; }
+            fallbackIndex = result.RecordIndex;
+            StorePageResult(page, result);
+            if (page == _currentPage) ApplyPageUi(page, result, analysis, image, fit: false);
+            if (EffectivePassed(page, result.Outcome)) passed++; else check++;
+            AutoSaveIfNeeded(page, result.Outcome, image);
+            Status($"자동 검사 {page + 1}/{total} · 합격 {passed} · 부적합 {check}");
+            ProgressChanged?.Invoke(page + 1, total);
+            if (page % 5 == 4)
+            {
+                UpdateDashboard();
+                UpdatePageSlots();
+                ResultsChanged?.Invoke();
+            }
+            await Task.Yield();
+        }
+        var elapsed = DateTime.Now - startedAt;
+        Status($"자동 검사 완료 ({elapsed:m\\:ss}) — 합격 {passed} · 부적합 {check}"
+               + (skipped > 0 ? $" · 미검사 {skipped} (OCR 실패·LOT 없음)" : ""),
+               check > 0 ? StatusLevel.Warn : StatusLevel.Info);
+        ShowResultList(failOnly: check > 0);
+    }
+
+    /// <summary>프리페치 정책이 '앞 N페이지'여도 자동 검사는 전 페이지 OCR이 필요하다.</summary>
+    private void EnsureAllPagesSubmitted()
+    {
+        for (var page = 0; page < _pdf.PageCount; page++)
+        {
+            if (_analyses.ContainsKey(page)) continue;
+            var key = CacheKeyForPage(page);
+            var cached = _cache.Get(key);
+            if (cached is not null) { _analyses[page] = cached; continue; }
+            var pageCopy = page;
+            _worker.Submit(page, key, () => RenderProcessedForAnalysis(pageCopy), priority: 1);
+        }
+        UpdatePrefetchLabel();
+    }
+
+    private void OnShowResultList(object sender, RoutedEventArgs e) => ShowResultList(failOnly: null);
+
+    private void ShowResultList(bool? failOnly)
+    {
+        if (_resultWindow is null)
+        {
+            var window = new ResultListWindow(ResultRows, Navigate, OverridePass, ClearOverride)
+            { Owner = Window.GetWindow(this) };
+            Action refresh = window.Refresh;
+            ResultsChanged += refresh;
+            window.Closed += (_, _) => { ResultsChanged -= refresh; _resultWindow = null; };
+            _resultWindow = window;
+            window.Show();
+        }
+        if (failOnly is { } only) _resultWindow.SetFailOnly(only);
+        _resultWindow.Refresh();
+        _resultWindow.Activate();
+    }
+
+    /// <summary>결과 목록 창의 한 행 — 페이지별 자동/최종 판정.</summary>
+    public sealed record ResultRow(int Page, string Lot, string Ref, string Standard, string Auto, string Final,
+                                   string Reason, bool Saved, bool IsFail, bool HasOverride, bool Inspected);
+
+    private IReadOnlyList<ResultRow> ResultRows()
+    {
+        var rows = new List<ResultRow>();
+        if (!_pdf.IsOpen) return rows;
+        for (var page = 0; page < _pdf.PageCount; page++)
+        {
+            if (!_outcomes.TryGetValue(page, out var outcome))
+            {
+                var state = _failedPages.Contains(page) ? "OCR 실패"
+                          : _analyses.ContainsKey(page) ? "검사 대기" : "OCR 대기";
+                rows.Add(new ResultRow(page, "", "", "", "미검사", state, "", false, false, false, false));
+                continue;
+            }
+            var lotUnmatched = _lotUnmatchedPages.Contains(page);
+            var verdict = OverrideOf(page);
+            var auto = outcome.Passed ? "합격" : "확인 필요";
+            var final = verdict?.Display ?? (lotUnmatched ? "LOT 미매칭" : auto);
+            var reason = (lotUnmatched ? "라벨에서 LOT 미검출 · " : "") + InspectionSummary.Describe(outcome)
+                         + (verdict is null ? "" : $" · 검사자 {verdict.By}: {verdict.Note}");
+            rows.Add(new ResultRow(page, outcome.Record.Lot, outcome.Record.Ref, outcome.Standard.DisplayName,
+                                   auto, final, reason, _savedPages.Contains(page),
+                                   !EffectivePassed(page, outcome), verdict is not null, true));
+        }
+        return rows;
+    }
+
+    /// <summary>검사자 확인 합격 처리 — 자동 판정 '확인 필요'를 검사자가 육안 확인 후 합격으로 확정한다.
+    /// 사유 필수, 처리자(Windows 사용자명)·시각과 함께 CSV·이력·저장 이미지에 남는다. 자동 판정은 보존.</summary>
+    private void OverridePass(int page)
+    {
+        if (!_outcomes.TryGetValue(page, out var outcome))
+        {
+            Dialogs.Info(this, $"p{page + 1}은 아직 검사되지 않았습니다.", "합격 처리");
+            return;
+        }
+        if (EffectivePassed(page, outcome))
+        {
+            Dialogs.Info(this, $"p{page + 1}은 이미 합격입니다.", "합격 처리");
+            return;
+        }
+        if (_lotUnmatchedPages.Contains(page))
+        {
+            Dialogs.Warn(this, $"p{page + 1}은 라벨에서 LOT을 읽지 못했습니다.\n먼저 LOT을 수동으로 고른 뒤(Ctrl+L) 재검사(F5)하세요.",
+                         "합격 처리");
+            return;
+        }
+        var note = InputDialog.Ask(Window.GetWindow(this), "검사자 확인 합격 처리",
+            $"p{page + 1} · LOT {outcome.Record.Lot} · {outcome.Standard.DisplayName}\n" +
+            $"자동 판정: 확인 필요 — {InspectionSummary.Describe(outcome)}\n\n" +
+            "라벨을 육안으로 확인해 이상이 없음을 확정합니다. 사유(필수):",
+            "", "예: OCR 오인식 — 인쇄물 육안 확인 정상");
+        if (note is null) return;
+        if (note.Trim().Length == 0)
+        {
+            Status("사유가 비어 있어 합격 처리하지 않았습니다.", StatusLevel.Warn);
+            return;
+        }
+        var verdict = new InspectorVerdict(true, Environment.UserName, DateTime.Now, note.Trim());
+        _overrides[page] = (verdict, outcome.Signature(includeSearch: false));
+        AppLog.Info($"p{page + 1} LOT {outcome.Record.Lot} 검사자 확인 합격 ({verdict.By}): {verdict.Note}");
+        Status($"p{page + 1} LOT {outcome.Record.Lot}: 검사자 확인 합격 처리 — {verdict.Note}");
+        if (page == _currentPage) ShowOutcome(outcome, _lastAnalysisShown, verdict);
+        UpdateDashboard();
+        UpdatePageSlots();
+        ResultsChanged?.Invoke();
+        if (AutoSaveCheck.IsChecked == true) AutoSaveIfNeeded(page, outcome, RenderProcessed(page));
+    }
+
+    private void ClearOverride(int page)
+    {
+        if (!_overrides.Remove(page)) return;
+        Status($"p{page + 1}: 검사자 확인 합격을 취소했습니다 — 자동 판정으로 돌아갑니다.", StatusLevel.Warn);
+        if (page == _currentPage && _outcomes.TryGetValue(page, out var outcome))
+            ShowOutcome(outcome, _lastAnalysisShown, null);
+        UpdateDashboard();
+        UpdatePageSlots();
+        ResultsChanged?.Invoke();
     }
 
     /// <summary>라벨 유형 학습·이상 알람 — 전체 OCR 토큰을 유형별로 축적하다가
@@ -1089,80 +1429,48 @@ public partial class InspectorView : UserControl
             { FillBehavior = FillBehavior.HoldEnd });
     }
 
-    private void ShowOutcome(InspectionOutcome outcome, PageAnalysis? analysis = null)
+    private void ShowOutcome(InspectionOutcome outcome, PageAnalysis? analysis = null,
+                             InspectorVerdict? inspector = null)
     {
         _lastAnalysisShown = analysis;
-        if (outcome.Passed)
+        // 판정 헤드라인은 짧게 한 줄(규격은 사유줄로) — 24px에서 잘리지 않게
+        StatusBadgeText.FontSize = (double)FindResource("ReadoutSize");
+        var finalPassed = inspector?.Passed ?? outcome.Passed;
+        if (finalPassed)
         {
-            StatusBadgeText.Text = $"✓ 합격 (PASSED) · 규격 {outcome.Standard.DisplayName}";
+            StatusBadgeText.Text = inspector is not null ? "✓ 합격 (검사자 확인)" : "✓ 합격 (PASSED)";
             StatusBadgeText.Foreground = (Brush)FindResource("SuccessBrush");
             StatusBadge.BorderBrush = (Brush)FindResource("SuccessBrush");
             FlashBadge((SolidColorBrush)FindResource("SuccessBgBrush"));
         }
         else
         {
-            StatusBadgeText.Text = $"⚠ 확인 필요 (CHECK) · 규격 {outcome.Standard.DisplayName}";
+            StatusBadgeText.Text = "⚠ 확인 필요 (CHECK)";
             StatusBadgeText.Foreground = (Brush)FindResource("WarnBrush");
             StatusBadge.BorderBrush = (Brush)FindResource("WarnBrush");
             FlashBadge((SolidColorBrush)FindResource("WarnBgBrush"));
         }
-        // 사유줄: 저장 이미지 요약 박스 2행과 같은 문구 (Core InspectionSummary)
-        BadgeReasonText.Text = InspectionSummary.Describe(outcome);
-        BadgeReasonText.Foreground = (Brush)FindResource(outcome.Passed ? "SuccessBrush" : "WarnBrush");
+        // 사유줄(한 줄, 넘치면 … + 툴팁): 규격 · 저장 이미지 요약 박스와 같은 문구 · 검사자 처리
+        var reason = $"규격 {outcome.Standard.DisplayName} · {InspectionSummary.Describe(outcome)}";
+        if (inspector is not null) reason += $" · 검사자 {inspector.By}: {inspector.Note}";
+        BadgeReasonText.Text = reason;
+        BadgeReasonText.Foreground = (Brush)FindResource(finalPassed ? "SuccessBrush" : "WarnBrush");
         FieldGrid.ItemsSource = outcome.Fields.Values
             .Select(f => new FieldRowVm(
                 f.Field, f.Term.Length > 0 ? f.Term : "-",
                 f.Expected is { } expected ? $"{f.Found}/{expected}" : f.Found.ToString(),
                 f.Expected is null ? "info" : f.Passed ? "pass" : "fail")).ToList();
-        // 라벨에 등장하는 모든 바코드를 위→아래 순으로 나열 (종류/등급/값/일치)
+        // 검증 대상 바코드(GS1-128 등)를 위→아래 순으로 나열 — DataMatrix는 요청에 따라 표에서 제외(박스만 표시).
+        // 값·상태·툴팁 규칙은 Core BarcodeDetector.Summarize (GS1-128 GTIN = (01) 다음 14자리)
         var barcodeRows = new List<BarcodeRowVm>();
-        var hits = (_lastAnalysisShown?.Barcodes ?? [])
+        var allHits = _lastAnalysisShown?.Barcodes ?? [];
+        var dataMatrixCount = allHits.Count(b => b.IsDataMatrix);
+        var hits = allHits.Where(b => !b.IsDataMatrix)
             .OrderBy(b => b.Bbox.Y).ThenBy(b => b.Bbox.X).ToList();
         for (var i = 0; i < hits.Count; i++)
         {
             var hit = hits[i];
-            string value;
-            string state;
-            string? tip = null;
-            if (hit.IsGs1 || BarcodeDetector.LooksGs1(hit.Text))
-            {
-                try
-                {
-                    var message = Gs1.Parse(hit.Text);
-                    value = string.Concat(message.Elements
-                        .Select(el => $"({el.Ai}){el.Value}"));
-                    var checks = BarcodeCrossCheck.Check(message, outcome.Record,
-                                                         hit.Symbology);
-                    if (checks.Count == 0) state = "-";
-                    else if (checks.All(c => c.Matched)) state = "일치";
-                    else
-                    {
-                        state = "불일치";
-                        value += "  ⚠ " + string.Join(", ", checks
-                            .Where(c => !c.Matched)
-                            .Select(c => $"{c.Field} 기대 {c.ExpectedValue}"));
-                    }
-                    if (message.Partial)
-                    {
-                        value += $" (미등록 AI: {string.Join(", ", message.UnknownAis)})";
-                        tip = "GS1 표준 표에 없는 AI가 있어 그 구간은 대조하지 않았습니다 — 등록된 AI(01/10/17 등)만 대조";
-                    }
-                }
-                catch (Gs1ParseException)
-                {
-                    // 바코드는 읽혔지만 GS1 구조 해석 실패 — OCR 텍스트로 대체하지 않고(GTIN은 바코드가 진실)
-                    // 붉은 행으로 육안 확인을 요구한다
-                    var raw = hit.Text.Replace('\x1d', '|');
-                    value = raw.Length > 40 ? raw[..40] + "…" : raw;
-                    state = "해석 불가";
-                    tip = "바코드는 읽혔으나 GS1 구조를 해석하지 못했습니다 — 판독값을 육안 확인하세요";
-                }
-            }
-            else
-            {
-                value = hit.Text;
-                state = "-";
-            }
+            var (value, state, tip) = BarcodeDetector.Summarize(hit, outcome.Record);
             barcodeRows.Add(new BarcodeRowVm($"#{i + 1}", hit.Symbology,
                                              hit.Grade ?? "", value, state, tip));
         }
@@ -1174,7 +1482,9 @@ public partial class InspectorView : UserControl
                               : $"{check.BarcodeValue} (기대: {check.ExpectedValue})",
                 check.Matched ? "일치" : "불일치"));
         if (barcodeRows.Count == 0)
-            barcodeRows.Add(new BarcodeRowVm("", "", "", "검출된 바코드 없음", ""));
+            barcodeRows.Add(new BarcodeRowVm("", "", "", dataMatrixCount > 0
+                ? $"검증 대상 바코드 없음 (DataMatrix {dataMatrixCount}개는 박스로만 표시)"
+                : "검출된 바코드 없음", ""));
         BarcodeGrid.ItemsSource = barcodeRows;
     }
 
@@ -1183,6 +1493,8 @@ public partial class InspectorView : UserControl
     /// <summary>판정 없음 상태의 배지 — level=Warn(OCR 실패·목록 없음)이면 주황 테두리로 주의를 끈다.</summary>
     private void ClearResultPanel(string message, StatusLevel level = StatusLevel.Info)
     {
+        // 판정이 아닌 안내(OCR 실패·목록 없음)는 판정 헤드라인 크기(24px)가 아니라 15px 한 줄로 — 잘려 보이지 않게
+        StatusBadgeText.FontSize = (double)FindResource("SubCountSize");
         StatusBadgeText.Text = message;
         StatusBadgeText.Foreground = (Brush)FindResource(level == StatusLevel.Info ? "MutedBrush" : "WarnBrush");
         StatusBadge.Background = (Brush)FindResource("ReadoutBrush");
@@ -1747,13 +2059,13 @@ public partial class InspectorView : UserControl
     {
         var passedByPage = _outcomes
             .Where(p => !_lotUnmatchedPages.Contains(p.Key))
-            .ToDictionary(p => p.Key, p => p.Value.Passed);
+            .ToDictionary(p => p.Key, p => EffectivePassed(p.Key, p.Value));
         return SessionStats.Of(_pdf.IsOpen ? _pdf.PageCount : 0, passedByPage, _savedPages);
     }
 
     private void UpdateDashboard()
     {
-        var passed = _outcomes.Values.Count(o => o.Passed);
+        var passed = _outcomes.Count(p => EffectivePassed(p.Key, p.Value));
         var check = _outcomes.Count - passed;
         PassCountText.Text = passed.ToString();
         CheckCountText.Text = check.ToString();
@@ -1841,6 +2153,14 @@ public partial class InspectorView : UserControl
                 symbol = "?";
                 tip = $"{page + 1}페이지: LOT 미매칭 (수동 선택 필요)";
             }
+            else if (OverrideOf(page) is { Passed: true } verdict)
+            {
+                fill = passFill;
+                stroke = (Brush)FindResource("SavedGreenBrush");
+                thickness = 2;
+                symbol = "✓";
+                tip = $"{page + 1}페이지: 검사자 확인 합격 ({outcome!.Record.Lot}) — {verdict.Note}";
+            }
             else if (outcome!.Passed)
             {
                 fill = passFill;
@@ -1898,7 +2218,8 @@ public partial class InspectorView : UserControl
         var rows = Enumerable.Range(0, _pdf.PageCount).Select(page => (
             page,
             _outcomes.TryGetValue(page, out var outcome) ? outcome : null,
-            _savedFile.TryGetValue(page, out var img) ? img : null));
+            _savedFile.TryGetValue(page, out var img) ? img : null,
+            OverrideOf(page)));
         var textProtect = _config.SectionBool("export", "csv_text_protect", true);
         var csv = InspectionCsv.Build(rows, _pdf.Path ?? "", App.InformationalVersion, textProtect);
         ExportGuard.Run("CSV", dialog.FileName,
@@ -2196,7 +2517,7 @@ public partial class InspectorView : UserControl
         }
         // 같은 판정이 이미 저장돼 있으면 확인 (기본 '아니오') — 새 번호 파일·이력 행이 의도치 않게 늘지 않게
         if (_savedSignature.TryGetValue(_currentPage, out var savedSig)
-            && savedSig == outcome.Signature())
+            && savedSig == PageSignature(_currentPage, outcome))
         {
             var saved = _savedFile.TryGetValue(_currentPage, out var file)
                 ? Path.GetFileName(file) : "저장됨";
@@ -2212,8 +2533,9 @@ public partial class InspectorView : UserControl
                              bool notify)
     {
         var counter = _history?.NextFileCounter() ?? 1;
+        var inspector = OverrideOf(page);
         var filename = Annotate.MakeResultFilename(
-            counter, outcome.Record.Lot, outcome.Record.Ref, outcome.Passed);
+            counter, outcome.Record.Lot, outcome.Record.Ref, EffectivePassed(page, outcome));
         var dir = SaveDir();
         // 같은 이름이 있으면 _(2), _(3)… 로 비켜 간다 — 기존 결과 이미지를 덮어쓰지 않는다
         var path = PathRules.UniquePath(Path.Combine(dir, filename));
@@ -2223,7 +2545,8 @@ public partial class InspectorView : UserControl
             Annotate.SaveAnnotatedJpeg(image, outcome, _standards.FieldColors, path,
                                        _config.GetDouble("save_scale", 0.5),
                                        _config.GetInt("jpeg_quality", 90),
-                                       CurrentOverlayStyle());
+                                       CurrentOverlayStyle(), inspector,
+                                       _analyses.TryGetValue(page, out var saved) ? saved.Barcodes : null);
         }
         catch (Exception ex)
         {
@@ -2234,11 +2557,12 @@ public partial class InspectorView : UserControl
             return;
         }
         _savedPages.Add(page);
-        _savedSignature[page] = outcome.Signature();
+        _savedSignature[page] = PageSignature(page, outcome);
         _savedFile[page] = path;
         UpdateDashboard();
         UpdatePageSlots();   // 저장됨 띠
-        try { _history?.RecordInspection(outcome, path, "pdf", _pdf.Path, page); }
+        ResultsChanged?.Invoke();
+        try { _history?.RecordInspection(outcome, path, "pdf", _pdf.Path, page, inspector: inspector); }
         catch (Exception ex)
         {
             // 이미지는 저장됐으므로 이력 기록 실패만 알리고 계속 진행

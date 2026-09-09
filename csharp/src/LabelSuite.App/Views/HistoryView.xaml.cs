@@ -46,7 +46,8 @@ public partial class HistoryView : UserControl
         var vms = rows.Select(r => new RowVm(
             r.Id, r.Ts.Replace('T', ' '), r.Lot, r.Ref, r.Pn, r.Standard,
             r.Page is { } page ? (page + 1).ToString() : "",
-            r.Passed ? "합격" : "확인 필요", r.ImagePath)).ToList();
+            r.InspectorVerdict == "PASS" ? "합격(검사자)" : r.InspectorVerdict == "FAIL" ? "부적합(검사자)"
+                : r.Passed ? "합격" : "확인 필요", r.ImagePath)).ToList();
         Table.ItemsSource = vms;
         // 첫 로드는 전부 '새 행'이므로 제외 — 이후 검사에서 저장된 행만 앰버로 650ms
         var fresh = _loadedOnce ? vms.Where(v => !_knownIds.Contains(v.Id)).ToList() : new List<RowVm>();

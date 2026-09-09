@@ -7,7 +7,13 @@ namespace LabelSuite.Core;
 
 public sealed record BarcodeHit(
     string Symbology, string Text, (int X, int Y, int W, int H) Bbox, bool IsGs1,
-    string? Grade = null);
+    string? Grade = null)
+{
+    /// <summary>DataMatrix 심볼 — 요청에 따라 화면·저장 이미지에 바운딩 박스만 표시하고
+    /// GTIN 카운트·바코드 검증(교차 대조) 대상에서는 제외한다.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsDataMatrix => Symbology.Contains("DataMatrix", StringComparison.OrdinalIgnoreCase);
+}
 
 public static class BarcodeSymbology
 {

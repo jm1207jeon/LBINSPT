@@ -163,11 +163,17 @@ public static class Annotate
     public static readonly SKColor FormBoxColor = new(128, 0, 160);
     public static readonly SKColor LowConfidenceColor = new(255, 140, 0);
 
-    public static void DrawSummaryBox(SKBitmap image, InspectionOutcome outcome)
+    public static void DrawSummaryBox(SKBitmap image, InspectionOutcome outcome,
+                                      InspectorVerdict? inspector = null)
     {
         using var canvas = new SKCanvas(image);
+        var finalPassed = inspector?.Passed ?? outcome.Passed;
         var lines = new List<(string Text, bool Ok)>
-        { ($"[{outcome.Standard.Name}] {(outcome.Passed ? "PASSED" : "CHECK")}", outcome.Passed) };
+        { ($"[{outcome.Standard.Name}] {(finalPassed ? "PASSED" : "CHECK")}", finalPassed) };
+        // 검사자 확인 합격: 자동 판정(CHECK)과 검사자 처리를 함께 남겨 이미지만 봐도 경위를 알 수 있게
+        if (inspector is not null)
+            lines.Add(($"INSPECTOR {(inspector.Passed ? "PASS" : "FAIL")} (auto {(outcome.Passed ? "PASSED" : "CHECK")})",
+                       inspector.Passed));
         // 2번째 줄: 화면 배지의 사유줄과 같은 문구 (저장 이미지만 봐도 왜 확인 필요인지 알 수 있게)
         var reason = InspectionSummary.Describe(outcome);
         if (reason.Length > 0)
@@ -202,10 +208,13 @@ public static class Annotate
     public static void SaveAnnotatedJpeg(
         SKBitmap image, InspectionOutcome outcome,
         IReadOnlyDictionary<string, (byte R, byte G, byte B, byte A)> colors,
-        string path, double scale = 0.5, int quality = 90, OverlayStyle? style = null)
+        string path, double scale = 0.5, int quality = 90, OverlayStyle? style = null,
+        InspectorVerdict? inspector = null, IEnumerable<BarcodeHit>? barcodes = null)
     {
         using var annotated = RenderOverlays(image, outcome.AllMatches, colors, style);
-        DrawSummaryBox(annotated, outcome);
+        // 검출된 바코드(DataMatrix 등) 박스도 저장본에 — 화면과 같은 표시
+        if (barcodes is not null) DrawBarcodeBoxes(annotated, barcodes, style);
+        DrawSummaryBox(annotated, outcome, inspector);
         SKBitmap final = annotated;
         if (scale is > 0 and < 1)
             final = annotated.Resize(

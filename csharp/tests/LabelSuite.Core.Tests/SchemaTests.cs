@@ -122,7 +122,8 @@ public class ConfigAndStandardsTests
             File.WriteAllText(Path.Combine(directory, "settings.json"),
                               """{"schema_version": 1}""");
             var config = new AppConfig(directory);
-            Assert.True(config.Settings.ContainsKey("country_standard_map"));
+            Assert.True(config.Settings.ContainsKey("shelf_life_months"));
+            Assert.False(config.Settings.ContainsKey("country_standard_map"));   // 규격은 라벨 문서번호로 — 국가 매핑 제거
             Assert.Equal("all", config.GetString("prefetch_policy"));
         }
         finally { Directory.Delete(directory, recursive: true); }

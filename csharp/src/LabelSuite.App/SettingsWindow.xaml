@@ -278,7 +278,7 @@
                                   AutoGenerateColumns="True" CanUserAddRows="False"
                                   Height="200"/>
                     </GroupBox>
-                    <GroupBox Header="라벨 양식 자동 감지 (양식명 위치·패턴으로 라벨 종류 판별)">
+                    <GroupBox Header="라벨 양식 자동 감지 — 선택 사항 (규격은 라벨 문서번호 Rev.A00 · BSL-01 · PML-001(Rev.1)로 자동 선택됨 · 그것으로 부족할 때만 위치·패턴 규칙 추가)">
                         <StackPanel>
                             <DataGrid x:Name="FormRulesGrid" IsReadOnly="False"
                                       AutoGenerateColumns="False" CanUserAddRows="True"

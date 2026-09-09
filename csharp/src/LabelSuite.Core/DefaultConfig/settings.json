@@ -13,11 +13,6 @@
     "profile": ""
   },
   "shelf_life_months": 36,
-  "country_standard_map": {
-    "일본": "BSC",
-    "중국": "중국",
-    "*": "MDR"
-  },
   "pdf_render_zoom": 4.0,
   "prefetch_policy": "all",
   "ocr_cache_max_entries": 500,

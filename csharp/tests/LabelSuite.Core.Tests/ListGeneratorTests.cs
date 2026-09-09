@@ -68,9 +68,6 @@ public class CleanRefTests
 
 public class GenerateListTests : IDisposable
 {
-    private static readonly Dictionary<string, string> CountryMap =
-        new() { ["일본"] = "BSC", ["중국"] = "중국", ["*"] = "MDR" };
-
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
     private readonly ColumnMaps _maps;
@@ -150,18 +147,18 @@ public class GenerateListTests : IDisposable
         var product = InputFrame.Load(
             BuildProduct(("HANARO-01", 8806173612345.0)), _maps.Product);
         var result = ListGenerator.Generate(schedule, product, null,
-            new HashSet<DateOnly> { new(2024, 5, 10) }, _maps, CountryMap);
+            new HashSet<DateOnly> { new(2024, 5, 10) }, _maps);
         var record = Assert.Single(result.Records);
         Assert.Equal("24A1234", record.Lot);
         Assert.Equal("NCN20-080-230", record.Ref);
         Assert.Equal("2024-05-10", record.MfgDate);
         Assert.Equal("2027-05-09", record.ExpDate);
         Assert.Equal("08806173612345", record.Gtin);   // GTIN-14 (레거시는 13자리)
-        Assert.Equal("MDR", record.Standard);
+        Assert.Null(record.Standard);   // 규격은 목록이 아니라 라벨 문서번호로 정한다
     }
 
     [Fact]
-    public void JapanRowUsesBscAndDotDates()
+    public void JapanRowUsesBscRefAndGtin()
     {
         var schedule = InputFrame.Load(
             BuildSchedule(("24A1234", "HANARO-01", "일본", new DateTime(2024, 5, 10))),
@@ -171,13 +168,14 @@ public class GenerateListTests : IDisposable
         var bsc = InputFrame.Load(
             BuildBsc(("M730-BSC-REF", "HANARO-01", "4987654321098")), _maps.Bsc);
         var result = ListGenerator.Generate(schedule, product, bsc,
-            new HashSet<DateOnly> { new(2024, 5, 10) }, _maps, CountryMap);
+            new HashSet<DateOnly> { new(2024, 5, 10) }, _maps);
         var record = Assert.Single(result.Records);
         Assert.Equal("M730-BSC-REF", record.Ref);
-        Assert.Equal("2024.05.10", record.MfgDate);
-        Assert.Equal("2027.05.09", record.ExpDate);
+        // 날짜는 표준 표기로 저장 — 검사 시 규격(BSC → yyyy.MM.dd)의 date_format으로 재표기된다
+        Assert.Equal("2024-05-10", record.MfgDate);
+        Assert.Equal("2027-05-09", record.ExpDate);
         Assert.Equal("04987654321098", record.Gtin);
-        Assert.Equal("BSC", record.Standard);
+        Assert.Null(record.Standard);
     }
 
     [Fact]
@@ -189,7 +187,7 @@ public class GenerateListTests : IDisposable
         var product = InputFrame.Load(
             BuildProduct(("HANARO-01", 8806173612345.0)), _maps.Product);
         var result = ListGenerator.Generate(schedule, product, null,
-            new HashSet<DateOnly> { new(2024, 2, 29) }, _maps, CountryMap);
+            new HashSet<DateOnly> { new(2024, 2, 29) }, _maps);
         var record = Assert.Single(result.Records);
         Assert.Equal("2027-02-27", record.ExpDate);
         Assert.Equal(0, result.ErrorCount);
@@ -206,7 +204,7 @@ public class GenerateListTests : IDisposable
         var bsc = InputFrame.Load(
             BuildBsc(("REF-X", "OTHER-PN", "999")), _maps.Bsc);
         var result = ListGenerator.Generate(schedule, product, bsc,
-            new HashSet<DateOnly> { new(2024, 5, 10) }, _maps, CountryMap);
+            new HashSet<DateOnly> { new(2024, 5, 10) }, _maps);
         Assert.Equal("08806173612345", result.Records[0].Gtin);
         Assert.Contains(result.Issues, i => i.Message.Contains("품목리스트 값으로 대체"));
     }
@@ -220,7 +218,7 @@ public class GenerateListTests : IDisposable
         var product = InputFrame.Load(
             BuildProduct(("HANARO-01", 8806173612345.0)), _maps.Product);
         var result = ListGenerator.Generate(schedule, product, null,
-            new HashSet<DateOnly> { new(2024, 5, 10) }, _maps, CountryMap);
+            new HashSet<DateOnly> { new(2024, 5, 10) }, _maps);
         Assert.Equal("", result.Records[0].Gtin);
         Assert.Contains(result.Issues, i => i.Message.Contains("GTIN을 찾지 못했습니다"));
     }
@@ -236,7 +234,7 @@ public class GenerateListTests : IDisposable
             BuildProduct(("HANARO-01", 8806173612345.0)), _maps.Product);
         var result = ListGenerator.Generate(schedule, product, null,
             new HashSet<DateOnly> { new(2024, 5, 10), new(2024, 5, 12) },
-            _maps, CountryMap);
+            _maps);
         Assert.Equal(["L-A", "L-C"], result.Records.Select(r => r.Lot).ToArray());
     }
 

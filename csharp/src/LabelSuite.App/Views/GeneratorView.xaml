@@ -95,7 +95,6 @@
                         <DataGridTextColumn Header="MFG DATE" Binding="{Binding MfgDate}"/>
                         <DataGridTextColumn Header="EXP DATE" Binding="{Binding ExpDate}"/>
                         <DataGridTextColumn Header="GTIN" Binding="{Binding Gtin}"/>
-                        <DataGridTextColumn Header="STANDARD" Binding="{Binding Standard}"/>
                     </DataGrid.Columns>
                     <!-- 같은 제조일·PN 묶음이 바뀔 때마다 배경을 교대로 — 묶음 경계를 눈으로 구분 -->
                     <DataGrid.RowStyle>

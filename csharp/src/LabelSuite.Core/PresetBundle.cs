@@ -23,7 +23,7 @@ public static class PresetBundle
     /// <summary>settings.json 중 프리셋에 담는 키 — 검사 규칙에 해당하는 것만.</summary>
     public static readonly string[] SettingsKeys =
     [
-        "shelf_life_months", "country_standard_map", "ocr", "fields", "preprocess",
+        "shelf_life_months", "ocr", "fields", "preprocess",
         "type_learning", "label_forms", "overlay", "pdf_render_zoom",
     ];
 

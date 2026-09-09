@@ -47,7 +47,7 @@ public class Gs1TolerantParseTests
             Gs1.Parse("(01)08806367067654(91)ABC", tolerant: false));
 }
 
-public class BarcodeTruthTests
+public class BarcodeVerificationRuleTests
 {
     private static InspectionEngine Engine()
     {
@@ -66,41 +66,105 @@ public class BarcodeTruthTests
     ];
 
     [Fact]
-    public void UnparseableGs1BarcodeForcesCheckNotOcrFallback()
+    public void DataMatrixIsExcludedFromChecksAndCount()
     {
-        // 바코드는 읽혔지만 구조가 깨짐(GS1 외형) — OCR에 정확한 (01) 텍스트가 있어도 폴백 금지
+        // 요청: DataMatrix는 박스만 — 값이 틀려도 검증 행·GTIN 카운트에 영향 없음
         var hits = new List<BarcodeHit>
-        { new("GS1 DataMatrix", "(01)ABC", (10, 10, 50, 50), IsGs1: true) };
-        var checks = BarcodeDetector.CrossCheckHits(hits, Record);
-        var outcome = Engine().Inspect(Record, "MDR", WordsWithPrintedGtin(), checks,
-                                       "", (300, 300), hits);
-        Assert.Equal(0, outcome.Fields["GTIN"].Found);
-        Assert.False(outcome.Passed);
-        Assert.Contains(outcome.BarcodeChecks, c => c.Field == "GS1 해석" && !c.Matched);
+        { new("GS1 DataMatrix", "(01)08806367067699(10)WRONG", (10, 10, 50, 50), IsGs1: true) };
+        Assert.True(hits[0].IsDataMatrix);
+        Assert.Empty(BarcodeDetector.CrossCheckHits(hits, Record));
+        Assert.Equal(("(01)08806367067699(10)WRONG", "-", null), BarcodeDetector.Summarize(hits[0], Record));
+        var outcome = Engine().Inspect(Record, "MDR", WordsWithPrintedGtin(), [], "", (300, 300), hits);
+        Assert.Equal(1, outcome.Fields["GTIN"].Found);
     }
 
     [Fact]
-    public void NoBarcodeStillFallsBackToOcr()
+    public void Gs1_128WithSymbologyPrefixAndGsSeparatorsMatches()
     {
-        var outcome = Engine().Inspect(Record, "MDR", WordsWithPrintedGtin(), [], "",
-                                       (300, 300), []);
-        Assert.Equal(1, outcome.Fields["GTIN"].Found);
+        // ZXing AssumeGS1: 선두 FNC1 → ']C1', 이후 FNC1 → GS
+        var text = "]C1" + "0108806367067654" + "1025090776" + "\u001d" + "17270509";
+        Assert.True(BarcodeDetector.LooksGs1(text));
+        var hit = new BarcodeHit("GS1-128", text, (0, 0, 300, 60), IsGs1: true);
+        var checks = BarcodeDetector.CrossCheckHits([hit], Record);
+        Assert.Contains(checks, c => c.Field == "GTIN" && c.Matched && c.BarcodeValue == "08806367067654");
+        Assert.Contains(checks, c => c.Field == "LOT" && c.Matched);
+        Assert.Contains(checks, c => c.Field == "EXP DATE" && c.Matched);
+        Assert.Equal("일치", BarcodeDetector.Summarize(hit, Record).State);
+    }
+
+    [Fact]
+    public void Gs1_128WithoutFnc1IsRepairedByExpectedLot()
+    {
+        // FNC1이 버려진 디코드: (10) 값이 뒤의 (17)까지 삼킴 → 기대 LOT 뒤 잔여가 온전한 AI 열이면 분리
+        var hit = new BarcodeHit("GS1-128", "0108806367067654" + "1025090776" + "17270509", (0, 0, 300, 60), IsGs1: true);
+        var checks = BarcodeDetector.CrossCheckHits([hit], Record);
+        Assert.Contains(checks, c => c.Field == "LOT" && c.Matched && c.BarcodeValue == "25090776");
+        Assert.Contains(checks, c => c.Field == "EXP DATE" && c.Matched && c.BarcodeValue == "270509");
+        Assert.Contains(checks, c => c.Field == "FNC1 누락" && c.Matched);
+        Assert.All(checks, c => Assert.True(c.Matched));
+        var (_, state, tip) = BarcodeDetector.Summarize(hit, Record);
+        Assert.Equal("일치", state);
+        Assert.Contains("FNC1", tip);
+    }
+
+    [Fact]
+    public void Gs1_128LotTrulyDifferentStaysMismatch()
+    {
+        var hit = new BarcodeHit("GS1-128", "0108806367067654" + "1025099999", (0, 0, 300, 60), IsGs1: true);
+        var checks = BarcodeDetector.CrossCheckHits([hit], Record);
+        Assert.Contains(checks, c => c.Field == "GTIN" && c.Matched);
+        Assert.Contains(checks, c => c.Field == "LOT" && !c.Matched);
+        Assert.Equal("불일치", BarcodeDetector.Summarize(hit, Record).State);
+    }
+
+    [Fact]
+    public void Gs1_128UnparseableTailStillComparesLeadingGtin()
+    {
+        // 요청 규칙: (01) 다음 14자리를 GTIN으로 대조 — 뒤 (10) 값이 최대 길이를 넘어 해석 불가여도
+        var text = "(01)08806367067654(10)" + new string('X', 25);
+        Assert.Throws<Gs1ParseException>(() => Gs1.Parse(text));
+        Assert.Equal("08806367067654", Gs1.TryExtractGtin(text));
+        var hit = new BarcodeHit("GS1-128", text, (0, 0, 300, 60), IsGs1: true);
+        var checks = BarcodeDetector.CrossCheckHits([hit], Record);
+        Assert.Contains(checks, c => c.Field == "GTIN" && c.Matched);
+        Assert.DoesNotContain(checks, c => !c.Matched);
+        var (value, state, _) = BarcodeDetector.Summarize(hit, Record);
+        Assert.Equal("일치", state);
+        Assert.StartsWith("(01)08806367067654", value);
+    }
+
+    [Fact]
+    public void Gs1_128WithoutExtractableGtinForcesCheck()
+    {
+        var hit = new BarcodeHit("GS1-128", "]C1" + "01ABCDEFGHIJKLMN", (0, 0, 300, 60), IsGs1: true);
+        var checks = BarcodeDetector.CrossCheckHits([hit], Record);
+        Assert.Contains(checks, c => c.Field == "GS1 해석" && !c.Matched);
+        Assert.Equal("해석 불가", BarcodeDetector.Summarize(hit, Record).State);
+        var outcome = Engine().Inspect(Record, "MDR", WordsWithPrintedGtin(), checks, "", (300, 300), [hit]);
+        Assert.False(outcome.Passed);
+    }
+
+    [Fact]
+    public void TryExtractGtinRules()
+    {
+        Assert.Equal("08806367067654", Gs1.TryExtractGtin("]C10108806367067654" + "10ABC"));
+        Assert.Equal("08806367067654", Gs1.TryExtractGtin("(01)08806367067654(10)ABC"));
+        Assert.Null(Gs1.TryExtractGtin("1025090776" + "0108806367067654"));   // (01)이 맨 앞이 아니면 규칙 밖
+        Assert.Null(Gs1.TryExtractGtin("010880636706"));                        // 14자리 미만
+        Assert.Null(Gs1.TryExtractGtin(""));
     }
 
     [Fact]
     public void PartialMessageStillCrossChecksLotAndGtin()
     {
         var hits = new List<BarcodeHit>
-        { new("GS1 DataMatrix", "(01)08806367067654(10)25090776(91)XYZ", (10, 10, 50, 50), IsGs1: true) };
+        { new("GS1-128", "(01)08806367067654(10)25090776(91)XYZ", (10, 10, 300, 60), IsGs1: true) };
         var checks = BarcodeDetector.CrossCheckHits(hits, Record);
         Assert.Contains(checks, c => c.Field == "GTIN" && c.Matched);
         Assert.Contains(checks, c => c.Field == "LOT" && c.Matched);
         var reference = Assert.Single(checks, c => c.Field == "미등록 AI");
         Assert.True(reference.Matched);
         Assert.Equal("91", reference.BarcodeValue);
-        var outcome = Engine().Inspect(Record, "MDR", WordsWithPrintedGtin(), checks, "",
-                                       (300, 300), hits);
-        Assert.Equal(1, outcome.Fields["GTIN"].Found);
     }
 }
 

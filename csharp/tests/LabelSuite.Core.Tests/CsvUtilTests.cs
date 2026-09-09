@@ -100,19 +100,38 @@ public class InspectionCsvTests : IDisposable
         Assert.Equal("00123", CsvUtil.Unwrap(row1[1]));
         Assert.Equal("08806173612345", CsvUtil.Unwrap(row1[4]));
         Assert.Equal(outcome.Passed ? "MATCH" : "CHECK", row1[8]);
-        Assert.Equal(@"C:\out\p1.jpg", CsvUtil.Unwrap(row1[16]));
-        Assert.Equal(@"C:\scan\labels.pdf", row1[17]);
-        Assert.Equal("2026-09-08 10:30:00", row1[18]);
-        Assert.Equal("1.2.3", row1[19]);
+        Assert.Equal("", row1[9]);                       // INSPECTOR: 검사자 처리 없음
+        Assert.Equal(row1[8], row1[10]);                 // FINAL = AUTO
+        Assert.Equal(@"C:\out\p1.jpg", CsvUtil.Unwrap(row1[20]));
+        Assert.Equal(@"C:\scan\labels.pdf", row1[21]);
+        Assert.Equal("2026-09-08 10:30:00", row1[22]);
+        Assert.Equal("1.2.3", row1[23]);
         // FIELD_LOT은 검출/기대, 기대 없는 필드는 '-'
-        Assert.Matches(@"^\d+/\d+$", row1[9]);
+        Assert.Matches(@"^\d+/\d+$", row1[11]);
 
         // 미검사 행: 값 빈칸·AUTO=UNINSPECTED, 페이지 번호는 1-based
         var row2 = CsvUtil.ParseLine(lines[2]);
         Assert.Equal("2", row2[0]);
         Assert.Equal("", row2[1]);
         Assert.Equal("UNINSPECTED", row2[8]);
-        Assert.Equal("1.2.3", row2[19]);
+        Assert.Equal("UNINSPECTED", row2[10]);
+        Assert.Equal("1.2.3", row2[23]);
+    }
+
+    [Fact]
+    public void InspectorPassOverridesFinalButKeepsAuto()
+    {
+        var outcome = Inspect();
+        Assert.False(outcome.Passed);   // 전제: 자동 판정은 확인 필요
+        var verdict = new InspectorVerdict(true, "inspector1", new DateTime(2026, 9, 9, 9, 0, 0), "육안 확인: LOT 인쇄 정상");
+        var line = InspectionCsv.Row(0, outcome, null, "x.pdf", DateTime.Now, "v", inspector: verdict);
+        var cells = CsvUtil.ParseLine(line);
+        Assert.Equal("CHECK", cells[8]);
+        Assert.Equal("PASS", cells[9]);
+        Assert.Equal("MATCH", cells[10]);
+        Assert.Equal("육안 확인: LOT 인쇄 정상", cells[18]);
+        Assert.Equal("inspector1", cells[19]);
+        Assert.Equal(InspectionCsv.ColumnCount, cells.Count);
     }
 
     [Fact]

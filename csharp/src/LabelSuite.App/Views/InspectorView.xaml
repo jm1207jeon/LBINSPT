@@ -55,6 +55,14 @@
                         <Button x:Name="NextAttentionButton" Content="다음 확인 대상 ▶" IsEnabled="False"
                                 Click="OnNextAttention" AutomationProperties.Name="다음 확인 대상"
                                 ToolTip="다음 미검사 또는 확인 필요 페이지로 이동 (N)"/>
+                        <Separator Style="{StaticResource VSep}"/>
+                        <Button x:Name="AutoInspectButton" Content="▶ 자동 검사" IsEnabled="False"
+                                Style="{StaticResource AccentButton}" Click="OnAutoInspect"
+                                AutomationProperties.Name="자동 검사"
+                                ToolTip="전체 페이지를 순서대로 자동 검사해 합격 / 부적합(확인 필요) 로트를 나눕니다.&#10;OCR이 안 끝난 페이지는 기다립니다 · 실행 중 다시 누르면 중지 · 끝나면 결과 목록이 열립니다"/>
+                        <Button x:Name="ResultListButton" Content="결과 목록" IsEnabled="False"
+                                Click="OnShowResultList" AutomationProperties.Name="검사 결과 목록"
+                                ToolTip="페이지·로트별 판정 목록 — 부적합만 보기, 행을 클릭해 해당 페이지로 이동,&#10;문제를 해결한 뒤 검사자 확인 합격 처리"/>
                         <TextBlock x:Name="PageLabel" Text="- / -" FontWeight="Bold"
                                    VerticalAlignment="Center" Margin="6,0"/>
                         <TextBlock x:Name="PrefetchLabel" VerticalAlignment="Center"
@@ -89,10 +97,10 @@
                                 ToolTip="결과 이미지 저장 폴더를 탐색기로 엽니다"/>
                     </WrapPanel>
                 </DockPanel>
-                <!-- 페이지 상태 슬롯 5상태: 회색=OCR 대기 / 흰=검사 대기 / 녹 ✓=합격 / 주황 !=확인 필요 / ?=LOT 미매칭,
-                     하단 초록 띠=저장됨, 파랑 굵은 테두리=현재. 클릭=이동 -->
+                <!-- 페이지 상태 슬롯: 회색=OCR 대기 / 흰=검사 대기 / 녹 ✓=합격 / 주황 !=확인 필요 / ?=LOT 미매칭 /
+                     녹 ✓ 굵은 초록 테두리=검사자 확인 합격, 하단 초록 띠=저장됨, 파랑 굵은 테두리=현재. 클릭=이동 -->
                 <ItemsControl x:Name="PageSlots" Margin="2,4,2,0"
-                              ToolTip="페이지 슬롯 — 회색=OCR 대기 / 흰=검사 대기 / 녹 ✓=합격 / 주황 !=확인 필요 / ?=LOT 미매칭 / 초록 띠=저장됨 / 파랑 굵은 테두리=현재 (클릭: 이동)">
+                              ToolTip="페이지 슬롯 — 회색=OCR 대기 / 흰=검사 대기 / 녹 ✓=합격 / 주황 !=확인 필요 / ?=LOT 미매칭 / 굵은 초록 테두리=검사자 확인 합격 / 초록 띠=저장됨 / 파랑 굵은 테두리=현재 (클릭: 이동)">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <UniformGrid Rows="1"/>
@@ -143,7 +151,7 @@
                             </StackPanel>
                         </Border>
                         <Border Style="{StaticResource Chip}" Margin="0,2,6,2"
-                                ToolTip="검출된 바코드(DataMatrix·GS1-128 등) 박스">
+                                ToolTip="검출된 바코드 박스 — DataMatrix는 위치 표시만(카운트·검증 제외), GS1-128은 아래 표에서 GTIN 대조">
                             <StackPanel Orientation="Horizontal">
                                 <Rectangle Width="12" Height="12" Margin="0,0,4,0"
                                            Fill="{StaticResource OverlayBarcodeBrush}"/>
@@ -151,15 +159,15 @@
                             </StackPanel>
                         </Border>
                         <Border Style="{StaticResource Chip}" Margin="0,2,6,2"
-                                ToolTip="규격 자동 판별에 쓰인 양식명 영역 · 양식 규칙 영역(점선)">
+                                ToolTip="규격 자동 선택에 쓰인 라벨 문서번호(Rev.A00 · BSL-01 …) 영역 · 양식 규칙 영역(점선)">
                             <StackPanel Orientation="Horizontal">
                                 <Rectangle Width="12" Height="12" Margin="0,0,4,0"
                                            Fill="{StaticResource OverlayFormBrush}"/>
-                                <TextBlock Text="양식" FontSize="{StaticResource CaptionSize}" VerticalAlignment="Center"/>
+                                <TextBlock Text="문서번호" FontSize="{StaticResource CaptionSize}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Border>
                         <Border Style="{StaticResource Chip}" Margin="0,2,6,2"
-                                ToolTip="OCR 신뢰도가 낮은 단어 (주황 파선) — 오인식 가능성, 육안 확인">
+                                ToolTip="검출된 필드 중 OCR 신뢰도가 낮은 단어 (주황 파선) — 오인식 가능성, 육안 확인. 필드가 아닌 단어에는 표시하지 않음">
                             <StackPanel Orientation="Horizontal">
                                 <Rectangle Width="12" Height="12" Margin="0,0,4,0" Fill="Transparent"
                                            Stroke="{StaticResource OverlayLowConfBrush}" StrokeThickness="2"
@@ -293,16 +301,18 @@
                                    KeyboardNavigation.TabNavigation="Local"
                                    AutomationProperties.Name="규격 선택"/>
                     </DockPanel>
+                    <!-- 라벨에 인쇄된 문서번호(Rev.A00 · BSL-01 · PML-001(Rev.1))로 규격을 자동 선택 — 목록의 규격 열은 쓰지 않는다 -->
                     <DockPanel x:Name="FormRow" Margin="0,4,0,0"
-                               Visibility="Collapsed">
-                        <TextBlock DockPanel.Dock="Left" Text="양식:" Width="34"
+                               ToolTip="라벨에서 읽은 양식 문서번호 → 자동 선택된 규격. 미감지면 이전 규격을 유지하고, 규격 버튼으로 이 페이지만 수동 지정할 수 있습니다">
+                        <TextBlock DockPanel.Dock="Left" Text="문서:" Width="34"
                                    VerticalAlignment="Center"/>
-                        <Button DockPanel.Dock="Right" Content="양식 학습"
-                                Click="OnLearnForm"
-                                ToolTip="현재 페이지의 규칙 영역 이미지를 이 양식의 기준 템플릿으로 학습합니다"/>
+                        <Button DockPanel.Dock="Right" x:Name="LearnFormButton" Content="양식 학습"
+                                Click="OnLearnForm" Visibility="Collapsed"
+                                ToolTip="현재 페이지의 규칙 영역 이미지를 이 양식의 기준 템플릿으로 학습합니다 (설정 › 라벨 양식 감지에 '이미지' 규칙이 있을 때)"/>
                         <TextBlock x:Name="FormMatchLabel" VerticalAlignment="Center"
-                                   FontWeight="Bold"
-                                   Foreground="{StaticResource SuccessBrush}"/>
+                                   FontWeight="Bold" TextTrimming="CharacterEllipsis"
+                                   Foreground="{StaticResource SuccessBrush}"
+                                   ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
                     </DockPanel>
                     <DockPanel Margin="0,2,0,0">
                         <TextBlock DockPanel.Dock="Left" Text="검색:" Width="34"
@@ -319,10 +329,15 @@
                     BorderThickness="2" Margin="4,2,4,2"
                     ToolTip="프로그램의 검출 결과 요약입니다 — 최종 판정은 검사자가 합니다. '확인 필요'는 불합격이 아니라 검사자 확인 대기입니다">
                 <StackPanel>
+                    <!-- 판정 헤드라인은 한 줄 — 넘치면 말줄임(…) + 툴팁에 전문. 판정 없음(OCR 실패·목록 없음) 메시지는
+                         코드에서 SubCountSize로 줄여 표시한다 (24px로 잘려 보이던 문제) -->
                     <TextBlock x:Name="StatusBadgeText" Text="검사 대기" Style="{StaticResource ReadoutText}"
-                               Foreground="{StaticResource MutedBrush}"/>
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="NoWrap"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
                     <TextBlock x:Name="BadgeReasonText" Text="" Style="{StaticResource CaptionText}"
-                               TextWrapping="Wrap" Margin="0,2,0,0"/>
+                               TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"
+                               ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
                 </StackPanel>
             </Border>
 
@@ -355,7 +370,7 @@
                 </DataGrid>
             </GroupBox>
 
-            <GroupBox Grid.Row="4" Header="바코드 검증 (라벨 위→아래 순 · 종류/등급/값/일치)">
+            <GroupBox Grid.Row="4" Header="바코드 검증 (GS1-128 등 · DataMatrix는 박스 표시만 · 위→아래 순)">
                 <DataGrid x:Name="BarcodeGrid" AutomationProperties.Name="바코드 검증 결과">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="No." Binding="{Binding Order}" Width="38"

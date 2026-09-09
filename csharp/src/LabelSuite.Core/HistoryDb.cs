@@ -5,7 +5,12 @@ namespace LabelSuite.Core;
 
 public sealed record InspectionRow(
     long Id, string Ts, string Lot, string Ref, string Pn, string Products,
-    string Standard, string Source, int? Page, bool Passed, string ImagePath);
+    string Standard, string Source, int? Page, bool Passed, string ImagePath,
+    string InspectorVerdict = "", string InspectorNote = "", string InspectorBy = "")
+{
+    /// <summary>최종 판정 — 검사자 확인 합격이 있으면 그것, 없으면 자동 판정.</summary>
+    public bool FinalPassed => InspectorVerdict == "PASS" || (InspectorVerdict.Length == 0 && Passed);
+}
 
 public sealed record FieldRow(string Field, int? Expected, int Found, bool Passed);
 
@@ -55,6 +60,20 @@ public sealed class HistoryDb : IDisposable
         Execute("PRAGMA journal_mode=WAL");
         Execute("PRAGMA foreign_keys=ON");
         Execute(SchemaSql);
+        // 스키마 확장(구버전 DB 호환): 검사자 최종 처리 열
+        foreach (var column in new[] { "inspector_verdict", "inspector_note", "inspector_by" })
+            if (!HasColumn("inspections", column))
+                Execute($"ALTER TABLE inspections ADD COLUMN {column} TEXT");
+    }
+
+    private bool HasColumn(string table, string column)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({table})";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
     }
 
     private void Execute(string sql, params (string, object?)[] parameters)
@@ -66,9 +85,10 @@ public sealed class HistoryDb : IDisposable
         command.ExecuteNonQuery();
     }
 
+    /// <summary>검사 기록. passed는 자동 판정, inspector가 있으면 검사자 최종 처리(PASS/FAIL·사유·처리자)를 함께 남긴다.</summary>
     public long RecordInspection(InspectionOutcome outcome, string imagePath,
                                  string source, string? pdfPath = null, int? page = null,
-                                 DateTime? ts = null)
+                                 DateTime? ts = null, InspectorVerdict? inspector = null)
     {
         var record = outcome.Record;
         using var transaction = _connection.BeginTransaction();
@@ -76,10 +96,15 @@ public sealed class HistoryDb : IDisposable
         insert.Transaction = transaction;
         insert.CommandText = """
             INSERT INTO inspections (ts, lot, ref, pn, products, gtin, standard,
-              source, pdf_path, page, passed, image_path, app_version)
-            VALUES ($ts,$lot,$ref,$pn,$products,$gtin,$standard,$source,$pdf,$page,$passed,$img,$ver);
+              source, pdf_path, page, passed, image_path, app_version,
+              inspector_verdict, inspector_note, inspector_by)
+            VALUES ($ts,$lot,$ref,$pn,$products,$gtin,$standard,$source,$pdf,$page,$passed,$img,$ver,
+              $iv,$inote,$iby);
             SELECT last_insert_rowid();
             """;
+        insert.Parameters.AddWithValue("$iv", inspector is null ? DBNull.Value : inspector.Passed ? "PASS" : "FAIL");
+        insert.Parameters.AddWithValue("$inote", (object?)inspector?.Note ?? DBNull.Value);
+        insert.Parameters.AddWithValue("$iby", (object?)inspector?.By ?? DBNull.Value);
         insert.Parameters.AddWithValue("$ts", (ts ?? DateTime.Now).ToString("yyyy-MM-ddTHH:mm:ss"));
         insert.Parameters.AddWithValue("$lot", record.Lot);
         insert.Parameters.AddWithValue("$ref", record.Ref);
@@ -159,7 +184,7 @@ public sealed class HistoryDb : IDisposable
     {
         using var command = _connection.CreateCommand();
         var sql = "SELECT id, ts, lot, ref, pn, products, standard, source, page, passed," +
-                  " image_path FROM inspections WHERE 1=1";
+                  " image_path, inspector_verdict, inspector_note, inspector_by FROM inspections WHERE 1=1";
         if (!string.IsNullOrEmpty(lot))
         {
             sql += " AND lot LIKE $lot";
@@ -186,7 +211,10 @@ public sealed class HistoryDb : IDisposable
                 reader.IsDBNull(7) ? "" : reader.GetString(7),
                 reader.IsDBNull(8) ? null : reader.GetInt32(8),
                 reader.GetInt32(9) != 0,
-                reader.IsDBNull(10) ? "" : reader.GetString(10)));
+                reader.IsDBNull(10) ? "" : reader.GetString(10),
+                reader.IsDBNull(11) ? "" : reader.GetString(11),
+                reader.IsDBNull(12) ? "" : reader.GetString(12),
+                reader.IsDBNull(13) ? "" : reader.GetString(13)));
         return rows;
     }
 

@@ -36,7 +36,7 @@ public sealed class InspectionOutcome
 
     /// <summary>판정 내용의 서명(SHA1 앞 16자) — 같은 페이지를 다시 방문·재검사해도 판정이 같으면
     /// 자동 저장이 중복 파일·이력을 만들지 않게 하는 비교 키. 필드/바코드 순서와 무관하다.</summary>
-    public string Signature()
+    public string Signature(bool includeSearch = true)
     {
         var parts = new List<string>
         {
@@ -47,11 +47,18 @@ public sealed class InspectionOutcome
         parts.AddRange(BarcodeChecks
             .OrderBy(c => c.Field, StringComparer.Ordinal).ThenBy(c => c.BarcodeValue, StringComparer.Ordinal)
             .Select(c => $"{c.Field}={c.BarcodeValue}:{(c.Matched ? 1 : 0)}"));
-        parts.Add(SearchTerm.Trim());
+        if (includeSearch) parts.Add(SearchTerm.Trim());
         var bytes = System.Security.Cryptography.SHA1.HashData(
             System.Text.Encoding.UTF8.GetBytes(string.Join("|", parts)));
         return Convert.ToHexString(bytes)[..16].ToLowerInvariant();
     }
+}
+
+/// <summary>검사자 최종 처리 — 자동 판정이 '확인 필요'인 페이지를 검사자가 육안 확인 후 합격으로 확정한 기록.
+/// 자동 판정(InspectionOutcome.Passed)은 그대로 보존되고, 이 기록이 있으면 최종 판정만 바뀐다.</summary>
+public sealed record InspectorVerdict(bool Passed, string By, DateTime At, string Note)
+{
+    public string Display => Passed ? "합격(검사자 확인)" : "부적합(검사자)";
 }
 
 public sealed record LotMatchResult(
@@ -145,33 +152,6 @@ public sealed class InspectionEngine(StandardsBundle standards,
             && !ExcludedWords.Any(w => text.Contains(w, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>바코드 리딩 기반 GTIN 매칭 — 검출된 GS1 바코드의 AI(01) 값과
-    /// 대조한다. GS1 바코드가 하나라도 파싱되면 이것이 기준(OCR 폴백 안 함),
-    /// 없으면 null을 반환해 OCR 경로로 폴백한다.</summary>
-    private static List<TextMatch>? BarcodeGtinMatches(
-        string gtin14, IReadOnlyList<BarcodeHit>? barcodes)
-    {
-        if (barcodes is not { Count: > 0 }) return null;
-        var matches = new List<TextMatch>();
-        var sawGs1 = false;
-        foreach (var hit in barcodes)
-        {
-            // GS1 외형(GS 구분자·(01)·01+14자리)인 바코드가 하나라도 있으면 바코드가 판정 원천이다 —
-            // 해석에 실패해도 OCR 텍스트로 폴백하지 않는다(매치 0 → 확인 필요). 폴백은 GS1 바코드가
-            // 페이지에 전혀 없을 때만.
-            if (hit.IsGs1 || BarcodeDetector.LooksGs1(hit.Text)) sawGs1 = true;
-            Gs1Message message;
-            try { message = Gs1.Parse(hit.Text); }
-            catch (Gs1ParseException) { continue; }
-            if (message.Get("01") is not { } gtin) continue;
-            sawGs1 = true;
-            if (gtin == gtin14)
-                matches.Add(new TextMatch("GTIN",
-                    new OcrWord($"(01){gtin}", hit.Bbox, 100), gtin14));
-        }
-        return sawGs1 ? matches : null;
-    }
-
     /// <summary>GTIN 매칭 — UDI 문자열에서 AI(01) 구간만 찾아, 바운딩 박스도
     /// (01)+14자리 구간으로 잘라 반환한다 (뒤따르는 (10) 등 다른 AI는 제외).</summary>
     private TextMatch? GtinMatch(string gtin14, OcrWord word)
@@ -231,7 +211,7 @@ public sealed class InspectionEngine(StandardsBundle standards,
                                      IReadOnlyList<CrossCheckResult>? barcodeChecks = null,
                                      string extraSearch = "",
                                      (int W, int H)? pageSize = null,
-                                     IReadOnlyList<BarcodeHit>? barcodes = null)
+                                     IReadOnlyList<BarcodeHit>? barcodes = null)   // 호환용 — 카운트에 쓰지 않음
     {
         // 단어 병합(문장 학습) → 교정 사전(오인식 치환) 순으로 적용
         IReadOnlyList<OcrWord> mergedWords = Options.Merges?.Apply(words) ?? words.ToList();
@@ -255,12 +235,10 @@ public sealed class InspectionEngine(StandardsBundle standards,
             // 기본 검출 필드는 LOT/PN/REF/MFG/EXP/GTIN(+중국 규격의 CHINA) —
             // PRODUCTS는 규격이 명시적으로 기대 횟수를 요구할 때만 검사한다
             if (fieldName == "PRODUCTS" && expected is null or <= 0) continue;
-            // GTIN은 바코드 리딩이 있으면 그것을 기준으로 (인쇄=바코드 가정, OCR보다 정확)
-            var matches = fieldName == "GTIN"
-                && BarcodeGtinMatches(term, barcodes) is { } fromBarcodes
-                ? fromBarcodes
-                : ApplyZones(fieldName, standardName, pageSize,
-                             CountField(fieldName, term, effective));
+            // GTIN 카운트는 인쇄된 '(01)+14자리' 텍스트 기준 (다른 필드와 동일). 바코드(DataMatrix)는
+            // 카운트 대상이 아니며(박스만 표시), GS1-128의 GTIN은 바코드 검증 표에서 별도로 대조한다.
+            var matches = ApplyZones(fieldName, standardName, pageSize,
+                                     CountField(fieldName, term, effective));
             outcome.Fields[fieldName] = new FieldResult
             {
                 Field = fieldName, Term = term, Expected = expected,
@@ -278,7 +256,7 @@ public sealed class InspectionEngine(StandardsBundle standards,
                                      CountCustomField(custom, effective)),
             };
         }
-        var search = extraSearch.Trim();
+        var search = (extraSearch ?? "").Trim();
         if (search.Length > 0)
             outcome.Fields["SEARCH"] = new FieldResult
             {
@@ -433,6 +411,14 @@ public static class BarcodeCrossCheck
         return null;
     }
 
+    /// <summary>(10) 뒤에 붙은 잔여 문자열이 등록 AI로만 이루어진 온전한 GS1 요소열이면 그 메시지, 아니면 null.</summary>
+    private static Gs1Message? TryParseTail(string tail)
+    {
+        if (tail.Length < 3 || !tail.All(char.IsDigit)) return null;   // 잔여가 숫자 AI 열이 아니면 그냥 LOT 불일치
+        try { return Gs1.Parse(tail, tolerant: false); }
+        catch (Gs1ParseException) { return null; }
+    }
+
     /// <summary>바코드 GS1 값과 목록 레코드 교차 검증. 바코드에 없는 AI는 검증하지 않는다.</summary>
     public static List<CrossCheckResult> Check(Gs1Message message, LabelRecord record,
                                                string source)
@@ -448,8 +434,24 @@ public static class BarcodeCrossCheck
         if (message.Get("10") is { } lot)
         {
             var expected = record.Lot.Trim();
-            checks.Add(new CrossCheckResult(source, "LOT", lot, expected,
-                                            expected.Length > 0 && lot == expected));
+            var matched = expected.Length > 0 && lot == expected;
+            // FNC1(구분자) 없이 인쇄·디코드된 GS1-128은 가변장 (10) 값이 뒤따르는 AI(17 유효기한 등)까지
+            // 삼킨다. 기대 LOT 뒤가 온전한 GS1 요소열이면 LOT 일치로 보고 나머지 AI를 분리해 대조한다.
+            if (!matched && expected.Length > 0 && lot.Length > expected.Length
+                && lot.StartsWith(expected, StringComparison.Ordinal)
+                && TryParseTail(lot[expected.Length..]) is { } tail)
+            {
+                checks.Add(new CrossCheckResult(source, "LOT", expected, expected, true));
+                checks.Add(new CrossCheckResult(source, "FNC1 누락", lot[expected.Length..],
+                    "(참고) (10) 뒤 구분자 없이 이어진 AI를 분리해 대조", true));
+                var repaired = new Gs1Message();
+                foreach (var element in message.Elements.Where(e => e.Ai is not "01" and not "10"))
+                    repaired.Elements.Add(element);
+                repaired.Elements.AddRange(tail.Elements);
+                checks.AddRange(Check(repaired, record, source));
+                return checks;
+            }
+            checks.Add(new CrossCheckResult(source, "LOT", lot, expected, matched));
         }
         foreach (var (ai, field, recordValue) in new[]
                  { ("11", "MFG DATE", record.MfgDate), ("17", "EXP DATE", record.ExpDate) })

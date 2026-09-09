@@ -41,6 +41,8 @@ LaVIS와 UDInspect(2D-Verifier)는 같은 회사·같은 검사실에서 쓰는 
 ## 3. 타이포·간격
 
 - 글꼴 미지정(시스템 기본). 크기 계층: 큰 숫자 집계 48~56 / 판독값 24 / 배지 17 / 집계 라벨 14 / 표 13 / 안내 12 / 캡션 11.
+- 판정 배지의 24px 헤드라인은 판정어만(`✓ 합격 (PASSED)` · `⚠ 확인 필요 (CHECK)`) 한 줄 — 규격·사유는 11px 사유줄로 내리고,
+  판정이 아닌 안내(OCR 실패·목록 없음)는 15px 한 줄로 낮춘다. 두 줄 모두 `TextTrimming=CharacterEllipsis` + 툴팁 전문(잘림 금지).
 - Button Padding 10,5 · Margin 2 / GroupBox Margin 4 · Padding 6 / 설정 창 바깥 여백 10, 하단 버튼줄 상단 10.
 - CornerRadius 3단계: 칩 4 / 패널 6 / 오버레이 카드 10.
 - 탭 헤더는 `"  두 칸 여백  "` 관습.

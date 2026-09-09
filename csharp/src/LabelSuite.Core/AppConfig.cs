@@ -403,11 +403,4 @@ public class AppConfig
         Section(section)[key] is { } node && node.AsValue().TryGetValue<bool>(out var v)
             ? v : fallback;
 
-    public Dictionary<string, string> CountryStandardMap()
-    {
-        var result = new Dictionary<string, string>();
-        if (Settings["country_standard_map"] is JsonObject map)
-            foreach (var (k, v) in map) result[k] = v?.GetValue<string>() ?? "";
-        return result;
-    }
 }

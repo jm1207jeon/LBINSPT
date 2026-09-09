@@ -17,7 +17,8 @@ public static class BarcodeBoxRefiner
     /// <summary>ZXing 시드 박스를 실제 심볼 영역으로 확장한다.
     /// oneDimensional=true면 세로 막대(GS1-128 등), 아니면 정방 모듈(DataMatrix·QR).</summary>
     public static (int X, int Y, int W, int H) Refine(
-        SKBitmap image, (int X, int Y, int W, int H) seed, bool oneDimensional)
+        SKBitmap image, (int X, int Y, int W, int H) seed, bool oneDimensional,
+        int? maxGrowth = null)
     {
         if (image.Width < 8 || image.Height < 8) return seed;
         var luma = ImagePreprocess.LumaBuffer(image);
@@ -125,7 +126,8 @@ public static class BarcodeBoxRefiner
         {
             // DataMatrix/QR: L 보더 덕에 심볼 내부 행/열엔 항상 어두운 픽셀 존재
             var size = Math.Max(x1 - x0, y1 - y0);
-            var cap = size * 2 + 60;
+            // maxGrowth: 시드가 이미 심볼에 가까울 때(로케이터 후보) 맞닿은 객체로 번지지 않게 성장 한도를 준다
+            var cap = maxGrowth is { } growth ? size + Math.Max(4, growth) : size * 2 + 60;
             for (var pass = 0; pass < 2; pass++)
             {
                 var fromX = x0;

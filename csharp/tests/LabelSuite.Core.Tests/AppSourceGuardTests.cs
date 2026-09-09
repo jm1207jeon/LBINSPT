@@ -177,3 +177,39 @@ public class XamlControlOnlyAttributeTests
             + string.Join("\n", offenders));
     }
 }
+
+/// <summary>2026-09-09 요청 규칙의 소스 수준 회귀 가드 — 규격은 라벨 문서번호로만(목록 STANDARD 열 사용 금지),
+/// DataMatrix는 검증 표에서 제외, 목록 생성기에 국가별 규격 매핑 없음.</summary>
+public class RuleRegressionGuardTests
+{
+    [Fact]
+    public void InspectorDoesNotSelectStandardFromListColumn()
+    {
+        if (!AppSourceLocator.TryFind(out var app)) return;
+        var source = File.ReadAllText(Path.Combine(app, "Views", "InspectorView.xaml.cs"));
+        Assert.DoesNotMatch(@"record\??\.Standard\b", source);
+        Assert.DoesNotMatch(@"_records\[\w+\]\.Standard\b", source);
+        Assert.Contains("StandardDetector.Detect(", source);
+    }
+
+    [Fact]
+    public void BarcodeGridExcludesDataMatrix()
+    {
+        if (!AppSourceLocator.TryFind(out var app)) return;
+        var source = File.ReadAllText(Path.Combine(app, "Views", "InspectorView.xaml.cs"));
+        Assert.Contains(".Where(b => !b.IsDataMatrix)", source);
+        Assert.Contains("BarcodeDetector.Summarize(", source);
+    }
+
+    [Fact]
+    public void GeneratorHasNoCountryStandardMapping()
+    {
+        if (!AppSourceLocator.TryFind(out var app)) return;
+        var core = Path.Combine(Path.GetDirectoryName(app)!, "LabelSuite.Core");
+        Assert.DoesNotContain("StandardForCountry", File.ReadAllText(Path.Combine(core, "ListGenerator.cs")));
+        Assert.DoesNotContain("country_standard_map",
+                              File.ReadAllText(Path.Combine(core, "DefaultConfig", "settings.json")));
+        Assert.DoesNotContain("CountryStandardMap",
+                              File.ReadAllText(Path.Combine(app, "Views", "GeneratorView.xaml.cs")));
+    }
+}

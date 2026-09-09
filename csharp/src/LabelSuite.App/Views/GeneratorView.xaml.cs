@@ -34,7 +34,6 @@ public partial class GeneratorView : UserControl
         public string MfgDate { get; init; } = "";
         public string ExpDate { get; init; } = "";
         public string Gtin { get; init; } = "";
-        public string Standard { get; init; } = "";
         public bool GroupAlt { get; init; }
     }
 
@@ -52,7 +51,7 @@ public partial class GeneratorView : UserControl
             {
                 Lot = r.Lot, Products = r.Products, Pn = r.Pn, Ref = r.Ref,
                 MfgDate = r.MfgDate, ExpDate = r.ExpDate, Gtin = r.Gtin,
-                Standard = r.Standard ?? "", GroupAlt = alt,
+                GroupAlt = alt,
             });
         }
         return rows;
@@ -279,12 +278,12 @@ public partial class GeneratorView : UserControl
         var schedule = _frames["schedule"]!;
         var product = _frames["product"];
         var bsc = _frames["bsc"];
-        var countryMap = _config.CountryStandardMap();
         var shelfLife = _config.GetInt("shelf_life_months", 36);
         try
         {
+            // 규격(STANDARD)은 목록에서 정하지 않는다 — 검사 탭이 라벨의 문서번호를 읽어 자동 선택
             _result = await Task.Run(() => ListGenerator.Generate(
-                schedule, product, bsc, selected, _maps, countryMap, shelfLife));
+                schedule, product, bsc, selected, _maps, shelfLife));
         }
         catch (Exception ex)
         {
@@ -324,7 +323,7 @@ public partial class GeneratorView : UserControl
         // 파일 잠김(엑셀에서 열림)·권한·디스크 부족은 팝업 대신 상태바 오류로 — 생성된 목록은 그대로 유지
         var records = _result.Records;
         if (!ExportGuard.Run("검사 목록", dialog.FileName,
-                             () => Schema.SaveInspectionList(records, dialog.FileName),
+                             () => Schema.SaveInspectionList(records, dialog.FileName, includeStandard: false),
                              Status))
             return;
         _config.Settings["last_list_path"] = dialog.FileName;

@@ -45,6 +45,10 @@
                             <Setter Property="Background"
                                     Value="{StaticResource SuccessBgBrush}"/>
                         </DataTrigger>
+                        <DataTrigger Binding="{Binding Verdict}" Value="합격(검사자)">
+                            <Setter Property="Background"
+                                    Value="{StaticResource SuccessBgBrush}"/>
+                        </DataTrigger>
                         <DataTrigger Binding="{Binding Verdict}" Value="확인 필요">
                             <Setter Property="Background"
                                     Value="{StaticResource WarnBgBrush}"/>

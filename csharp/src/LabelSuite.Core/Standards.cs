@@ -8,8 +8,12 @@ public sealed record StandardSpec(
     IReadOnlyDictionary<string, int> Counts,
     string DateFormat,
     bool UsesChinaField,
-    string? DisplayNameRaw = null)
+    string? DisplayNameRaw = null,
+    IReadOnlyList<string>? DocPatterns = null)
 {
+    /// <summary>라벨 문서번호 감지용 추가 정규식(standards.json doc_patterns) — 표시명에서 자동 유도되는
+    /// 문서번호/Rev 규칙으로 부족할 때 규격별로 지정한다.</summary>
+    public IReadOnlyList<string> DocPatternList => DocPatterns ?? [];
     /// <summary>UI 표시명 — 내부 키(Name)는 목록 파일 호환을 위해 불변.</summary>
     public string DisplayName => DisplayNameRaw ?? Name;
 }
@@ -54,7 +58,11 @@ public sealed class StandardsBundle
                     name, counts,
                     ConvertDateFormat(obj["date_format"]?.GetValue<string>() ?? "%Y-%m-%d"),
                     obj["uses_china_field"]?.GetValue<bool>() ?? false,
-                    obj["display_name"]?.GetValue<string>());
+                    obj["display_name"]?.GetValue<string>(),
+                    obj["doc_patterns"] is JsonArray patterns
+                        ? patterns.Select(n => n?.GetValue<string>() ?? "")
+                                  .Where(s => s.Trim().Length > 0).ToList()
+                        : null);
             }
         }
         var china = new Dictionary<string, string>();
