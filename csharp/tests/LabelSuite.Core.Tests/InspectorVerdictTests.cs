@@ -15,7 +15,12 @@ public class InspectorVerdictTests : IDisposable
         Directory.CreateDirectory(_directory);
         _engine = new InspectionEngine(StandardsBundle.Load(new AppConfig(_directory)));
     }
-    public void Dispose() => Directory.Delete(_directory, recursive: true);
+    public void Dispose()
+    {
+        // Windows: SQLite 연결 풀이 history.db를 잠시 더 잡고 있어 즉시 삭제가 실패할 수 있다 (기존 이력 테스트와 동일 처리)
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        try { Directory.Delete(_directory, recursive: true); } catch (IOException) { }
+    }
 
     private static readonly LabelRecord Record = new(
         "25090776", "MEGACATH KIT", "HANARO-01", "NCN20-080-230",
