@@ -35,7 +35,9 @@
     "thickness": 2,
     "fill_alpha": 90,
     "show_numbers": false,
-    "show_zones": true
+    "show_zones": true,
+    "show_gallery": true,
+    "gallery_width": 460
   },
   "fields": {
     "disabled": [],

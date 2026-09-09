@@ -127,7 +127,9 @@ public partial class InspectorView : UserControl
         _loadingConfig = true;
         AutoSaveCheck.IsChecked = _config.GetBool("auto_save_default", false);
         ShowZonesCheck.IsChecked = _config.SectionBool("overlay", "show_zones", true);
+        ShowGalleryCheck.IsChecked = _config.SectionBool("overlay", "show_gallery", true);
         _loadingConfig = false;
+        ApplyGalleryVisibility();
         UpdateLegend();
 
         _worker = new PrefetchWorker(async image =>
@@ -392,7 +394,9 @@ public partial class InspectorView : UserControl
         UpdateLegend();
         _loadingConfig = true;
         ShowZonesCheck.IsChecked = _config.SectionBool("overlay", "show_zones", true);
+        ShowGalleryCheck.IsChecked = _config.SectionBool("overlay", "show_gallery", true);
         _loadingConfig = false;
+        ApplyGalleryVisibility();
         _ = CheckAwsAsync();
 
         var signature = CurrentAnalysisSig();
@@ -1142,6 +1146,7 @@ public partial class InspectorView : UserControl
             }
         }
         SetViewerImage(annotated, fit);
+        BuildGallery(outcome, image);
         // GTIN을 바코드 판독으로도, 인쇄 텍스트 OCR로도 뽑지 못함 — 요청: 오류로 알린다 (상태바 오류 + 붉은 행 + 사유줄)
         foreach (var failed in outcome.Fields.Values.Where(f => f.ExtractionFailed))
             Status($"p{page + 1}: {failed.Field} 추출 실패 — GS1 바코드 판독값(AI 01)도, 인쇄 텍스트 '(01)+14자리'도 찾지 못했습니다. 바코드 인쇄·OCR 품질을 확인하세요.",
@@ -1389,6 +1394,16 @@ public partial class InspectorView : UserControl
     {
         if (!_config.SectionBool("type_learning", "enabled", true)) return;
         var report = _profiler.Check(formatKey, analysis.Words, record);
+        if (report.IsAnomaly && report.MissingTokens.Count == 0)
+        {
+            // '처음 보는 문구'만 있는 이상(고정 문구 누락 없음)은 OCR 변동인 경우가 많아 팝업 대신 상태바·사유줄로만 알린다.
+            // 자동 판정이 합격이면 표본으로 학습해 유형이 적응하게 한다.
+            Status($"⚠ p{page + 1}: 처음 보는 문구 {report.NewTokens.Count}개 — {string.Join(", ", report.NewTokens.Take(4))}"
+                   + (report.NewTokens.Count > 4 ? " …" : "") + " (고정 문구 누락은 없음)", StatusLevel.Warn);
+            BadgeReasonText.Text += $" · 처음 보는 문구 {report.NewTokens.Count}";
+            if (outcome.Passed && _typeLearnedPages.Add(page)) _profiler.Learn(formatKey, analysis.Words, record);
+            return;
+        }
         if (report.IsAnomaly)
         {
             Status($"⚠ 유형 이상 (p{page + 1}): {report.Summary}", StatusLevel.Warn);
@@ -1462,7 +1477,7 @@ public partial class InspectorView : UserControl
         FieldGrid.ItemsSource = outcome.Fields.Values
             .Select(f => new FieldRowVm(
                 f.Field, f.Term.Length > 0 ? f.Term : "-",
-                f.ExtractionFailed ? "추출 실패" : f.Expected is { } expected ? $"{f.Found}/{expected}" : f.Found.ToString(),
+                f.ExtractionFailed ? "추출 실패" : f.Expected is not null ? $"{f.Found}/{f.ExpectedDisplay}" : f.Found.ToString(),
                 f.ExtractionFailed ? "error" : f.Expected is null ? "info" : f.Passed ? "pass" : "fail",
                 f.Field == "GTIN" ? f.Source : "OCR")).ToList();
         // 검증 대상 바코드(GS1-128 등)를 위→아래 순으로 나열 — DataMatrix는 요청에 따라 표에서 제외(박스만 표시).
@@ -1507,6 +1522,206 @@ public partial class InspectorView : UserControl
         BadgeReasonText.Text = "";
         FieldGrid.ItemsSource = null;
         BarcodeGrid.ItemsSource = null;
+        ClearGallery();
+    }
+
+    // ---------------- 필드 모아보기 (검출 객체 크롭 표) ----------------
+
+    private static readonly string[] GalleryOrder =
+        ["LOT", "PN", "REF", "MFG DATE", "EXP DATE", "GTIN", "CHINA"];
+
+    private static string GalleryHeader(string field) => field switch
+    {
+        "MFG DATE" => "MFG", "EXP DATE" => "EXP", _ => field,
+    };
+
+    private void ClearGallery()
+    {
+        GalleryGrid.Children.Clear();
+        GalleryGrid.ColumnDefinitions.Clear();
+        GalleryGrid.RowDefinitions.Clear();
+        GalleryStatusText.Text = "";
+    }
+
+    /// <summary>뷰어 오른쪽 빈 공간에 필드별 검출 객체를 크롭해 표로 모아 보여준다 — 열 = 항목(LOT/PN/REF/MFG/EXP/GTIN…),
+    /// 행 = 규격 기대 개수(검출이 더 많으면 그만큼). 같아야 할 값이 한 열에 모이므로 눈으로 빠르게 대조할 수 있다.
+    /// 빨강 칸 = 기대했지만 미검출, 주황 테두리 = 저신뢰 단어, 노랑 테두리 = 기대 개수 초과. 칸 클릭 = 라벨에서 그 위치로 이동.</summary>
+    private void BuildGallery(InspectionOutcome outcome, SKBitmap image)
+    {
+        ClearGallery();
+        if (ShowGalleryCheck.IsChecked != true) return;
+        var fields = outcome.Fields.Values
+            .Where(f => f.Field != "SEARCH" && (f.Expected is > 0 || f.Found > 0))
+            .OrderBy(f => Array.IndexOf(GalleryOrder, f.Field) is var i && i >= 0 ? i : 100)
+            .ThenBy(f => f.Field, StringComparer.Ordinal)
+            .ToList();
+        if (fields.Count == 0) return;
+        int RowsFor(FieldResult f) => Math.Max(f.Found, f.AtLeastOne ? 1 : f.Expected ?? 0);
+        var rowCount = fields.Max(RowsFor);
+        var lowThreshold = _config.SectionInt("ocr", "low_word_confidence", 70);
+
+        var headerPass = (Brush)FindResource("SuccessBgBrush");
+        var headerFail = (Brush)FindResource("WarnBgBrush");
+        var headerError = (Brush)FindResource("FailBgBrush");
+        var border = (Brush)FindResource("CardBorderBrush");
+        var cellBg = (Brush)FindResource("PanelBrush");
+        var missingBg = (Brush)FindResource("FailBgBrush");
+        var missingFg = (Brush)FindResource("FailFgBrush");
+        var lowConf = (Brush)FindResource("OverlayLowConfBrush");
+        var extra = (Brush)FindResource("CautionButtonBrush");
+        var text = (Brush)FindResource("TextBrush");
+        var caption = (double)FindResource("CaptionSize");
+
+        GalleryGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });   // 행 번호
+        foreach (var _ in fields)
+            GalleryGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = 90 });
+        for (var r = 0; r <= rowCount; r++)
+            GalleryGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        Border Cell(UIElement? child, Brush background, Brush stroke, double thickness = 1) => new()
+        {
+            Child = child, Background = background, BorderBrush = stroke,
+            BorderThickness = new Thickness(thickness), Margin = new Thickness(1),
+            Padding = new Thickness(3, 2, 3, 2), MinHeight = 30,
+        };
+        void Place(UIElement element, int row, int column)
+        {
+            Grid.SetRow(element, row);
+            Grid.SetColumn(element, column);
+            GalleryGrid.Children.Add(element);
+        }
+
+        Place(Cell(new TextBlock { Text = "#", FontSize = caption, Foreground = text, HorizontalAlignment = HorizontalAlignment.Center },
+                   cellBg, border), 0, 0);
+        for (var r = 1; r <= rowCount; r++)
+            Place(Cell(new TextBlock { Text = r.ToString(), FontSize = caption, Foreground = text,
+                                       HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+                       cellBg, border), r, 0);
+
+        var missingTotal = 0;
+        var lowTotal = 0;
+        for (var c = 0; c < fields.Count; c++)
+        {
+            var field = fields[c];
+            var column = c + 1;
+            var headerBg = field.ExtractionFailed ? headerError : field.Passed ? headerPass : headerFail;
+            var headerText = $"{GalleryHeader(field.Field)} {field.Found}/{field.ExpectedDisplay}"
+                             + (field.Field == "GTIN" ? $" · {field.Source}" : "");
+            Place(Cell(new TextBlock
+            {
+                Text = headerText, FontWeight = FontWeights.Bold, FontSize = caption, Foreground = text,
+                HorizontalAlignment = HorizontalAlignment.Center, ToolTip = $"검사 값: {field.Term}",
+            }, headerBg, border), 0, column);
+
+            var matches = field.Matches.OrderBy(m => m.Word.Bbox.Y).ThenBy(m => m.Word.Bbox.X).ToList();
+            var expectedRows = field.AtLeastOne ? 1 : field.Expected ?? 0;
+            for (var r = 0; r < rowCount; r++)
+            {
+                if (r < matches.Count)
+                {
+                    var match = matches[r];
+                    using var crop = CropRegion(image, match.Word.Bbox);
+                    var picture = new Image
+                    {
+                        Source = SkiaWpf.ToBitmapSource(crop), Stretch = Stretch.Uniform,
+                        StretchDirection = StretchDirection.DownOnly, MaxHeight = 34, MaxWidth = 220,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                    };
+                    var isLow = match.Word.Confidence < lowThreshold && match.Word.Confidence < 100;
+                    var isExtra = !field.AtLeastOne && expectedRows > 0 && r >= expectedRows;
+                    if (isLow) lowTotal++;
+                    var cell = Cell(picture, cellBg, isLow ? lowConf : isExtra ? extra : border, isLow || isExtra ? 2 : 1);
+                    cell.Cursor = Cursors.Hand;
+                    cell.ToolTip = $"{field.Field} #{r + 1}: '{match.Word.Text.Trim()}' 신뢰도 {match.Word.Confidence}%"
+                                   + (isLow ? " — 저신뢰, 육안 확인" : "") + (isExtra ? " — 기대 개수 초과" : "")
+                                   + " (클릭: 라벨에서 위치 보기)";
+                    var bbox = match.Word.Bbox;
+                    cell.MouseLeftButtonDown += (_, _) => ScrollToBbox(bbox);
+                    Place(cell, r + 1, column);
+                }
+                else if (r < expectedRows)
+                {
+                    missingTotal++;
+                    Place(Cell(new TextBlock
+                    {
+                        Text = field.ExtractionFailed ? "추출 실패" : "미검출", Foreground = missingFg, FontWeight = FontWeights.Bold,
+                        FontSize = caption, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                    }, missingBg, missingFg), r + 1, column);
+                }
+            }
+        }
+        GalleryStatusText.Text = (missingTotal > 0 ? $"미검출 {missingTotal} · " : "") + (lowTotal > 0 ? $"저신뢰 {lowTotal} · " : "")
+                                 + $"{rowCount}행 × {fields.Count}항목";
+    }
+
+    /// <summary>바운딩 박스 주변을 여유(높이의 25%) 포함해 잘라낸 사본 (호출자가 해제).</summary>
+    private static SKBitmap CropRegion(SKBitmap image, (int X, int Y, int W, int H) bbox)
+    {
+        var pad = Math.Max(3, (int)(bbox.H * 0.25));
+        var x0 = Math.Clamp(bbox.X - pad, 0, Math.Max(0, image.Width - 1));
+        var y0 = Math.Clamp(bbox.Y - pad, 0, Math.Max(0, image.Height - 1));
+        var x1 = Math.Clamp(bbox.X + bbox.W + pad, x0 + 1, image.Width);
+        var y1 = Math.Clamp(bbox.Y + bbox.H + pad, y0 + 1, image.Height);
+        var crop = new SKBitmap(x1 - x0, y1 - y0, image.ColorType, image.AlphaType);
+        using var canvas = new SKCanvas(crop);
+        canvas.DrawBitmap(image, new SKRect(x0, y0, x1, y1), new SKRect(0, 0, crop.Width, crop.Height));
+        return crop;
+    }
+
+    /// <summary>라벨 뷰어를 해당 박스가 가운데 오도록 스크롤한다 (모아보기 칸 클릭).</summary>
+    private void ScrollToBbox((int X, int Y, int W, int H) bbox)
+    {
+        if (_displayed is null) return;
+        var cx = (bbox.X + bbox.W / 2.0) * _zoom;
+        var cy = (bbox.Y + bbox.H / 2.0) * _zoom;
+        ViewerScroll.ScrollToHorizontalOffset(Math.Max(0, cx - ViewerScroll.ViewportWidth / 2));
+        ViewerScroll.ScrollToVerticalOffset(Math.Max(0, cy - ViewerScroll.ViewportHeight / 2));
+    }
+
+    /// <summary>'필드 모아보기' 토글 — 즉시 저장 (overlay.show_gallery). 끄면 패널 폭 0, 켜면 저장된 폭 복원.</summary>
+    private void OnShowGalleryToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingConfig || _config is null) return;
+        try
+        {
+            _config.Section("overlay")["show_gallery"] =
+                System.Text.Json.Nodes.JsonValue.Create(ShowGalleryCheck.IsChecked == true);
+            _config.SaveSettings();
+        }
+        catch (Exception ex)
+        {
+            Status($"설정 저장 실패 (재실행 시 이전 설정으로 돌아갈 수 있음): {ShortMessage(ex.Message)}", StatusLevel.Error);
+        }
+        ApplyGalleryVisibility();
+        if (ShowGalleryCheck.IsChecked == true && _pdf.IsOpen && _outcomes.TryGetValue(_currentPage, out var outcome))
+            BuildGallery(outcome, RenderProcessed(_currentPage));
+    }
+
+    private void ApplyGalleryVisibility()
+    {
+        var on = ShowGalleryCheck.IsChecked == true;
+        var width = Math.Clamp(_config?.SectionInt("overlay", "gallery_width", 460) ?? 460, 160, 1600);
+        GalleryColumn.Width = on ? new GridLength(width) : new GridLength(0);
+        GalleryColumn.MinWidth = on ? 160 : 0;
+        GalleryPanel.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        GallerySplitter.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        if (!on) ClearGallery();
+    }
+
+    /// <summary>분할선을 끌어 폭을 바꾸면 저장 (overlay.gallery_width) — 라벨을 확대해도 모아보기와 겹치지 않게 사용자가 폭을 정한다.</summary>
+    private void OnGallerySplitterDragged(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        if (_config is null) return;
+        try
+        {
+            _config.Section("overlay")["gallery_width"] =
+                System.Text.Json.Nodes.JsonValue.Create((int)Math.Round(GalleryColumn.ActualWidth));
+            _config.SaveSettings();
+        }
+        catch (Exception ex)
+        {
+            Status($"설정 저장 실패: {ShortMessage(ex.Message)}", StatusLevel.Error);
+        }
     }
 
     private void ReinspectCurrent()

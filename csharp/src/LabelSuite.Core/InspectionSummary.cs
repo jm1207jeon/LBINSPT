@@ -19,7 +19,7 @@ public static class InspectionSummary
         foreach (var field in outcome.Fields.Values.Where(f => !f.Passed))
             items.Add(field.ExtractionFailed
                 ? $"{field.Field} 추출 실패(바코드·OCR 없음)"
-                : $"{field.Field} {field.Found}/{field.Expected}");
+                : $"{field.Field} {field.Found}/{field.ExpectedDisplay}");
         foreach (var check in outcome.BarcodeChecks.Where(c => !c.Matched))
             items.Add(check.Field switch
             {

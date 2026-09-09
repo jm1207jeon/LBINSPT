@@ -17,7 +17,11 @@ public sealed class FieldResult
     public List<TextMatch> Matches { get; init; } = [];
     public int Found => Matches.Count;
     public bool Gating => Expected is > 0 && Term.Length > 0;
-    public bool Passed => !Gating || Found == Expected;
+    /// <summary>'1개 이상 일치'면 합격인 필드 (GTIN — 규격과 무관, 값이 같으니 하나만 잡혀도 충분).</summary>
+    public bool AtLeastOne { get; init; }
+    public bool Passed => !Gating || (AtLeastOne ? Found >= 1 : Found == Expected);
+    /// <summary>기대 표기 — "≥1" / "n" / "-".</summary>
+    public string ExpectedDisplay => AtLeastOne ? "≥1" : Expected is { } e ? e.ToString() : "-";
     /// <summary>값을 어디서 읽었는지 — "OCR"(인쇄 텍스트) / "바코드"(GS1 바코드 판독) / "없음".
     /// GTIN은 바코드 → OCR 순으로 시도한다.</summary>
     public string Source { get; init; } = "OCR";
@@ -48,7 +52,7 @@ public sealed class InspectionOutcome
             Standard.Name, Record.Lot, Record.Ref, Passed ? "P" : "C",
         };
         parts.AddRange(Fields.Values.OrderBy(f => f.Field, StringComparer.Ordinal)
-            .Select(f => $"{f.Field}:{f.Found}/{(f.Expected is { } e ? e.ToString() : "-")}"));
+            .Select(f => $"{f.Field}:{f.Found}/{f.ExpectedDisplay}"));
         parts.AddRange(BarcodeChecks
             .OrderBy(c => c.Field, StringComparer.Ordinal).ThenBy(c => c.BarcodeValue, StringComparer.Ordinal)
             .Select(c => $"{c.Field}={c.BarcodeValue}:{(c.Matched ? 1 : 0)}"));
@@ -256,6 +260,9 @@ public sealed class InspectionEngine(StandardsBundle standards,
                 continue;   // 사용자가 제외한 필드 (LOT은 매칭 기준이라 항상 유지)
             int? expected = standard.Counts.TryGetValue(fieldName, out var count)
                 ? count : null;
+            // GTIN 기대 개수는 규격과 무관하게 1 — 여러 개가 검출돼도 값은 같으므로 하나라도 일치하면 합격
+            var atLeastOne = fieldName == "GTIN";
+            if (atLeastOne) expected = 1;
             // 기본 검출 필드는 LOT/PN/REF/MFG/EXP/GTIN(+중국 규격의 CHINA) —
             // PRODUCTS는 규격이 명시적으로 기대 횟수를 요구할 때만 검사한다
             if (fieldName == "PRODUCTS" && expected is null or <= 0) continue;
@@ -276,9 +283,9 @@ public sealed class InspectionEngine(StandardsBundle standards,
             }
             outcome.Fields[fieldName] = new FieldResult
             {
-                Field = fieldName, Term = term, Expected = expected,
+                Field = fieldName, Term = term, Expected = expected, AtLeastOne = atLeastOne,
                 Matches = matches, Source = source,
-                ExtractionFailed = fieldName == "GTIN" && source == "없음" && expected is > 0 && term.Length > 0,
+                ExtractionFailed = fieldName == "GTIN" && source == "없음" && term.Length > 0,
             };
         }
         foreach (var custom in Options.CustomFields)

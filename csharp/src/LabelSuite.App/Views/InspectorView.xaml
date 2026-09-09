@@ -86,6 +86,9 @@
                         <CheckBox x:Name="ShowZonesCheck" Content="영역 표시"
                                   Checked="OnShowZonesToggled" Unchecked="OnShowZonesToggled"
                                   ToolTip="등록된 필드 영역·양식 규칙 영역을 점선으로 표시합니다 (설정은 즉시 저장)"/>
+                        <CheckBox x:Name="ShowGalleryCheck" Content="필드 모아보기"
+                                  Checked="OnShowGalleryToggled" Unchecked="OnShowGalleryToggled"
+                                  ToolTip="뷰어 오른쪽에 필드별 검출 객체를 잘라 표로 모아 보여줍니다 (열=항목, 행=규격 기대 개수 · 빨강=미검출 · 주황=저신뢰 · 분할선을 끌어 폭 조절 · 설정은 즉시 저장)"/>
                         <Button Content="OCR 로그" Click="OnShowOcrLog"
                                 ToolTip="이 페이지에서 OCR이 실제로 읽은 모든 단어를 위→아래 순으로 보여줍니다 (Ctrl+Shift+L · 미검출 원인 확인·교정·병합 등록)"/>
                         <Separator Style="{StaticResource VSep}"/>
@@ -204,8 +207,14 @@
                         <TextBlock Text="✚ 필드 영역 등록 모드 — 라벨 위를 드래그(영역) 또는 클릭(객체) · Esc 또는 버튼으로 해제"
                                    FontSize="13" FontWeight="Bold" TextWrapping="Wrap"/>
                     </Border>
+                    <!-- 뷰어 | 분할선 | 필드 모아보기 — 라벨을 확대해도 모아보기와 겹치지 않도록 별도 열, 폭은 분할선으로(저장됨) -->
                     <Grid Background="{StaticResource ImageBgBrush}">
-                        <ScrollViewer x:Name="ViewerScroll" Background="Transparent"
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition x:Name="GalleryColumn" Width="460" MinWidth="160"/>
+                        </Grid.ColumnDefinitions>
+                        <ScrollViewer x:Name="ViewerScroll" Grid.Column="0" Background="Transparent"
                                       HorizontalScrollBarVisibility="Auto"
                                       VerticalScrollBarVisibility="Auto"
                                       PreviewMouseWheel="OnViewerWheel"
@@ -225,7 +234,7 @@
                                 </Canvas>
                             </Grid>
                         </ScrollViewer>
-                        <StackPanel x:Name="ViewerPlaceholder" HorizontalAlignment="Center"
+                        <StackPanel x:Name="ViewerPlaceholder" Grid.Column="0" HorizontalAlignment="Center"
                                     VerticalAlignment="Center" IsHitTestVisible="False">
                             <Image Source="{StaticResource LavisLogo}" Width="96" Height="96" Opacity="0.55"
                                    Margin="0,0,0,10"/>
@@ -235,6 +244,27 @@
                                        Foreground="{StaticResource ImageHintBrush}" HorizontalAlignment="Center"
                                        FontSize="{StaticResource CaptionSize}"/>
                         </StackPanel>
+                        <GridSplitter x:Name="GallerySplitter" Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch" Background="{StaticResource CardBorderBrush}"
+                                      ShowsPreview="False" DragCompleted="OnGallerySplitterDragged"
+                                      ToolTip="끌어서 필드 모아보기 폭 조절 (저장됨)"/>
+                        <Border x:Name="GalleryPanel" Grid.Column="2" Background="{StaticResource PanelBrush}"
+                                BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1,0,0,0">
+                            <DockPanel>
+                                <Border DockPanel.Dock="Top" Background="{StaticResource SoftPanelBrush}" Padding="6,3">
+                                    <DockPanel>
+                                        <TextBlock x:Name="GalleryStatusText" DockPanel.Dock="Right" Style="{StaticResource CaptionText}"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock Text="필드 모아보기" FontWeight="Bold" FontSize="{StaticResource CaptionSize}"
+                                                   Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"
+                                                   ToolTip="열 = 항목(LOT/PN/REF/MFG/EXP/GTIN…), 행 = 규격 기대 개수. 같아야 할 값이 한 열에 모이므로 눈으로 빠르게 대조.&#10;빨강 칸 = 미검출 · 주황 테두리 = 저신뢰 · 노랑 테두리 = 기대 개수 초과 · 칸 클릭 = 라벨에서 위치 보기"/>
+                                    </DockPanel>
+                                </Border>
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                    <Grid x:Name="GalleryGrid" Margin="4"/>
+                                </ScrollViewer>
+                            </DockPanel>
+                        </Border>
                     </Grid>
                 </DockPanel>
             </GroupBox>

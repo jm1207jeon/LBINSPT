@@ -20,9 +20,21 @@ public sealed class LabelTypeProfiler(string? path = null)
     public double StaticThreshold { get; set; } = 0.8;
     /// <summary>처음 보는 토큰이 이 수 이상이면 이상으로 판정.</summary>
     public int NewTokenAlarm { get; set; } = 3;
+    /// <summary>이 신뢰도 미만의 OCR 단어는 유형 토큰으로 쓰지 않는다 (잡음이 '처음 보는 문구'로 튀지 않게).</summary>
+    public static int MinTokenConfidence { get; set; } = 75;
 
     private static readonly Regex NumericLike =
         new(@"^[\d\.\-/():%]+$", RegexOptions.Compiled);
+
+    /// <summary>유형 토큰으로 쓸 만한 '단어'인가 — 3자 이상, 글자·숫자가 60% 이상, 글자(문자) 2개 이상.
+    /// "|", "—", ")(", ".·." 같은 OCR 잡음과 기호 조각을 배제한다.</summary>
+    public static bool IsWordLike(string text)
+    {
+        if (text.Length < 3) return false;
+        var alnum = text.Count(char.IsLetterOrDigit);
+        if (alnum < text.Length * 0.6) return false;
+        return text.Count(char.IsLetter) >= 2;
+    }
 
     private readonly string? _path = path;
     private JsonObject _profiles = Load(path);
@@ -47,7 +59,8 @@ public sealed class LabelTypeProfiler(string? path = null)
         foreach (var word in words)
         {
             var text = word.Text.Trim().ToUpperInvariant();
-            if (text.Length < 2) continue;
+            if (word.Confidence < MinTokenConfidence) continue;   // 저신뢰 = 잡음 가능성
+            if (!IsWordLike(text)) continue;                      // 기호 조각·짧은 토큰 배제
             if (NumericLike.IsMatch(text)) continue;              // 숫자/날짜류 = 가변
             if (variable.Any(v => text.Contains(v, StringComparison.OrdinalIgnoreCase)))
                 continue;                                          // 레코드 가변 값 포함
@@ -81,6 +94,7 @@ public sealed class LabelTypeProfiler(string? path = null)
         var fresh = current.Where(t => !counts.ContainsKey(t))
             .OrderBy(t => t).ToList();
 
+        // 처음 보는 문구는 '여러 개'일 때만 이상 — 한두 개는 OCR 변동(붙여 읽기·오인식)일 가능성이 높다
         var anomaly = missing.Count > 0 || fresh.Count >= NewTokenAlarm;
         var summary = anomaly
             ? "기존 유형과 다름 — " +

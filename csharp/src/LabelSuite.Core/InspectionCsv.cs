@@ -69,8 +69,8 @@ public static class InspectionCsv
 
     /// <summary>'검출/기대' — 기대 개수가 없는(검사 대상 아님) 필드는 '-'.</summary>
     private static string FieldCell(InspectionOutcome o, string field) =>
-        o.Fields.TryGetValue(field, out var f) && f.Expected is { } expected
-            ? $"{f.Found}/{expected}" : "-";
+        o.Fields.TryGetValue(field, out var f) && f.Expected is not null
+            ? $"{f.Found}/{f.ExpectedDisplay}" : "-";
 
     /// <summary>헤더 + 행들을 CRLF로 결합 (UTF-8 BOM은 호출 측이 new UTF8Encoding(true)로).</summary>
     public static string Build(IEnumerable<(int page, InspectionOutcome? o, string? img)> rows,

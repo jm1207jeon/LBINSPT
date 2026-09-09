@@ -115,10 +115,17 @@ public class InspectionTests : IDisposable
     {
         var spec = _engine.Standards.Spec("MDR");
         var words = WordsForPass(spec);
-        words.RemoveAt(words.Count - 1);   // GTIN 1개 부족
+        // GTIN은 규격 카운트와 무관하게 1개 이상 일치면 합격 — 하나 빠져도 통과
+        words.RemoveAt(words.Count - 1);
+        Assert.True(_engine.Inspect(Record, "MDR", words).Fields["GTIN"].Passed);
+        // 다른 필드(LOT)는 정확한 개수 — 하나 빠지면 확인 필요
+        words.RemoveAt(0);   // LOT 1개 부족
         var outcome = _engine.Inspect(Record, "MDR", words);
         Assert.False(outcome.Passed);
-        Assert.False(outcome.Fields["GTIN"].Passed);
+        Assert.False(outcome.Fields["LOT"].Passed);
+        // GTIN이 하나도 없으면 GTIN 불합격
+        var noGtin = words.Where(w => !w.Text.Contains("(01)")).ToList();
+        Assert.False(_engine.Inspect(Record, "MDR", noGtin).Fields["GTIN"].Passed);
     }
 
     [Fact]

@@ -273,7 +273,7 @@
                                        Text="프리셋 = 제품군/라인별 검사 세팅 단위. 학습 데이터만 옮기려면 [OCR 엔진·교정] 탭의 학습 데이터 내보내기(.lslearn)를 쓰세요. 프리셋에는 저장 폴더·AWS 프로필·최근 파일 같은 PC 고유값은 들어가지 않습니다."/>
                         </StackPanel>
                     </GroupBox>
-                    <GroupBox Header="검사 기준 (규격별 기대 출현 횟수 — 더블클릭 수정, 0 = 검사 안 함)">
+                    <GroupBox Header="검사 기준 (규격별 기대 출현 횟수 — 더블클릭 수정, 0 = 검사 안 함 · GTIN은 규격과 무관하게 1개 이상 일치면 합격)">
                         <DataGrid x:Name="CountsGrid" IsReadOnly="False"
                                   AutoGenerateColumns="True" CanUserAddRows="False"
                                   Height="200"/>

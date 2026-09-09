@@ -179,7 +179,7 @@ public static class Annotate
         if (reason.Length > 0)
             lines.Add((reason.Length > 34 ? reason[..33] + "…" : reason, outcome.Passed));
         foreach (var field in outcome.Fields.Values.Where(f => f.Expected is not null))
-            lines.Add(($"{field.Field}: {field.Found}/{field.Expected} " +
+            lines.Add(($"{field.Field}: {field.Found}/{field.ExpectedDisplay} " +
                        (field.Passed ? "OK" : "NG"), field.Passed));
 
         const int lineHeight = 28;
