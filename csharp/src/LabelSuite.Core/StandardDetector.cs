@@ -109,28 +109,36 @@ public static class StandardDetector
                     if (extra.IsMatch(text))
                         Offer(new StandardDetection(sig.Standard, word.Text.Trim(), word.Bbox, "패턴", 1.0, [sig.Standard]));
 
-            OcrWord? docWord = null, revWord = null;
-            foreach (var (text, word) in texts)
-            {
-                if (docWord is null && sig.DocRegex?.IsMatch(text) == true) docWord = word;
-                if (revWord is null && sig.RevRegex?.IsMatch(text) == true) revWord = word;
-            }
+            var docWords = texts.Where(t => sig.DocRegex?.IsMatch(t.Text) == true).Select(t => t.Word).ToList();
+            var revWords = texts.Where(t => sig.RevRegex?.IsMatch(t.Text) == true).Select(t => t.Word).ToList();
             if (sig.DocNumber is not null && sig.Rev is not null)
             {
-                if (docWord is not null && revWord is not null)
-                    Offer(new StandardDetection(sig.Standard, Join(docWord, revWord), Union(docWord.Bbox, revWord.Bbox),
-                                                "문서번호+Rev", 0.95, [sig.Standard]));
-                else if (docWord is not null) docOnly.Add((sig, docWord));
-                else if (revWord is not null && sig.RevDistinctive)
-                    Offer(new StandardDetection(sig.Standard, revWord.Text.Trim(), revWord.Bbox, "Rev", 0.8, [sig.Standard]));
+                // 문서번호와 Rev는 보통 두 줄로 인쇄된다 ("PML-001" 아랫줄에 "Rev.1") — 문서번호 바로 아래/옆의
+                // Rev를 우선 짝짓고, 인접한 Rev가 없을 때만 페이지 어딘가의 Rev를 낮은 점수로 쓴다
+                (OcrWord Doc, OcrWord Rev)? pair = null;
+                foreach (var d in docWords)
+                {
+                    foreach (var r in revWords)
+                        if (Adjacent(d, r)) { pair = (d, r); break; }
+                    if (pair is not null) break;
+                }
+                var adjacent = pair is not null;
+                if (pair is null && docWords.Count > 0 && revWords.Count > 0) pair = (docWords[0], revWords[0]);
+                if (pair is { } p)
+                    Offer(new StandardDetection(sig.Standard, Join(p.Doc, p.Rev), Union(p.Doc.Bbox, p.Rev.Bbox),
+                                                adjacent ? "문서번호+Rev" : "문서번호+Rev(원거리)",
+                                                adjacent ? 0.95 : 0.85, [sig.Standard]));
+                else if (docWords.Count > 0) docOnly.Add((sig, docWords[0]));
+                else if (revWords.Count > 0 && sig.RevDistinctive)
+                    Offer(new StandardDetection(sig.Standard, revWords[0].Text.Trim(), revWords[0].Bbox, "Rev", 0.8, [sig.Standard]));
             }
             else if (sig.Rev is not null)   // 표시명 자체가 Rev 토큰 (A00)
             {
-                if (revWord is not null)
-                    Offer(new StandardDetection(sig.Standard, revWord.Text.Trim(), revWord.Bbox, "Rev", 0.9, [sig.Standard]));
+                if (revWords.Count > 0)
+                    Offer(new StandardDetection(sig.Standard, revWords[0].Text.Trim(), revWords[0].Bbox, "Rev", 0.9, [sig.Standard]));
             }
-            else if (sig.DocNumber is not null && docWord is not null)
-                docOnly.Add((sig, docWord));
+            else if (sig.DocNumber is not null && docWords.Count > 0)
+                docOnly.Add((sig, docWords[0]));
         }
         if (best is not null) return best;
         if (docOnly.Count == 0) return null;
@@ -169,6 +177,23 @@ public static class StandardDetector
             }
         }
         return result;
+    }
+
+    /// <summary>Rev 단어가 문서번호 단어와 인접한가 — 같은 줄 오른쪽, 또는 바로 아랫줄/윗줄(줄 높이 2.2배 이내)에서
+    /// 가로로 겹치거나 가까움. 같은 단어(결합 텍스트)면 참.</summary>
+    internal static bool Adjacent(OcrWord doc, OcrWord rev)
+    {
+        if (ReferenceEquals(doc, rev) || doc.Bbox == rev.Bbox) return true;
+        var lineH = Math.Max(1, Math.Max(doc.Bbox.H, rev.Bbox.H));
+        var docCy = doc.Bbox.Y + doc.Bbox.H / 2.0;
+        var revCy = rev.Bbox.Y + rev.Bbox.H / 2.0;
+        var sameLine = Math.Abs(revCy - docCy) <= lineH * 0.6
+                       && rev.Bbox.X >= doc.Bbox.X
+                       && rev.Bbox.X - (doc.Bbox.X + doc.Bbox.W) <= lineH * 3;
+        var horizontallyNear = rev.Bbox.X + rev.Bbox.W > doc.Bbox.X - lineH * 2
+                               && rev.Bbox.X < doc.Bbox.X + doc.Bbox.W + lineH * 2;
+        var stacked = Math.Abs(revCy - docCy) <= lineH * 2.2 && horizontallyNear;
+        return sameLine || stacked;
     }
 
     private static string Join(OcrWord a, OcrWord b) =>

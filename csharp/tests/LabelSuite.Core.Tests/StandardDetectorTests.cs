@@ -100,4 +100,39 @@ public class StandardDetectorTests : IDisposable
         Assert.Equal("X1", d!.Standard);
         Assert.Equal("패턴", d.Basis);
     }
+
+    [Fact]
+    public void RevOnTheLineBelowDocNumberIsPaired()
+    {
+        // PML-001 라벨: 문서번호 아랫줄에 Rev.0 / Rev.1 — 두 줄을 읽어 매칭
+        var mdr = Detect(W("LOT"), W("PML-001", x: 700, y: 400), W("Rev.1", x: 700, y: 424), W("25090776"));
+        Assert.Equal("MDR", mdr!.Standard);
+        Assert.Equal("문서번호+Rev", mdr.Basis);
+        Assert.Equal("PML-001 Rev.1", mdr.MatchedText);
+        Assert.Equal((700, 400, 90, 44), mdr.Bbox);   // 두 줄을 감싸는 박스
+
+        var mdd = Detect(W("PML-001", x: 700, y: 400), W("Rev.0", x: 704, y: 426));
+        Assert.Equal("MDD", mdd!.Standard);
+        // OCR 혼동: Rev.O → Rev.0
+        Assert.Equal("MDD", Detect(W("PML-001", x: 700, y: 400), W("Rev.O", x: 700, y: 424))!.Standard);
+    }
+
+    [Fact]
+    public void AdjacentRevBeatsDistantRevOfOtherStandard()
+    {
+        // 페이지 다른 곳에 'Rev.0'(다른 문서의 개정)이 있어도 문서번호 바로 아래의 Rev.1이 우선
+        var d = Detect(W("Rev.0", x: 100, y: 900), W("PML-001", x: 700, y: 400), W("Rev.1", x: 700, y: 424));
+        Assert.Equal("MDR", d!.Standard);
+        Assert.Equal("문서번호+Rev", d.Basis);
+        // 인접한 Rev가 전혀 없으면 원거리 Rev로라도 판별하되 낮은 점수
+        var far = Detect(W("PML-001", x: 700, y: 400), W("Rev.1", x: 100, y: 900));
+        Assert.Equal("MDR", far!.Standard);
+        Assert.Equal("문서번호+Rev(원거리)", far.Basis);
+    }
+
+    [Fact]
+    public void RevAboveDocNumberAlsoPairs()
+    {
+        Assert.Equal("MDD", Detect(W("Rev.0", x: 700, y: 376), W("PML-001", x: 700, y: 400))!.Standard);
+    }
 }
