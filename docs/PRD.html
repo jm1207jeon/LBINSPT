@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LaVIS — 제품 요구사항 문서 (PRD)</title><style>
+:root{--ink:#1F2A37;--muted:#5D6B7A;--line:#D6DCE3;--soft:#F4F6F8;--primary:#1A6FB5;--accent:#1A5276;--ok:#1E8449;--okbg:#D5F5E3;--warn:#CA6F1E;--warnbg:#FDEBD0;--bg:#FFFFFF}
+*{box-sizing:border-box}body{margin:0;font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",Segoe UI,sans-serif;color:var(--ink);background:var(--bg);line-height:1.6;font-size:15px}
+.layout{display:grid;grid-template-columns:280px 1fr;min-height:100vh}
+nav{position:sticky;top:0;height:100vh;overflow:auto;background:var(--soft);border-right:1px solid var(--line);padding:18px 14px}
+nav h2{font-size:13px;color:var(--muted);margin:0 0 8px;text-transform:uppercase;letter-spacing:.06em}
+nav ul{list-style:none;margin:0;padding:0}nav li{margin:2px 0}nav li.l3{padding-left:14px;font-size:13px}nav a{color:var(--accent);text-decoration:none}nav a:hover{text-decoration:underline}
+main{padding:32px 48px 80px;max-width:1100px}
+h1{font-size:28px;border-bottom:3px solid var(--primary);padding-bottom:8px;margin:0 0 18px;color:var(--accent)}
+h2{font-size:21px;margin:40px 0 12px;padding-left:10px;border-left:5px solid var(--primary);color:var(--accent)}
+h3{font-size:17px;margin:26px 0 8px;color:var(--ink)}h4{font-size:15px;margin:18px 0 6px}
+.tw{overflow-x:auto;margin:10px 0 16px}table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;vertical-align:top;text-align:left}th{background:var(--soft);font-weight:700;white-space:nowrap}
+tr:nth-child(even) td{background:#FAFBFC}td:first-child{white-space:nowrap;font-weight:600;color:var(--accent)}
+code{background:var(--soft);border:1px solid var(--line);border-radius:3px;padding:0 4px;font-family:Consolas,"D2Coding",monospace;font-size:12.5px}
+pre{background:#1F2A37;color:#E8EEF4;padding:14px 16px;border-radius:6px;overflow-x:auto;font-size:13px;line-height:1.5}pre code{background:none;border:0;color:inherit;padding:0}
+hr{border:0;border-top:1px solid var(--line);margin:28px 0}blockquote{border-left:4px solid var(--warn);background:var(--warnbg);padding:8px 12px;margin:10px 0}
+ul,ol{padding-left:22px}li{margin:3px 0}strong{color:var(--accent)}
+.meta{color:var(--muted);font-size:13px;margin-bottom:20px}
+@media (max-width:900px){.layout{grid-template-columns:1fr}nav{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}main{padding:20px}}
+@media print{nav{display:none}.layout{grid-template-columns:1fr}main{padding:0;max-width:none}h2{page-break-after:avoid}table{page-break-inside:auto}tr{page-break-inside:avoid}}
+</style></head>
+<body><div class="layout"><nav><h2>목차</h2><ul><li class="l2"><a href="#h1">1. 개요</a></li>
+<li class="l3"><a href="#h2">1.1 배경</a></li>
+<li class="l3"><a href="#h3">1.2 목표</a></li>
+<li class="l3"><a href="#h4">1.3 용어</a></li>
+<li class="l2"><a href="#h5">2. 사용 환경 및 전제</a></li>
+<li class="l2"><a href="#h6">3. 제품 범위</a></li>
+<li class="l3"><a href="#h7">3.1 포함 (In Scope)</a></li>
+<li class="l3"><a href="#h8">3.2 제외 (Out of Scope)</a></li>
+<li class="l3"><a href="#h9">3.3 사용 시나리오</a></li>
+<li class="l2"><a href="#h10">4. 기능 요구사항 — 목록 생성 탭</a></li>
+<li class="l2"><a href="#h11">5. 기능 요구사항 — 라벨 검사 탭</a></li>
+<li class="l3"><a href="#h12">5.1 PDF 로드·렌더·정렬</a></li>
+<li class="l3"><a href="#h13">5.2 OCR·바코드 분석 (프리페치)</a></li>
+<li class="l3"><a href="#h14">5.3 LOT 매칭</a></li>
+<li class="l3"><a href="#h15">5.4 규격 자동 선택 (문서번호)</a></li>
+<li class="l3"><a href="#h16">5.5 필드 검출·카운트 규칙</a></li>
+<li class="l3"><a href="#h17">5.6 GTIN 추출 순서 · 바코드 검증</a></li>
+<li class="l3"><a href="#h18">5.7 바코드 인식 모드 (클릭 판독)</a></li>
+<li class="l3"><a href="#h19">5.8 영역 등록 · 교정 · 병합 · 진단</a></li>
+<li class="l3"><a href="#h20">5.9 동일값 패턴 · 양식 감지 · 유형 학습</a></li>
+<li class="l3"><a href="#h21">5.10 판정 표시 · 오버레이 · 필드 모아보기</a></li>
+<li class="l3"><a href="#h22">5.11 자동 검사 · 결과 목록 · 검사자 확인 합격</a></li>
+<li class="l3"><a href="#h23">5.12 저장 · 이력 · CSV</a></li>
+<li class="l2"><a href="#h24">6. 검사 규격 정의 (`standards.json`)</a></li>
+<li class="l2"><a href="#h25">7. 설정 (`settings.json`) 및 커스터마이징</a></li>
+<li class="l3"><a href="#h26">7.1 설정 창(⚙) 탭</a></li>
+<li class="l3"><a href="#h27">7.2 주요 키</a></li>
+<li class="l3"><a href="#h28">7.3 안전장치</a></li>
+<li class="l2"><a href="#h29">8. 데이터 · 파일 계약</a></li>
+<li class="l2"><a href="#h30">9. 비기능 요구사항</a></li>
+<li class="l2"><a href="#h31">10. UI 구성 (패밀리 디자인)</a></li>
+<li class="l2"><a href="#h32">11. 빌드 · 배포</a></li>
+<li class="l2"><a href="#h33">12. 품질 보증</a></li>
+<li class="l2"><a href="#h34">13. 데이터 흐름 요약</a></li>
+<li class="l2"><a href="#h35">14. 오류·예외 처리 원칙</a></li>
+<li class="l2"><a href="#h36">15. 규제상 위치</a></li>
+<li class="l2"><a href="#h37">16. 알려진 제한사항</a></li>
+<li class="l2"><a href="#h38">17. 미결 사항 · 로드맵</a></li>
+<li class="l2"><a href="#h39">18. 주요 설계 결정 이력</a></li></ul></nav><main>
+<div class="meta">이 문서는 docs/PRD.md에서 생성되었습니다 · 인쇄 시 목차는 숨겨집니다</div>
+<h1 id="h0">LaVIS — 제품 요구사항 문서 (PRD)</h1>
+<div class="tw"><table>
+<tr><th>항목</th><th>내용</th></tr>
+<tr><td>제품명</td><td>LaVIS — Label Verification &amp; Inspection System (구 명칭: LabelSuite / Label Inspector + Label Inspector_list generator)</td></tr>
+<tr><td>창 제목</td><td><code>LaVIS - Label Verification &amp; Inspection System Rev.00</code></td></tr>
+<tr><td>문서 버전</td><td>1.0 (2026-09-09, 현재 구현 기준 확정 명세 — 브랜치 <code>claude/label-inspector-integration-ef3hla</code>, 테스트 310건)</td></tr>
+<tr><td>플랫폼</td><td>Windows 10 (build 19041) 이상, 데스크톱. 코어 로직은 Linux에서도 빌드·테스트</td></tr>
+<tr><td>기술 스택</td><td>.NET 8 WPF (self-contained 폴더 배포, win-x64), SkiaSharp, PDFtoImage, ZXing.Net, AWS Textract SDK, RapidOcrNet(ONNX), ClosedXML, Microsoft.Data.Sqlite</td></tr>
+<tr><td>입력</td><td>라벨 PDF(인쇄 시트, 페이지당 라벨 다수), 검사 목록 xlsx, 주문일정·품목번호·BSC 엑셀</td></tr>
+<tr><td>규제 위치</td><td>검사 <strong>보조 도구</strong>. 자동 판정은 참고값이며 최종 합격·불합격은 검사자가 결정한다 (§15)</td></tr>
+<tr><td>자매 제품</td><td>UDInspect (2D 바코드 스캔·성적서). 디자인·대화상자·상태바 규범을 공유 (<code>docs/family_design.md</code>)</td></tr>
+<tr><td>문서 상태</td><td>현재 구현 기준 확정 명세. 미결 사항은 §17</td></tr>
+</table></div>
+<hr>
+<h2 id="h1">1. 개요</h2>
+<h3 id="h2">1.1 배경</h3>
+<p>의료기기 라벨은 인쇄 시트 단위(PDF)로 출력되며, 한 페이지에 같은 LOT의 라벨이 여러 장(예: 11~13장) 배치된다. 출하 전 검사자는 각 라벨에 인쇄된 LOT·품번(PN)·REF·제조일·유효기간·GTIN이 주문 목록과 일치하는지, 그리고 바코드(GS1-128·DataMatrix)가 올바른 값을 담고 있는지 확인해야 한다. 종래 방식의 문제는 네 가지다.</p>
+<ul>
+<li><strong>수작업 대조의 누락.</strong> 페이지당 수십 개의 텍스트 필드를 눈으로 대조하다 보면 한 장의 오기(誤記)를 놓치기 쉽고, 누락은 회수·규제 지적으로 이어진다.</li>
+<li><strong>두 개의 분리된 도구.</strong> 검사 목록을 만드는 프로그램(엑셀 3종 병합)과 라벨을 검사하는 프로그램이 분리되어 있어 목록 파일을 옮기고 규격을 다시 고르는 이중 작업이 있었다.</li>
+<li><strong>OCR 오인식 처리의 부재.</strong> 라벨 폰트·인쇄 품질에 따른 O↔0, I↔1 같은 혼동을 매번 사람이 걸러야 했고, 같은 오인식이 반복돼도 프로그램은 학습하지 못했다.</li>
+<li><strong>기록의 부재.</strong> 검사 결과가 화면에만 남고 이미지·이력·CSV로 남지 않아 사후 추적이 어려웠다.</li>
+</ul>
+<p>LaVIS는 목록 생성 → 라벨 OCR·바코드 검사 → 판정·기록을 하나의 앱으로 통합하고, 검사자가 확인해야 할 곳만 빠르게 드러내는 것을 목표로 한다.</p>
+<h3 id="h3">1.2 목표</h3>
+<ol>
+<li>PDF를 열면 전 페이지가 백그라운드에서 OCR·바코드 분석되고, 페이지를 넘길 때 기다림 없이 판정이 표시된다 (선행 프리페치 + 캐시, 재과금 없음).</li>
+<li>페이지의 LOT을 라벨에서 읽어 목록과 자동으로 맞추고, 라벨에 인쇄된 양식 문서번호(예: <code>Rev.A00</code>, <code>BSL-01</code>, <code>PML-001</code> + <code>Rev.1</code>)로 검사 규격을 자동 선택한다. 사람이 고른 값은 항상 자동보다 우선한다.</li>
+<li>필드별 기대 출현 횟수(규격 정의)와 실제 검출 수를 비교하고, GS1-128 바코드의 GTIN·LOT·유효기간을 목록과 교차 검증해 '합격 / 확인 필요'를 낸다. 거짓 합격을 만들 수 있는 상황(LOT 미매칭, GS1 해석 불가, GTIN 추출 실패)은 반드시 '확인 필요' 또는 오류로 드러낸다.</li>
+<li>검사자가 확인해야 할 곳(미검출·저신뢰·불일치)이 화면·모아보기 표·결과 목록·저장 이미지에서 같은 색·같은 문구로 보인다.</li>
+<li>OCR 오인식·단어 분리·필드 위치·문서번호 규칙을 사용자가 프로그램 안에서 등록·교정할 수 있고 (커스터마이징), 그 데이터는 프리셋으로 다른 PC에 옮길 수 있다.</li>
+<li>전 페이지 자동 검사 → 부적합 로트만 모아 보기 → 문제 해결 → 검사자 확인 합격 처리의 흐름이 한 화면에서 끝나며, 결과는 이미지·SQLite 이력·CSV로 남는다.</li>
+<li><strong>판정은 검사자가 내린다.</strong> 프로그램의 '확인 필요'는 불합격이 아니라 검사자 확인 대기이며, 검사자 확인 합격은 사유와 함께 기록된다.</li>
+</ol>
+<h3 id="h4">1.3 용어</h3>
+<div class="tw"><table>
+<tr><th>용어</th><th>정의</th></tr>
+<tr><td>검사 목록</td><td>시트 <code>Label Inspection List</code>, 열 <code>LOT, PRODUCTS, PN, REF, MFG DATE, EXP DATE, GTIN</code>. 목록 생성 탭이 만들거나 xlsx로 연다</td></tr>
+<tr><td>레코드</td><td>검사 목록의 한 행(한 LOT). 페이지 검사의 기대값 원천</td></tr>
+<tr><td>규격(Standard)</td><td><code>standards.json</code>의 항목. 필드별 기대 출현 횟수(counts)·날짜 표기(date_format)·표시명(display_name)·문서번호 패턴(doc_patterns)</td></tr>
+<tr><td>문서번호</td><td>라벨에 인쇄된 양식 번호·개정 (<code>PML-001</code> / <code>Rev.1</code>, <code>BSL-01(Rev.5)</code>, <code>Rev.A00</code>). 규격 자동 선택의 유일한 근거</td></tr>
+<tr><td>필드</td><td>검출 대상 항목. 기본 LOT / PN / REF / MFG DATE / EXP DATE / GTIN (+중국 규격은 CHINA, +커스텀 필드). PRODUCTS는 규격이 기대 횟수를 명시할 때만</td></tr>
+<tr><td>검출 수 / 기대 수</td><td>페이지에서 필드 값이 검출된 횟수 / 규격이 요구하는 횟수. GTIN은 규격과 무관하게 기대 1(1개 이상 일치면 합격)</td></tr>
+<tr><td>합격 / 확인 필요</td><td>자동 판정. 모든 게이트 필드 검출 수 = 기대 수 ∧ 모든 바코드 교차검증 일치 → 합격, 아니면 확인 필요</td></tr>
+<tr><td>검사자 확인 합격</td><td>자동 '확인 필요' 페이지를 검사자가 육안 확인 후 사유와 함께 합격으로 확정한 최종 판정. 자동 판정은 보존</td></tr>
+<tr><td>바코드 검증 표</td><td>우측 하단 표. GS1-128 등 1D GS1 바코드의 AI 값과 레코드 대조 결과. DataMatrix는 표시하지 않음</td></tr>
+<tr><td>DataMatrix 정책</td><td>화면·저장 이미지에 청록 박스로 위치만 표시. 카운트·검증·GTIN 원천에서 제외</td></tr>
+<tr><td>GS</td><td>Group Separator(0x1D, FNC1). 가변 길이 AI 값의 종료 구분자</td></tr>
+<tr><td>영역(Zone)</td><td>필드 검출을 인정할 페이지 비율 사각형. 드래그·클릭으로 등록, 규격별 또는 전체</td></tr>
+<tr><td>교정(Correction)</td><td>OCR 오인식 치환 사전 (예: <code>2S090776</code>→<code>25090776</code>). 필드 더블클릭·OCR 로그에서 등록</td></tr>
+<tr><td>병합(Merge)</td><td>여러 OCR 단어를 한 문장으로 합치는 학습 규칙 (예: <code>2024-</code> + <code>05-10</code>)</td></tr>
+<tr><td>프리셋</td><td><code>.lavispreset</code> — 규격·필드 규칙·영역·양식 감지·컬럼 매핑·학습 데이터 묶음</td></tr>
+<tr><td>자동 학습</td><td>검사 중 조용히 데이터가 쌓이는 4개 모듈(OCR 패턴·라벨 유형·동일값 배치·기준정보 DB). 기본 모두 꺼짐</td></tr>
+<tr><td>페이지 슬롯</td><td>툴바 아래 페이지 상태 띠. 회색=OCR 대기 / 흰=검사 대기 / 녹 ✓=합격 / 주황 !=확인 필요 / ?=LOT 미매칭 / 굵은 초록=검사자 확인 합격</td></tr>
+</table></div>
+<hr>
+<h2 id="h5">2. 사용 환경 및 전제</h2>
+<div class="tw"><table>
+<tr><th>항목</th><th>내용</th></tr>
+<tr><td>PC</td><td>Windows 10/11 x64, 메모리 8GB 이상 권장 (PDF 렌더 배율 4.0 기준 페이지당 수십 MB)</td></tr>
+<tr><td>네트워크</td><td>OCR 엔진이 AWS Textract일 때 인터넷 + AWS 자격증명(프로필 또는 환경). 로컬 엔진(패턴 학습·ONNX)은 오프라인</td></tr>
+<tr><td>입력 PDF</td><td>라벨 인쇄 시트. 하늘색 이형지 배경 위 라벨(정렬 크롭·기울기 보정의 전제). 페이지당 라벨 다수</td></tr>
+<tr><td>검사 목록</td><td>목록 생성 탭 산출물 또는 동일 계약의 xlsx</td></tr>
+<tr><td>사용자</td><td>출하검사 검사자. 마우스·키보드 조작, GitHub·JSON 지식 불요. 고급 설정은 JSON 직접 편집(설정 폴더 열기)</td></tr>
+<tr><td>데이터 폴더</td><td><code>%APPDATA%\LaVIS</code> (구 <code>LabelSuite</code> 폴더는 첫 실행 시 자동 이전) — settings.json, standards.json, column_maps.json, history.db, ocr_cache/, 학습 데이터, app.log, crash.log</td></tr>
+<tr><td>결과 폴더</td><td>기본 <code>사용자 프로필\LaVIS_결과</code>, 설정으로 변경(절대 경로 규칙 검증, 네트워크 드라이브 접근 확인)</td></tr>
+<tr><td>단일 실행</td><td>뮤텍스 <code>Local\LaVIS.SingleInstance</code> — 두 번째 실행은 안내 후 종료</td></tr>
+</table></div>
+<hr>
+<h2 id="h6">3. 제품 범위</h2>
+<h3 id="h7">3.1 포함 (In Scope)</h3>
+<ul>
+<li>검사 목록 생성: 주문일정·품목번호·BSC 엑셀 3종 → 날짜 선택 → 목록(xlsx) 생성·저장·검사 탭 전달</li>
+<li>라벨 PDF 검사: 렌더 → 라벨 정렬 → OCR(3엔진) + 바코드 검출 → LOT 매칭 → 규격 선택 → 필드 카운트 · GS1 교차 검증 · 기준정보 대조 · 동일값 패턴 → 합격/확인 필요 → 오버레이 표시</li>
+<li>검사 보조 UI: 필드 모아보기 표, 페이지 슬롯, 다음 확인 대상 이동, OCR 인식 로그, 미검출 진단, 바코드 인식 모드(클릭 판독)</li>
+<li>커스터마이징: 규격 기대 횟수·표시명·문서번호 패턴, 필드 제외·커스텀 필드(정규식)·영역·문자 제약· 동일값 패턴·양식 감지 규칙, 교정·병합 학습, 색상·오버레이, OCR 엔진/임계, 저장 옵션, 프리셋 이식</li>
+<li>전 페이지 자동 검사, 결과 목록(부적합만 보기), 검사자 확인 합격 처리(사유 필수)</li>
+<li>기록: 주석 JPEG 저장(요약 박스), SQLite 검사 이력, 페이지 전체 CSV(검사자 처리 열 포함), LOT별 리포트 xlsx, 기준정보(마스터) DB</li>
+<li>설정 안전장치: 원자적 저장, 스키마 이전, 범위 밖 값 자동 보정·안내, 손상 파일 복구, 프리셋 가져오기 전 자동 백업</li>
+<li>빌드 식별: CI가 주입한 정보 버전(태그 또는 sha7)을 About 오버레이·상태바·이력 <code>app_version</code>에 표시, 배포 zip에 SHA-256</li>
+</ul>
+<h3 id="h8">3.2 제외 (Out of Scope)</h3>
+<ul>
+<li>전자서명·감사추적·사용자 로그인 (21 CFR Part 11 대상 시스템 아님 — §15)</li>
+<li>라벨 디자인 검토(레이아웃·폰트·색상 규격 적합성), 인쇄 색차 측정</li>
+<li>ISO/IEC 15415 정식 바코드 검증 (손상 등급은 간이 근사, 참고용)</li>
+<li>스캐너·카메라 실시간 입력 (PDF 파일 입력만; 실물 스캔 검사는 UDInspect 영역)</li>
+<li>검사 성적서 PDF 출력 (C-02, 미결 — §17)</li>
+<li>자동 판정만으로 출하 가부를 결정하는 워크플로</li>
+</ul>
+<h3 id="h9">3.3 사용 시나리오</h3>
+<p><strong>S1. 일일 출하검사 (표준 흐름)</strong></p>
+<ol>
+<li>목록 생성 탭: 주문일정·품목번호·(일본 건이 있으면) BSC 파일 선택 → 제조일 체크 → [리스트 생성] → 경고 확인 → [검사 탭으로 보내기].</li>
+<li>검사 탭: [PDF 열기](또는 끌어놓기) → 전 페이지 OCR이 백그라운드로 진행(상태바 진행 막대).</li>
+<li>[▶ 자동 검사] → 완료 시 결과 목록 창이 '부적합만 보기'로 열림.</li>
+<li>부적합 행 더블클릭 → 페이지 이동 → 모아보기 표·붉은/주황 칸으로 원인 확인 → LOT 수동 선택, 교정 등록, 영역 등록 등으로 해결 → F5 재검사.</li>
+<li>여전히 '확인 필요'지만 육안으로 정상이면 [합격 처리 (검사자 확인)…] → 사유 입력.</li>
+<li>자동 저장(또는 [결과 저장]) → 주석 이미지·이력 → [CSV 내보내기]로 페이지 전체 기록.</li>
+</ol>
+<p><strong>S2. 신제품군 첫 검사 (커스터마이징)</strong></p>
+<ol>
+<li>설정 › 규격·양식 감지에서 규격 기대 횟수 수정, 필요 시 <code>standards.json</code>에 표시명·<code>doc_patterns</code> 추가.</li>
+<li>첫 페이지에서 미검출 필드 더블클릭 → 진단 → OCR 로그에서 병합/교정 등록.</li>
+<li>필드가 엉뚱한 곳에서 잡히면 [✚ 필드 영역 등록]으로 위치 제한.</li>
+<li>안정되면 [프리셋 내보내기]로 다른 검사 PC에 배포.</li>
+</ol>
+<p><strong>S3. 바코드만 확인</strong></p>
+<ul>
+<li>[▣ 바코드 인식] → 라벨 위 DataMatrix/GS1-128 클릭 → 판독값·GS1 요소·목록 대조 확인 → [값 복사].</li>
+</ul>
+<p><strong>S4. 사후 조회</strong></p>
+<ul>
+<li>이력 탭: LOT 필터·판정 필터(합격/확인 필요/검사자 처리) → 저장 이미지 열기 → LOT 리포트 xlsx.</li>
+</ul>
+<hr>
+<h2 id="h10">4. 기능 요구사항 — 목록 생성 탭</h2>
+<div class="tw"><table>
+<tr><th>ID</th><th>요구사항</th></tr>
+<tr><td>LG-01</td><td>입력 3종(주문일정 <code>진행수량</code>, 품목번호 <code>품목번호리스트</code>, BSC <code>현UPN별</code>)을 파일 선택으로 지정하고 마지막 경로를 기억한다. 시트명·열 인덱스는 <code>column_maps.json</code>(0-기반)으로 조정한다</td></tr>
+<tr><td>LG-02</td><td>주문일정의 제조일(mfg 열)을 연/월/일 트리 체크박스로 골라 대상 행을 선택한다</td></tr>
+<tr><td>LG-03</td><td>행마다 LOT·PRODUCTS·PN·REF·국가·제조일을 읽고, 유효기한 = 제조일 + <code>shelf_life_months</code>(기본 36) − 1일 (월말 보정)</td></tr>
+<tr><td>LG-04</td><td>GTIN: 국가가 일본이면 BSC 리스트(PN 기준)에서, 그 외는 품목번호 리스트에서 조회. 일본 미매칭은 품목번호 리스트로 폴백하고 경고. 미조회는 경고(빈칸 유지)</td></tr>
+<tr><td>LG-05</td><td>REF: 일본은 BSC 리스트 REF 우선(미매칭 시 스케줄 값 + 경고). 날짜 값·엑셀 날짜 시리얼이 REF 칸에 들어온 경우 비우고 경고</td></tr>
+<tr><td>LG-06</td><td>GTIN은 GTIN-14로 정규화(숫자만, 14자리 zero-pad, 지수 표기·<code>.0</code> 아티팩트 복원). 14자리 초과는 경고 후 원본 유지</td></tr>
+<tr><td>LG-07</td><td>날짜는 <code>yyyy-MM-dd</code>로 저장한다. 규격별 표기(BSC <code>yyyy.MM.dd</code>)는 검사 시 규격의 <code>date_format</code>으로 재표기한다</td></tr>
+<tr><td>LG-08</td><td><strong>규격(STANDARD)은 목록에서 정하지 않는다.</strong> 국가별 규격 매핑은 제거되었고 생성 파일에 STANDARD 열이 없다. 구버전 파일의 STANDARD 열은 읽어도 무시</td></tr>
+<tr><td>LG-09</td><td>행 단위 실패는 오류 패널에 기록하고 계속 진행한다(무단 소멸 금지). 생성 요약 <code>n건 (경고 a, 오류 b)</code></td></tr>
+<tr><td>LG-10</td><td>미리보기는 같은 제조일·PN 묶음을 교대 배경으로 구분. [저장](xlsx, <code>Label Inspection List_&lt;날짜태그&gt;.xlsx</code>) / [검사 탭으로 보내기]</td></tr>
+<tr><td>LG-11</td><td>품목번호·BSC 리스트 없이 생성하려 하면 GTIN·REF 공백 결과를 경고하는 확인(기본 '아니오')</td></tr>
+<tr><td>LG-12</td><td>저장 시 파일 잠김(엑셀에서 열림)·권한·디스크 부족은 상태바 오류로 안내하고 생성 결과는 유지</td></tr>
+</table></div>
+<hr>
+<h2 id="h11">5. 기능 요구사항 — 라벨 검사 탭</h2>
+<h3 id="h12">5.1 PDF 로드·렌더·정렬</h3>
+<div class="tw"><table>
+<tr><th>ID</th><th>요구사항</th></tr>
+<tr><td>IN-01</td><td>[PDF 열기] / Ctrl+O / 창에 끌어놓기. 페이지 수·파일명 표시, 첫 페이지 화면 맞춤</td></tr>
+<tr><td>IN-02</td><td>렌더 배율 <code>pdf_render_zoom</code>(기본 4.0). 렌더 캐시 <code>page_image_cache_pages</code></td></tr>
+<tr><td>IN-03</td><td>라벨 정렬(기본 켬): 하늘색 이형지 기준 크롭 + 라벨 잉크 기준 기울기 보정. 상태 <code>정렬됨: 크롭 + ±x.x°</code> 표시. 정렬 알고리즘이 바뀌면 캐시 서명(<code>crop-v2</code>)을 올려 이전 좌표 재사용을 막는다</td></tr>
+<tr><td>IN-04</td><td>분석 서명(전처리·엔진·대비 보정·렌더 배율)이 바뀌면 렌더·분석·판정·저장 상태·검사자 처리를 모두 무효화하고 재분석</td></tr>
+</table></div>
+<h3 id="h13">5.2 OCR·바코드 분석 (프리페치)</h3>
+<div class="tw"><table>
+<tr><th>ID</th><th>요구사항</th></tr>
+<tr><td>OC-01</td><td>OCR 엔진 3종: <code>aws</code>(Textract, 기본), <code>pattern</code>(패턴 학습·로컬), <code>onnx</code>(RapidOCR·로컬). 설정에서 선택, 상태바에 엔진/AWS 인증 상태 표시</td></tr>
+<tr><td>OC-02</td><td>전 페이지 선행 OCR(<code>prefetch_policy</code> <code>all</code> 또는 앞 N페이지). 현재 페이지 우선순위 0. 결과는 <code>OcrCache</code>(디스크, 문서 경로·수정시각·페이지·배율·서명 키)에 저장해 재열기·재검사 시 재과금 없음</td></tr>
+<tr><td>OC-03</td><td>분석 = OCR 단어(텍스트·박스·신뢰도) + 바코드 검출(전체 페이지 DecodeMultiple + DataMatrix 로케이터 전수 탐지) + 바코드 손상 등급(간이)</td></tr>
+<tr><td>OC-04</td><td>AWS 입력은 <code>ocr.max_dimension</code>·<code>ocr.jpeg_quality</code>로 축소 전송, <code>ocr.min_confidence</code> 미만 단어 제외(0 권장), 대비 보정 옵션</td></tr>
+<tr><td>OC-05</td><td>OCR 실패(자격증명·네트워크)는 같은 원인 60초 1회만 알리고 남은 프리페치를 중단(재과금·연쇄 팝업 방지). 실패 페이지는 자동 검사에서 '미검사'로 건너뛴다</td></tr>
+<tr><td>OC-06</td><td>워커에는 항상 소유 렌더를 주고 워커가 해제한다(공유 캐시 축출로 인한 좌표 오염·크래시 방지)</td></tr>
+</table></div>
+<h3 id="h14">5.3 LOT 매칭</h3>
+<div class="tw"><table>
+<tr><th>ID</th><th>요구사항</th></tr>
+<tr><td>LM-01</td><td>페이지 OCR 단어 중 LOT 패턴(8자리 숫자, <code>99A999</code>, <code>AA9999</code>, 영숫자 5~10, 신뢰도 ≥30)을 후보로 뽑아 목록 LOT과 대조: 정확 일치 → 끝 4자리 유일 일치 → 가중 유사도 최고</td></tr>
+<tr><td>LM-02</td><td>매칭되면 LOT 콤보를 자동 선택하고 <code>자동(정확)/자동(끝4자리)/자동(유사)</code> 표시</td></tr>
+<tr><td>LM-03</td><td>라벨에서 LOT을 못 읽으면 <code>⚠ 미매칭</code> 경고, 이전 선택 LOT으로 검사하되 '확인 필요'를 강제(바코드 검증 표에 <code>LOT 매칭</code> 불일치 행) — 거짓 합격 방지. 슬롯은 <code>?</code></td></tr>
+<tr><td>LM-04</td><td>사용자가 LOT을 직접 고르면(Ctrl+L) 그 페이지는 '수동'으로 기억되어 자동 매칭이 덮지 않는다</td></tr>
+</table></div>
+<h3 id="h15">5.4 규격 자동 선택 (문서번호)</h3>
+<div class="tw"><table>
+<tr><th>ID</th><th>요구사항</th></tr>
+<tr><td>SD-01</td><td>규격 선택 우선순위: ① 이 페이지 수동 지정(규격 버튼) ② 라벨 문서번호 감지 ③ 양식 감지 규칙(설정, 위치+텍스트/이미지) ④ 커스텀 필드 매핑 ⑤ 이 페이지에 마지막으로 쓴 규격 ⑥ 현재 선택 규격</td></tr>
+<tr><td>SD-02</td><td>문서번호 서명은 규격 표시명에서 자동 유도: <code>PML-001(Rev.1)</code> → 문서번호 <code>PML-001</code> + Rev <code>1</code>; <code>A00</code> → Rev <code>A00</code>(라벨의 <code>Rev.A00</code>); 라틴/숫자가 없는 표시명(<code>중국</code>)은 대상 아님. <code>doc_patterns</code>(정규식)로 보강하며 이 패턴 일치가 최우선</td></tr>
+<tr><td>SD-03</td><td>OCR 혼동 허용: 0/O/Q/D, 1/I/L, 5/S, 8/B, 2/Z, 6/G, 구분자·점 생략, 같은 줄 이웃 단어 결합(<code>Rev.</code> + <code>A00</code>)</td></tr>
+<tr><td>SD-04</td><td>문서번호와 Rev는 보통 두 줄로 인쇄된다 — 문서번호 단어와 인접(같은 줄 오른쪽 또는 바로 아랫줄/윗줄, 가로 겹침)한 Rev를 우선 짝짓는다. 인접한 Rev가 없을 때만 페이지 어딘가의 Rev를 낮은 점수로 사용(다른 문서의 Rev보다 인접 Rev가 이김)</td></tr>
+<tr><td>SD-05</td><td>같은 문서번호를 공유하는 규격(PML-001 Rev.0/Rev.1)에서 Rev를 못 읽으면 모호 — 이전 규격을 유지하고 '문서:' 줄에 후보를 주황으로 안내, 규격 버튼으로 수동 지정</td></tr>
+<tr><td>SD-06</td><td>감지된 문서번호 영역은 보라 박스 <code>문서번호: …</code>로 표시(두 줄이면 둘을 감싼다). 미감지 시 <code>문서번호 미감지 — &lt;규격&gt; 유지</code></td></tr>
+<tr><td>SD-07</td><td>목록의 STANDARD 열·국가 매핑은 규격 선택에 쓰지 않는다 (소스 가드 테스트로 회귀 방지)</td></tr>
+</table></div>
+<h3 id="h16">5.5 필드 검출·카운트 규칙</h3>
+<div class="tw"><table>
+<tr><th>ID</th><th>요구사항</th></tr>
+<tr><td>FD-01</td><td>기본 필드 LOT / PN / REF / MFG DATE / EXP DATE / GTIN. 중국 규격(<code>uses_china_field</code>)은 CHINA(REF 접두 3자 → 등록번호 코드) 추가. PRODUCTS는 규격 counts가 &gt;0일 때만. 설정에서 LOT 외 필드를 제외할 수 있다</td></tr>
+<tr><td>FD-02</td><td>검사 값: 레코드 값을 규격 <code>date_format</code>으로 재표기(날짜), GTIN은 GTIN-14</td></tr>
+<tr><td>FD-03</td><td>단어가 필드로 인정되는 조건: 문자 제약 복원 후 검사 값을 포함(대소문자 무시, 혼동 문자 허용 옵션), 필드명 단어·콜론 종료·2자 이하·제외어(Lasso 등) 아님, <code>(01)</code> 포함 아님</td></tr>
+<tr><td>FD-04</td><td>병합 규칙 → 교정 사전 순으로 OCR 단어를 정규화한 뒤 카운트</td></tr>
+<tr><td>FD-05</td><td>영역이 등록된 필드는 영역 안(페이지 4% 마진) 검출만 인정 (규격별 또는 전체)</td></tr>
+<tr><td>FD-06</td><td>판정: 게이트 필드(기대 &gt;0, 검사 값 있음)마다 검출 수 = 기대 수. <strong>GTIN은 규격 counts와 무관하게 기대 1이며 1개 이상 일치면 합격</strong> (표기 <code>n/≥1</code>)</td></tr>
+<tr><td>FD-07</td><td>커스텀 필드: 고정 문자열(FD-03 규칙) 또는 정규식(단어 전체 일치), 기대 횟수 선택, 규격 매핑 선택</td></tr>
+<tr><td>FD-08</td><td>검색창(Ctrl+F): 임의 문구를 관대하게 찾아 박스만 표시(판정 무관, <code>SEARCH</code> 행)</td></tr>
+</table></div>
+<h3 id="h17">5.6 GTIN 추출 순서 · 바코드 검증</h3>
+<div class="tw"><table>
+<tr><th>ID</th><th>요구사항</th></tr>
+<tr><td>BC-01</td><td>GTIN 원천 순서: ① <strong>바코드 판독</strong> — 검증 대상 바코드(GS1-128 등 1D GS1, DataMatrix 제외)에서 AI(01) 14자리를 뽑을 수 있으면 그것이 원천(기대 GTIN과 같은 바코드마다 1건, 박스 = 바코드 위치). 값이 다르면 0건이며 OCR로 덮지 않는다 ② 어느 바코드에서도 못 뽑으면 <strong>인쇄 텍스트 OCR</strong> <code>(01)+14자리</code> ③ 둘 다 없으면 <strong>추출 실패 오류</strong> — 필드 표 붉은 <code>!</code> 행, 상태바 오류, 사유줄 <code>GTIN 추출 실패(바코드·OCR 없음)</code>. 필드 표 '출처' 열에 바코드/OCR/없음</td></tr>
+<tr><td>BC-02</td><td><strong>DataMatrix 정책</strong>: 검출은 하되(청록 박스, 종류 라벨) 카운트·검증 표·GTIN 원천에서 제외. 기준정보 DB의 기대 심볼로지 존재 확인에는 사용</td></tr>
+<tr><td>BC-03</td><td>GS1-128: 디코더 GS1 모드(선두 FNC1 → <code>]C1</code>, 이후 FNC1 → GS). GS1 외형(GS 포함, <code>(01)</code>, <code>]C1/]d2/]Q3</code>, <code>01</code>+14자리)만 검증 대상</td></tr>
+<tr><td>BC-04</td><td>GS1 파싱: AI 표(00/01/02/10/11/15/17/21/240/30/310x), 관대 모드 — 미등록 AI(91, 8012 등)는 다음 GS까지 건너뛰고 <code>미등록 AI</code> 참고 행. 숫자 전용 AI(01/00/02/11/15/17)에 비숫자면 구조 오류. 괄호 표기·심볼로지 접두 정리</td></tr>
+<tr><td>BC-05</td><td>교차 검증 항목: GTIN(AI 01 ↔ 레코드 GTIN-14), LOT(AI 10 ↔ 레코드 LOT), MFG(AI 11), EXP(AI 17, YYMMDD·DD=00 말일). 바코드에 없는 AI는 검증하지 않음</td></tr>
+<tr><td>BC-06</td><td>FNC1 누락 인쇄(가변장 (10)이 뒤 AI까지 삼킴): 기대 LOT 뒤 잔여가 온전한 GS1 요소열이면 LOT 일치로 보고 나머지 AI를 분리해 대조, <code>FNC1 누락</code> 참고 행 + 툴팁</td></tr>
+<tr><td>BC-07</td><td>구조 해석 실패 시에도 맨 앞 AI(01) 다음 14자리를 뽑을 수 있으면 GTIN만 대조(<code>GS1 해석 (01) 뒤 구조 해석 불가</code> 참고). GTIN조차 못 뽑으면 <code>GS1 해석</code> 불일치 행 → 확인 필요</td></tr>
+<tr><td>BC-08</td><td>바코드 검증 표: 위→아래 순 번호, 종류, 손상 등급(A~F 간이), 값(GS1 요소 풀어 표기, 불일치 시 <code>⚠ 필드 기대값</code>), 상태(일치/불일치/해석 불가/-), 툴팁. DataMatrix만 있으면 <code>검증 대상 바코드 없음 (DataMatrix n개는 박스로만 표시)</code></td></tr>
+<tr><td>BC-09</td><td>기준정보 DB(PN별 REF·GTIN·기대 심볼로지): 레코드와 대조해 <code>기준DB</code> 행 추가. 동일값 패턴 결과는 <code>동일값</code> 행</td></tr>
+<tr><td>BC-10</td><td>바코드 손상 등급: 심볼 대비·모듈화·결함 근사 → A~F (참고용, 15415 대체 아님)</td></tr>
+<tr><td>BC-11</td><td>DataMatrix 검출 강건성: 8px/4px/고밀도 격자 로케이터, 맞닿은 연결요소에서 정방형 창 분리(둘레 밝기 점수), L 파인더(인접 두 변 실선) 우선 정렬, L 유도 정확 크롭·콰이엇존 합성·인셋 디코드 폴백, 박스 성장 한도 — 하단·소형(모듈 ≥2px)·테두리/텍스트에 붙은 심볼</td></tr>
+</table></div>
+<h3 id="h18">5.7 바코드 인식 모드 (클릭 판독)</h3>
+<div class="tw"><table>
+<tr><th>ID</th><th>요구사항</th></tr>
+<tr><td>BP-01</td><td>툴바 [▣ 바코드 인식] 토글 → 십자 커서 + 배너. 영역 등록 모드와 배타. Esc 또는 버튼으로 해제</td></tr>
+<tr><td>BP-02</td><td>클릭(6px 이내 이동)하면 그 지점의 심볼만 판독: 분석된 바코드 중 지점을 포함하는 것 우선, 없으면 지점 주변 240→480→960px 창을 다시 판독(전체 파이프라인)해 지점을 포함하거나 가장 가까운 심볼</td></tr>
+<tr><td>BP-03</td><td>결과 창: 종류·등급·위치, 판독값(GS 구분자 <code>&lt;GS&gt;</code> 표시, 선택 가능), GS1 요소 목록(또는 해석 불가 사유 + 맨 앞 GTIN), 현재 LOT과의 대조 상태·툴팁, [값 복사], [닫기](Esc)</td></tr>
+<tr><td>BP-04</td><td>드래그는 이동으로 유지. 판독 실패 시 상태바 경고(심볼 중앙 클릭·배율 안내)</td></tr>
+</table></div>
+<h3 id="h19">5.8 영역 등록 · 교정 · 병합 · 진단</h3>
+<div class="tw"><table>
+<tr><th>ID</th><th>요구사항</th></tr>
+<tr><td>ZC-01</td><td>[✚ 필드 영역 등록] 모드: 십자 커서 + 배너. 드래그 = 영역, 클릭 = 커서 아래 OCR 단어 상자를 영역으로 스냅. 대화상자에서 필드(기본/커스텀/새 커스텀)·적용 규격(전체 또는 특정) 선택, 같은 필드·규격에 기존 영역이 있으면 교체/추가 선택. 연속 등록 옵션(설정 즉시 저장)</td></tr>
+<tr><td>ZC-02</td><td>등록된 영역은 파란 점선 + 필드명 칩으로 상시 표시(토글), 방금 등록한 영역은 앰버로 번쩍임</td></tr>
+<tr><td>ZC-03</td><td>필드 행 더블클릭(불일치): 기대값과 비슷한 OCR 후보(편집거리 ≤2)로 교정 등록 대화상자. 후보가 없으면 미검출 진단(평균 신뢰도·가장 유사한 인식·분리 여부·필터·대비 보정) + [OCR 로그 열기](Enter) / [인식 강화 후 재OCR](과금, 주황)</td></tr>
+<tr><td>ZC-04</td><td>OCR 로그 창: 페이지의 모든 단어를 위→아래로, 기대값 필터·유사도 정렬, 선택 병합 학습·교정 등록. 창은 등록 후에도 열려 있고 닫으면 재검사</td></tr>
+<tr><td>ZC-05</td><td>교정·병합·영역 변경은 엔진을 다시 만들어 즉시 재검사</td></tr>
+<tr><td>ZC-06</td><td>문자 제약(필드별 허용/금지 문자): 위반 문자를 혼동 그룹으로 복원(O→0), 복원 불가는 불일치</td></tr>
+</table></div>
+<h3 id="h20">5.9 동일값 패턴 · 양식 감지 · 유형 학습</h3>
+<div class="tw"><table>
+<tr><th>ID</th><th>요구사항</th></tr>
+<tr><td>SV-01</td><td>동일값 규칙(이름·정규식·최소 개수): 페이지에서 패턴 객체를 모두 찾아 값 상호 비교(다수결 합의), 기준 배치 대비 드리프트 보정·객체 누락 검출. 결과는 검증 표 <code>동일값</code> 행</td></tr>
+<tr><td>SV-02</td><td>기준 배치 자동 갱신은 자동 학습 모듈 <code>same_value_layout</code>이 켜져 있을 때만(기본 꺼짐)</td></tr>
+<tr><td>FM-01</td><td>양식 감지 규칙(이름·규격·영역%·텍스트 정규식·이미지 사용): 텍스트 또는 이미지 템플릿(64×48 상관계수 ≥0.75) 일치로 규격 선택(SD-01 ③). [양식 학습] 버튼은 이미지 규칙이 있을 때만</td></tr>
+<tr><td>TL-01</td><td>라벨 유형 학습(<code>label_type</code>, 기본 꺼짐): 고정 문구 토큰을 유형(PN+규격)별 축적, 표본 ≥ <code>min_samples</code> 후 고정 문구 누락 → 대화상자(Enter = 학습 안 함), 처음 보는 문구만 다수 → 상태바·사유줄만(합격이면 학습해 적응)</td></tr>
+<tr><td>TL-02</td><td>토큰 필터: 신뢰도 &lt;75%, 3자 미만, 글자·숫자 비율 &lt;60%, 글자 &lt;2개, 숫자/날짜류, 레코드 가변값 포함 토큰은 제외</td></tr>
+</table></div>
+<h3 id="h21">5.10 판정 표시 · 오버레이 · 필드 모아보기</h3>
+<div class="tw"><table>
+<tr><th>ID</th><th>요구사항</th></tr>
+<tr><td>UI-01</td><td>판정 배지: 24px 헤드라인 <code>✓ 합격 (PASSED)</code> / <code>✓ 합격 (검사자 확인)</code> / <code>⚠ 확인 필요 (CHECK)</code> 한 줄 + 11px 사유줄(<code>규격 … · 사유 요약 · 검사자 …</code>). 판정이 아닌 안내(OCR 실패·목록 없음)는 15px. 두 줄 모두 말줄임 + 툴팁 전문. 판정 변경 시 앰버 플래시</td></tr>
+<tr><td>UI-02</td><td>사유 요약(<code>InspectionSummary.Describe</code>): 불합격 필드 <code>필드 n/기대</code> → 바코드 불일치 → 기타, 최대 3개 + <code>외 n건</code>; 합격은 <code>필드 n/n 일치 · 바코드 m건 일치</code>. 저장 이미지 요약 박스 2행과 동일 문구</td></tr>
+<tr><td>UI-03</td><td>필드 표: 기호(✓/✗/!/–)·항목·검사 값·검출/기준·출처(GTIN). 행 배경 합격 녹/불합격 주황/추출 실패 빨강</td></tr>
+<tr><td>UI-04</td><td>오버레이(화면·저장 동일): 검출 필드 박스(설정 필드 색), 바코드 청록 박스(DataMatrix 포함, 위치만), 문서번호·양식 보라 박스, 저신뢰 주황 파선(검출 필드 단어에만 — 등록 필드 외 객체에는 박스·신뢰도 표시 없음), 등록 영역 파란 점선(토글). 범례 칩 상시 표시</td></tr>
+<tr><td>UI-05</td><td>필드 모아보기(토글, 기본 켬): 뷰어 오른쪽 열(기본 라벨 60 : 표 40 별표 비율, 분할선으로 조절·<code>overlay.gallery_percent</code> 저장). 열=항목(LOT/PN/REF/MFG/EXP/GTIN/CHINA/커스텀), 행=규격 기대 개수(검출이 더 많으면 그만큼), 칸=검출 객체 크롭. 머리글 <code>LOT 13/13</code>(합격 녹/불합격 주황/추출 실패 빨강), 빨강 칸 <code>미검출</code>, 주황 테두리 저신뢰, 노랑 테두리 기대 초과. 표는 Viewbox로 패널 폭에 맞춰 자동 확대/축소(좌우 스크롤 없음), 칸 클릭 = 라벨 위치로 스크롤</td></tr>
+<tr><td>UI-06</td><td>페이지 슬롯(§1.3) — 60개 초과 시 현재 주변만, 폭 18px 미만이면 기호만. 클릭 이동. 저장됨 띠</td></tr>
+<tr><td>UI-07</td><td>집계 줄: 합격/확인 필요 큰 숫자, <code>검사 n / N · 미검사 k</code>, <code>● 결과 미저장 n건</code> ↔ <code>✓ 결과 저장됨</code></td></tr>
+<tr><td>UI-08</td><td>확대/축소: 슬라이더·휠(8%/노치)·Q/E, 드래그 팬, WASD, 화면 맞춤. 모아보기와 겹치지 않음(별도 열)</td></tr>
+<tr><td>UI-09</td><td>키보드: Ctrl+O 열기 · Ctrl+S 저장 · F5 재검사 · N 다음 확인 대상 · Ctrl+L LOT · Ctrl+F 검색 · Ctrl+Shift+L OCR 로그 · Esc 모드 해제/자동 검사 중지 · ←→ Home End 페이지. 텍스트 입력 중에는 개입하지 않음</td></tr>
+</table></div>
+<h3 id="h22">5.11 자동 검사 · 결과 목록 · 검사자 확인 합격</h3>
+<div class="tw"><table>
+<tr><th>ID</th><th>요구사항</th></tr>
+<tr><td>AI-01</td><td>[▶ 자동 검사]: 목록·PDF·규격이 있어야 시작. 전 페이지 OCR을 제출하고 페이지 순서대로 계산(소유 렌더, UI 컨트롤 무관). OCR 미완료 페이지는 기다림(3분간 진척 없으면 중단), OCR 실패 페이지는 미검사로 건너뜀</td></tr>
+<tr><td>AI-02</td><td>진행: 상태바 <code>자동 검사 n/N · 합격 · 부적합</code>, 진행 막대, 5페이지마다 집계·슬롯 갱신. 버튼은 <code>■ 자동 검사 중지</code>(주황)로, 다시 누르거나 Esc로 중지(지금까지 판정 유지). PDF 교체·분석 무효화 시 자동 중단</td></tr>
+<tr><td>AI-03</td><td>완료: <code>자동 검사 완료 (m:ss) — 합격 a · 부적합 b [· 미검사 c]</code>, 부적합이 있으면 결과 목록을 '부적합만 보기'로 연다</td></tr>
+<tr><td>RL-01</td><td>결과 목록 창(비모달, [결과 목록] 버튼): 요약 <code>부적합 · 합격(검사자 확인 n) · 미검사 / 전체</code>, 표(페이지·LOT·REF·규격·자동 판정·최종·사유·저장), 행 배경 합격 녹/검사자 처리 파랑/부적합 주황. '부적합만 보기' 토글, 더블클릭·[이 페이지로 이동], [합격 처리 (검사자 확인)…], [합격 처리 취소], [닫기](Esc). 판정·저장 변경 시 자동 갱신(선택 유지)</td></tr>
+<tr><td>IV-01</td><td>합격 처리 조건: 검사됨 ∧ 최종 미합격 ∧ LOT 매칭됨(미매칭이면 먼저 LOT 수동 선택 안내). 사유 입력 필수(빈 사유는 처리 안 함). 처리자 = Windows 사용자명, 시각 기록</td></tr>
+<tr><td>IV-02</td><td>효과: 최종 판정 합격(배지 <code>✓ 합격 (검사자 확인)</code>, 슬롯 굵은 초록 ✓, 집계·다음 확인 대상·내보내기 확인 게이트 반영). 자동 판정은 보존</td></tr>
+<tr><td>IV-03</td><td>기록: 저장 이미지 파일명 <code>_Passed</code>, 요약 박스 <code>INSPECTOR PASS (auto CHECK)</code>, 이력 <code>inspector_verdict/note/by</code>, CSV <code>INSPECTOR=PASS / FINAL=MATCH / INSPECTOR_NOTE / INSPECTOR_BY</code>, app.log</td></tr>
+<tr><td>IV-04</td><td>해제: [합격 처리 취소], 또는 재검사로 판정 근거(검색어 제외 서명)가 바뀌면 자동 해제 + 상태바 경고. 자동 판정이 합격이 되면 처리 기록은 제거(불필요)</td></tr>
+</table></div>
+<h3 id="h23">5.12 저장 · 이력 · CSV</h3>
+<div class="tw"><table>
+<tr><th>ID</th><th>요구사항</th></tr>
+<tr><td>SV-01</td><td>저장 파일명 `###_LOT_REF_YYYYMMDD_Passed</td><td>Check.jpg<code> (카운터는 이력 DB, 파일 줄기 정제·40자 절단, 같은 이름은 </code>_(2)<code>). 축소 배율 </code>save_scale<code>, 품질 </code>jpeg_quality`. 내용: 필드 오버레이 + 바코드 박스 + 우상단 요약 박스(규격·판정·사유·필드별 n/기대 OK/NG·검사자 처리)</td></tr>
+<tr><td>SV-02</td><td>자동 저장(툴바 토글, 즉시 설정 저장): 페이지 판정마다 저장하되 같은 판정 서명(자동 판정 + 검사자 처리)은 한 번만. 수동 재저장은 확인(기본 '아니오'). 저장 경로 무효·접근 불가(네트워크 드라이브, 3초 프로브)면 자동 저장을 끄고 경고</td></tr>
+<tr><td>SV-03</td><td>저장 실패는 원인별 안내(권한·경로·디스크·네트워크). 이미지는 저장됐는데 이력 기록만 실패하면 그 사실만 알림</td></tr>
+<tr><td>HI-01</td><td>이력 DB(SQLite WAL): <code>inspections</code>(ts, lot, ref, pn, products, gtin, standard, source, pdf_path, page, passed, image_path, app_version, inspector_verdict, inspector_note, inspector_by), <code>inspection_fields</code>, <code>barcode_checks</code>, <code>counters</code>, <code>label_master</code>. 구버전 DB는 열 자동 추가</td></tr>
+<tr><td>HI-02</td><td>이력 탭: LOT 부분 일치·판정 필터, 최신순 500건, 판정 <code>합격 / 확인 필요 / 합격(검사자) / 부적합(검사자)</code>, 새 행 앰버 플래시, 이미지 열기, LOT 리포트 xlsx, 기준정보 DB 편집 창</td></tr>
+<tr><td>CSV-01</td><td>[CSV 내보내기]: 확인 필요·미검사·미저장이 있으면 확인(기본 '아니오'). 고정 24열 <code>PAGE,LOT,PN,REF,GTIN,MFG_DATE,EXP_DATE,STANDARD,AUTO(자동판정),INSPECTOR(검사자처리),FINAL(최종),FIELD_LOT..FIELD_GTIN,BARCODES,INSPECTOR_NOTE,INSPECTOR_BY,IMAGE_PATH,PDF_FILE,EXPORTED_AT,APP_VERSION</code>. 전 페이지 한 행(미검사 <code>UNINSPECTED</code>). LOT/PN/REF/GTIN/IMAGE_PATH는 <code>="값"</code> 텍스트 보호(설정으로 해제), UTF-8 BOM, CRLF. 파일 잠김·권한은 상태바 오류</td></tr>
+</table></div>
+<hr>
+<h2 id="h24">6. 검사 규격 정의 (<code>standards.json</code>)</h2>
+<div class="tw"><table>
+<tr><th>키</th><th>의미</th></tr>
+<tr><td><code>standards.&lt;키&gt;.counts</code></td><td>필드별 기대 출현 횟수. 0 = 검사 안 함. GTIN 값은 무시(항상 ≥1 규칙)</td></tr>
+<tr><td><code>date_format</code></td><td>strftime(<code>%Y-%m-%d</code>, <code>%Y.%m.%d</code>) — 검사 시 레코드 날짜를 이 표기로 재표기</td></tr>
+<tr><td><code>uses_china_field</code></td><td>CHINA 필드 사용(REF 접두 3자 → <code>china_ref_mapping</code>)</td></tr>
+<tr><td><code>display_name</code></td><td>UI 표시명이자 문서번호 감지 서명의 원천 (<code>PML-001(Rev.1)</code>, <code>BSL-01(Rev.5)</code>, <code>A00</code>)</td></tr>
+<tr><td><code>doc_patterns</code></td><td>문서번호 감지 보강 정규식 배열(최우선 일치)</td></tr>
+<tr><td><code>field_colors</code></td><td>필드별 오버레이 RGBA</td></tr>
+</table></div>
+<p>기본 규격: MDR=PML-001(Rev.1), MDD=PML-001(Rev.0), BSC=BSL-01(Rev.5, <code>yyyy.MM.dd</code>), A00, A02, 중국(CHINA). 내부 키는 목록·이력 호환을 위해 불변이며 표시명만 바꾼다.</p>
+<hr>
+<h2 id="h25">7. 설정 (<code>settings.json</code>) 및 커스터마이징</h2>
+<h3 id="h26">7.1 설정 창(⚙) 탭</h3>
+<div class="tw"><table>
+<tr><th>탭</th><th>항목</th></tr>
+<tr><td>일반·저장·AWS</td><td>저장 경로, 자동 저장 기본, 결과 축소 배율·JPEG 품질, CSV 텍스트 보호, AWS 리전·프로필, 유효기간 개월</td></tr>
+<tr><td>OCR 엔진·교정</td><td>엔진 선택, 입력 최대 변·JPEG 품질·최소 신뢰도, 대비 보정, 혼동 매칭, 저신뢰 알람 임계(단어·평균), 교정 사전·병합 규칙 편집, 패턴 초기화(빨강, 확인)</td></tr>
+<tr><td>검출 필드·영역</td><td>필드 제외, 커스텀 필드(이름·패턴·정규식·기대·규격), 필드 영역 표, 문자 제약, 동일값 패턴, <strong>자동 학습(4 모듈 개별 on/off, 기본 꺼짐)</strong> + 유형 학습 표본 수</td></tr>
+<tr><td>규격·양식 감지</td><td>규격별 기대 횟수(더블클릭 수정, GTIN ≥1 안내), 라벨 양식 자동 감지 규칙(선택 사항), 프리셋 내보내기/가져오기, 데이터 백업, 설정 폴더 열기</td></tr>
+<tr><td>표시</td><td>필드 색, 오버레이 굵기·채움·번호, 영역 표시</td></tr>
+</table></div>
+<p>숫자 입력은 <code>SettingRanges</code> 범위표(붉은 배경·툴팁·저장 차단·탭 전환)로 검증되고, 저장 시 즉시 적용된다.</p>
+<h3 id="h27">7.2 주요 키</h3>
+<div class="tw"><table>
+<tr><th>키</th><th>기본</th><th>비고</th></tr>
+<tr><td><code>pdf_render_zoom</code></td><td>4.0 [1..8]</td><td>렌더 배율 — 바뀌면 재분석</td></tr>
+<tr><td><code>prefetch_policy</code></td><td><code>all</code></td><td>또는 앞 N페이지 숫자</td></tr>
+<tr><td><code>ocr.engine</code></td><td><code>aws</code></td><td><code>aws</code>/<code>pattern</code>/<code>onnx</code></td></tr>
+<tr><td><code>ocr.min_confidence</code> / <code>low_word_confidence</code> / <code>low_avg_confidence</code></td><td>0 / 70 / 80</td><td></td></tr>
+<tr><td><code>ocr.contrast_stretch</code>, <code>ocr.allow_confusables</code>, <code>ocr.quality_alarm</code></td><td>false / true / true</td><td></td></tr>
+<tr><td><code>fields.disabled</code>, <code>fields.custom[]</code>, <code>fields.zones[]</code>, <code>fields.charsets[]</code>, <code>fields.same_value[]</code></td><td>—</td><td>커스터마이징 데이터</td></tr>
+<tr><td><code>label_forms.rules[]</code></td><td>[]</td><td>양식 감지 규칙(선택)</td></tr>
+<tr><td><code>learning.glyph_patterns</code> / <code>label_type</code> / <code>same_value_layout</code> / <code>master_db</code></td><td>false</td><td>자동 학습 모듈. 구버전 <code>type_learning.enabled</code>는 <code>label_type</code>로 자동 이전</td></tr>
+<tr><td><code>type_learning.min_samples</code></td><td>5 [2..100]</td><td></td></tr>
+<tr><td><code>overlay.thickness</code> / <code>fill_alpha</code> / <code>show_numbers</code> / <code>show_zones</code> / <code>show_gallery</code> / <code>gallery_percent</code></td><td>2 / 90 / false / true / true / 40 [10..80]</td><td></td></tr>
+<tr><td><code>zones.keep_mode</code></td><td>false</td><td>연속 영역 등록</td></tr>
+<tr><td><code>export.csv_text_protect</code></td><td>true</td><td></td></tr>
+<tr><td><code>save_directory</code>, <code>save_scale</code>, <code>jpeg_quality</code>, <code>auto_save_default</code></td><td>"" / 0.5 / 90 / false</td><td></td></tr>
+<tr><td><code>shelf_life_months</code></td><td>36 [1..120]</td><td>목록 생성</td></tr>
+<tr><td><code>schema_version</code></td><td>2</td><td>원자적 저장·마이그레이션</td></tr>
+</table></div>
+<h3 id="h28">7.3 안전장치</h3>
+<ul>
+<li>원자적 저장(임시 파일 → 교체), 손상 시 <code>.corrupt-시각</code> 보관 후 기본값 복구 + 안내</li>
+<li>범위 밖·잘못된 형식은 시작 시 자동 보정하고 보정 목록을 상태바/대화상자로 안내(<code>Corrections</code>)</li>
+<li>프로그램보다 새 스키마 버전이면 경고, 프리셋 가져오기 전 <code>backup-settings-시각</code> 자동 백업</li>
+<li>프리셋(<code>.lavispreset</code>)에 포함: 규격·컬럼 매핑·필드 규칙·영역·양식·학습·오버레이·렌더 배율. 제외: 저장 폴더·AWS·엔진 선택·마지막 파일</li>
+</ul>
+<hr>
+<h2 id="h29">8. 데이터 · 파일 계약</h2>
+<div class="tw"><table>
+<tr><th>파일</th><th>위치</th><th>내용</th></tr>
+<tr><td><code>settings.json</code> / <code>standards.json</code> / <code>column_maps.json</code></td><td>데이터 폴더</td><td>설정·규격·엑셀 컬럼 매핑 (최초 실행 시 번들 기본값 복사)</td></tr>
+<tr><td><code>history.db</code></td><td>데이터 폴더</td><td>검사 이력·카운터·기준정보</td></tr>
+<tr><td><code>ocr_cache/</code></td><td>데이터 폴더</td><td>페이지 분석 캐시(JSON, LRU <code>ocr_cache_max_entries</code>)</td></tr>
+<tr><td><code>corrections.json</code>, <code>merges.json</code>, <code>glyph_*</code>, <code>label_profiles.json</code>, <code>same_value_layouts.json</code>, <code>form_templates.json</code></td><td>데이터 폴더</td><td>학습·교정 데이터(<code>.lslearn</code> 내보내기)</td></tr>
+<tr><td><code>app.log</code>(2MB 회전), <code>crash.log</code></td><td>데이터 폴더</td><td>경고·오류·검사자 처리 감사 줄, 비UI 스레드 예외</td></tr>
+<tr><td>결과 JPEG, CSV, 리포트 xlsx</td><td>결과 폴더/사용자 지정</td><td>§5.12</td></tr>
+</table></div>
+<hr>
+<h2 id="h30">9. 비기능 요구사항</h2>
+<div class="tw"><table>
+<tr><th>항목</th><th>요구</th></tr>
+<tr><td>응답성</td><td>페이지 이동 시 캐시 히트면 지연 없이 판정 표시. 무거운 작업(OCR·렌더)은 백그라운드, UI 스레드는 계산만</td></tr>
+<tr><td>재과금 방지</td><td>같은 PDF·페이지·배율·서명의 OCR은 캐시로 재사용. 실패 원인 반복 시 프리페치 중단. 재OCR은 명시적 과금 확인</td></tr>
+<tr><td>안정성</td><td>설정·DB 손상 자동 복구, 비UI 예외 crash.log, 캐시 축출 안전(소유 렌더), 뮤텍스 단일 실행</td></tr>
+<tr><td>결정성</td><td>같은 입력·설정이면 같은 판정(서명). 자동 저장 중복 없음</td></tr>
+<tr><td>이식성</td><td>Core는 GUI 비의존(net8.0, Linux 테스트), App은 net8.0-windows WPF</td></tr>
+<tr><td>접근성</td><td>색 없이도 읽히는 기호(✓ ✗ ! ? –), 탭 순서·자동화 이름, 툴팁 전문</td></tr>
+<tr><td>로그</td><td>검사자 처리·설정 폴백·저장 실패는 app.log에 남긴다</td></tr>
+</table></div>
+<hr>
+<h2 id="h31">10. UI 구성 (패밀리 디자인)</h2>
+<ul>
+<li>3탭(목록 생성 / 라벨 검사 / 검사 이력) + 상태바(엔진/AWS 상태, 메시지 <code>[HH:mm:ss]</code> 정보·경고 5초 고정·오류, 진행 막대, 버퍼, 버전 → About 오버레이, ⚙ 설정).</li>
+<li>검사 탭: 상단 툴바(주 동작 파랑 2개: PDF 열기·결과 저장 / 기능군 구분선: 페이지 이동 · 자동 검사·결과 목록 · 배율 · 영역 등록·바코드 인식·영역 표시·필드 모아보기·OCR 로그 · CSV·저장 경로·폴더) → 페이지 슬롯 → 범례 칩·모드 배너 → 뷰어(60) | 분할선 | 필드 모아보기(40). 우측 열(430px): 집계 → 목록/LOT/규격/문서/검색 → 판정 배지 → 필드 표 → 바코드 검증 표.</li>
+<li>토큰·스타일·대화상자 규범은 <code>docs/family_design.md</code>(UDInspect 공유): Primary <code>#1A6FB5</code>, 합격 녹/확인 필요 주황/불일치 빨강, 모든 모달 Esc, 확인 대화상자 기본 '아니오', 동작을 말하는 버튼 라벨, 정보성 팝업 강등.</li>
+</ul>
+<hr>
+<h2 id="h32">11. 빌드 · 배포</h2>
+<ul>
+<li>CI <code>Build LaVIS Windows EXE (C#)</code>(workflow_dispatch, 태그 <code>cs-v*</code>): 소스 가드 → Core 테스트(trx 아티팩트) → 정보 버전 결정(태그 또는 sha7) → self-contained publish(win-x64) → 배포 README(13개 데이터 파일 설명 + exe SHA-256) → 스모크 → zip 아티팩트 <code>LaVIS-&lt;sha7&gt;</code> → 태그면 릴리스.</li>
+<li>설치: 폴더 압축 해제 후 <code>LaVIS.exe</code> 실행(.NET 런타임 불필요). 로컬 OCR 모델은 <code>models/</code>에 동봉.</li>
+<li>Linux에서는 Core 빌드·테스트와 App 코드비하인드 컴파일 검사(WindowsDesktop 참조 어셈블리)만 가능하며 XAML 컴파일은 Windows CI에서 검증한다.</li>
+</ul>
+<hr>
+<h2 id="h33">12. 품질 보증</h2>
+<div class="tw"><table>
+<tr><th>수단</th><th>내용</th></tr>
+<tr><td>자동 테스트 (310건, xunit)</td><td>스키마·목록 생성·GTIN 정규화, 검사 엔진 규칙(카운트·GTIN ≥1·영역·문자 제약·병합·교정), GS1 파싱(관대·FNC1 누락·숫자 검증·TryExtractGtin), 바코드 종단(합성 DataMatrix/Code128 렌더 → 검출·박스 정합·로케이터 경로·클릭 판독), 문서번호 규격 판별(두 줄 Rev·혼동·모호), 동일값·유형 학습(잡음 필터), 이력 DB(검사자 열 마이그레이션), CSV 열 계약, 설정 정규화·범위표·프리셋, 세션 집계, 소스 규약 가드(상태 헬퍼 재귀·MessageBox 금지·Esc 버튼·XAML Control 전용 속성·규격 선택 규칙 회귀), 테마 토큰 정합</td></tr>
+<tr><td>실기 체크리스트</td><td><code>docs/manual_checklist.md</code> V-00~V-13 (빌드마다 Windows에서 점검)</td></tr>
+<tr><td>CI 가드</td><td>Windows 빌드 전 소스 가드 스크립트, 테스트 실패 시 빌드 중단</td></tr>
+<tr><td>빌드 식별</td><td>About·상태바·이력·CSV <code>APP_VERSION</code>, 배포 README SHA-256 — 밸리데이션 문서의 도구 식별란용</td></tr>
+</table></div>
+<hr>
+<h2 id="h34">13. 데이터 흐름 요약</h2>
+<pre><code>엑셀 3종 ─▶ 목록 생성 ─▶ 검사 목록(레코드) ─┐
+                                              ▼
+라벨 PDF ─▶ 렌더·정렬 ─▶ OCR 단어 + 바코드 ─▶ LOT 매칭 ─▶ 규격 선택(문서번호)
+        ─▶ 필드 카운트(영역·교정·병합) + GTIN(바코드→OCR→오류) + GS1 교차검증 + 기준DB + 동일값
+        ─▶ 자동 판정(합격/확인 필요) ─▶ [검사자 확인 합격] ─▶ 최종 판정
+        ─▶ 화면(배지·표·오버레이·모아보기·슬롯) / JPEG / SQLite / CSV / 결과 목록</code></pre>
+<hr>
+<h2 id="h35">14. 오류·예외 처리 원칙</h2>
+<ul>
+<li>거짓 합격을 만들 수 있는 모든 결손은 '확인 필요' 또는 오류로 드러낸다: LOT 미매칭, GS1 해석 불가, GTIN 추출 실패, 바코드 값 불일치.</li>
+<li>정보성 알림은 상태바, 결정이 필요한 것만 대화상자(기본 '아니오'). 같은 원인의 팝업 연쇄 금지.</li>
+<li>파일 오류(잠김·권한·디스크·네트워크)는 원인별 문구로 안내하고 검사 결과는 유지한다.</li>
+<li>백그라운드 예외는 crash.log, 설정 폴백·검사자 처리는 app.log에 남긴다.</li>
+</ul>
+<hr>
+<h2 id="h36">15. 규제상 위치</h2>
+<p>LaVIS는 <strong>검사 보조 도구</strong>다. 프로그램은 검출 결과와 참고 판정('합격' / '확인 필요')을 표시하고, 최종 합격·불합격은 검사자가 결정한다. '확인 필요'는 불합격이 아니라 검사자 확인 대기다. 검사자 확인 합격은 사유·처리자·시각과 함께 기록되지만 전자서명이 아니며, 전자서명·감사추적(21 CFR Part 11) 대상 시스템이 아니다. 자매 제품 UDInspect와 같은 간이 검증 트랙(위험 낮음, GAMP 범주에서 구성 가능한 도구)을 전제로 하며, 도구 식별(빌드 버전·SHA-256)·자동 테스트·실기 체크리스트가 검증 근거를 이룬다.</p>
+<hr>
+<h2 id="h37">16. 알려진 제한사항</h2>
+<ul>
+<li>OCR 정확도는 엔진·인쇄 품질에 좌우된다. AWS Textract 외 로컬 엔진은 폰트 학습 정도에 따라 재현율이 낮을 수 있다.</li>
+<li>문서번호가 인쇄되지 않은 라벨(중국 규격 등)은 규격 자동 선택이 되지 않아 이전 규격 유지·수동 지정에 의존한다.</li>
+<li>DataMatrix는 정책상 검증하지 않는다. DataMatrix 값 확인은 바코드 인식 모드(클릭)로 한다.</li>
+<li>바코드 손상 등급은 교정 장비의 성적서를 대체하지 않는다.</li>
+<li>라벨 정렬은 하늘색 이형지 배경을 전제로 한다. 배경이 다르면 크롭이 생략되고 기울기 보정만 시도된다.</li>
+<li>자동 검사는 OCR 완료를 기다리므로 총 소요 시간은 OCR 엔진 속도에 좌우된다(페이지당 수 초).</li>
+<li>검사자 확인 합격은 페이지 단위이며 라벨(객체) 단위 부분 판정은 없다.</li>
+</ul>
+<hr>
+<h2 id="h38">17. 미결 사항 · 로드맵</h2>
+<div class="tw"><table>
+<tr><th>항목</th><th>상태</th></tr>
+<tr><td>C-01 검사자 최종 판정 레이어</td><td>(b) 확인 필요 → 검사자 합격 확정, (c) 처리자 기록은 구현. (a) 성적서 서명 칸, (d) 파일명 접미 <code>_OK/_NG</code> 전환은 미결정</td></tr>
+<tr><td>C-02 라벨 검사 성적서 PDF</td><td>미착수 (양식 번호·결재란 구성 필요)</td></tr>
+<tr><td>C-03 표시 크기 모드·현지화</td><td>미착수</td></tr>
+<tr><td>B-01~B-08</td><td><code>docs/improvement_proposals_2026-09.md</code> — 저장 계층 무결성, OCR 파이프라인 강건화(재시도·취소·과금 확인), 세션 자동 저장·Undo, 규격·목록 생성 규칙 UI, 필드 규칙 통합 스키마, 운영 데이터 커스터마이징, 설정 창 2차, 검증 문서 체계</td></tr>
+<tr><td>GTIN 기대 횟수 정책</td><td>현재 ≥1 고정. 규격별로 정확 개수 검사가 필요해지면 <code>counts.GTIN</code> 존중 옵션 추가 검토</td></tr>
+</table></div>
+<hr>
+<h2 id="h39">18. 주요 설계 결정 이력</h2>
+<div class="tw"><table>
+<tr><th>일자</th><th>결정</th></tr>
+<tr><td>2026-09 초</td><td>Python 참조 구현 제거, C# 단일 코드베이스. Core/App 분리(Core는 Linux 테스트)</td></tr>
+<tr><td>2026-09-04</td><td>견고성·HFE 1차: 설정/DB 손상 복구, OCR 실패 연쇄 차단, 설정 창 5탭</td></tr>
+<tr><td>2026-09-08</td><td>UDInspect 패밀리 디자인 적용, 공용 대화상자 규범, 설정 검증 계층, GS1 관대 파싱, 자동 저장 중복 방지, 영역 상시 표시, 키보드 흐름, 프리셋, 빌드 식별</td></tr>
+<tr><td>2026-09-09</td><td>DataMatrix 표시 전용 · GS1-128 GTIN 대조 규칙 · 문서번호 기반 규격 선택(목록 STANDARD 제거, 두 줄 Rev 짝짓기) · 자동 검사/결과 목록/검사자 확인 합격 · GTIN 원천 순서(바코드→OCR→오류) · GTIN ≥1 · 필드 모아보기(3:2, 자동 축척) · 자동 학습 기본 꺼짐(모듈별) · 바코드 인식 모드 · 유형 학습 잡음 배제 · 배지 한 줄</td></tr>
+</table></div>
+</main></div></body></html>
