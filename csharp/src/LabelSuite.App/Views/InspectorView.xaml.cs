@@ -896,10 +896,10 @@ public partial class InspectorView : UserControl
 
     // ---------------- 검사 ----------------
 
-    private sealed record FieldRowVm(string Field, string Term, string Count, string State)
+    private sealed record FieldRowVm(string Field, string Term, string Count, string State, string Source)
     {
-        /// <summary>색 없이도 읽히는 상태 기호 — ✓ 일치 / ✗ 불일치 / – 참고(기대 없음).</summary>
-        public string Glyph => State switch { "pass" => "✓", "fail" => "✗", _ => "–" };
+        /// <summary>색 없이도 읽히는 상태 기호 — ✓ 일치 / ✗ 불일치 / ! 추출 실패 / – 참고(기대 없음).</summary>
+        public string Glyph => State switch { "pass" => "✓", "fail" => "✗", "error" => "!", _ => "–" };
     }
     private sealed record BarcodeRowVm(string Order, string Symbology, string Grade,
                                        string Value, string State, string? Tip = null);
@@ -1142,6 +1142,10 @@ public partial class InspectorView : UserControl
             }
         }
         SetViewerImage(annotated, fit);
+        // GTIN을 바코드 판독으로도, 인쇄 텍스트 OCR로도 뽑지 못함 — 요청: 오류로 알린다 (상태바 오류 + 붉은 행 + 사유줄)
+        foreach (var failed in outcome.Fields.Values.Where(f => f.ExtractionFailed))
+            Status($"p{page + 1}: {failed.Field} 추출 실패 — GS1 바코드 판독값(AI 01)도, 인쇄 텍스트 '(01)+14자리'도 찾지 못했습니다. 바코드 인쇄·OCR 품질을 확인하세요.",
+                   StatusLevel.Error);
         UpdateDashboard();
         UpdatePageSlots();
         ResultsChanged?.Invoke();
@@ -1458,8 +1462,9 @@ public partial class InspectorView : UserControl
         FieldGrid.ItemsSource = outcome.Fields.Values
             .Select(f => new FieldRowVm(
                 f.Field, f.Term.Length > 0 ? f.Term : "-",
-                f.Expected is { } expected ? $"{f.Found}/{expected}" : f.Found.ToString(),
-                f.Expected is null ? "info" : f.Passed ? "pass" : "fail")).ToList();
+                f.ExtractionFailed ? "추출 실패" : f.Expected is { } expected ? $"{f.Found}/{expected}" : f.Found.ToString(),
+                f.ExtractionFailed ? "error" : f.Expected is null ? "info" : f.Passed ? "pass" : "fail",
+                f.Field == "GTIN" ? f.Source : "OCR")).ToList();
         // 검증 대상 바코드(GS1-128 등)를 위→아래 순으로 나열 — DataMatrix는 요청에 따라 표에서 제외(박스만 표시).
         // 값·상태·툴팁 규칙은 Core BarcodeDetector.Summarize (GS1-128 GTIN = (01) 다음 14자리)
         var barcodeRows = new List<BarcodeRowVm>();

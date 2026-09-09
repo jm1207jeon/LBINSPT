@@ -341,7 +341,7 @@
                 </StackPanel>
             </Border>
 
-            <GroupBox Grid.Row="3" Header="필드별 검출 (더블클릭: 미검출 진단 · OCR 오인식 교정 등록)">
+            <GroupBox Grid.Row="3" Header="필드별 검출 (GTIN: 바코드 판독 → OCR 순 · 더블클릭: 미검출 진단·교정 등록)">
                 <DataGrid x:Name="FieldGrid" MouseDoubleClick="OnFieldDoubleClick" TabIndex="5"
                           AutomationProperties.Name="필드별 검출 결과">
                     <DataGrid.Columns>
@@ -350,6 +350,9 @@
                         <DataGridTextColumn Header="항목" Binding="{Binding Field}" Width="85"/>
                         <DataGridTextColumn Header="검사 값" Binding="{Binding Term}" Width="*"/>
                         <DataGridTextColumn Header="검출/기준" Binding="{Binding Count}" Width="70"
+                                            ElementStyle="{StaticResource CenterCell}"/>
+                        <!-- 출처: GTIN은 바코드 판독 → OCR 순 (어느 경로로 읽었는지 표시) -->
+                        <DataGridTextColumn Header="출처" Binding="{Binding Source}" Width="52"
                                             ElementStyle="{StaticResource CenterCell}"/>
                     </DataGrid.Columns>
                     <DataGrid.RowStyle>
@@ -362,6 +365,14 @@
                                 <DataTrigger Binding="{Binding State}" Value="fail">
                                     <Setter Property="Background"
                                             Value="{StaticResource WarnBgBrush}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </DataTrigger>
+                                <!-- 추출 실패(바코드·OCR 모두 없음)는 확인 필요가 아니라 오류 — 붉은 행 -->
+                                <DataTrigger Binding="{Binding State}" Value="error">
+                                    <Setter Property="Background"
+                                            Value="{StaticResource FailBgBrush}"/>
+                                    <Setter Property="Foreground"
+                                            Value="{StaticResource FailFgBrush}"/>
                                     <Setter Property="FontWeight" Value="Bold"/>
                                 </DataTrigger>
                             </Style.Triggers>

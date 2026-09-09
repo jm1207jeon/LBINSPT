@@ -17,7 +17,9 @@ public static class InspectionSummary
         }
         var items = new List<string>();
         foreach (var field in outcome.Fields.Values.Where(f => !f.Passed))
-            items.Add($"{field.Field} {field.Found}/{field.Expected}");
+            items.Add(field.ExtractionFailed
+                ? $"{field.Field} 추출 실패(바코드·OCR 없음)"
+                : $"{field.Field} {field.Found}/{field.Expected}");
         foreach (var check in outcome.BarcodeChecks.Where(c => !c.Matched))
             items.Add(check.Field switch
             {

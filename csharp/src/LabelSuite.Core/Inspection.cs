@@ -18,6 +18,11 @@ public sealed class FieldResult
     public int Found => Matches.Count;
     public bool Gating => Expected is > 0 && Term.Length > 0;
     public bool Passed => !Gating || Found == Expected;
+    /// <summary>값을 어디서 읽었는지 — "OCR"(인쇄 텍스트) / "바코드"(GS1 바코드 판독) / "없음".
+    /// GTIN은 바코드 → OCR 순으로 시도한다.</summary>
+    public string Source { get; init; } = "OCR";
+    /// <summary>검사 대상(Gating)인데 바코드·OCR 어느 경로로도 값을 추출하지 못함 — 오류로 표시.</summary>
+    public bool ExtractionFailed { get; init; }
 }
 
 public sealed record CrossCheckResult(
@@ -152,6 +157,25 @@ public sealed class InspectionEngine(StandardsBundle standards,
             && !ExcludedWords.Any(w => text.Contains(w, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>바코드 판독 기반 GTIN — 검증 대상 바코드(GS1-128 등, DataMatrix 제외)에서 GTIN을 뽑을 수 있으면
+    /// 그것이 원천이다: 기대 GTIN과 같은 바코드마다 매치 1건(박스 = 바코드 위치). 어느 바코드에서도 GTIN을
+    /// 뽑지 못하면 null → 호출 측이 OCR 텍스트로 폴백한다.</summary>
+    private static List<TextMatch>? BarcodeGtinMatches(string gtin14, IReadOnlyList<BarcodeHit>? barcodes)
+    {
+        if (barcodes is not { Count: > 0 } || gtin14.Length == 0) return null;
+        var matches = new List<TextMatch>();
+        var extracted = false;
+        foreach (var hit in barcodes)
+        {
+            if (!BarcodeDetector.IsVerifiable(hit)) continue;
+            if (Gs1.TryExtractGtin(hit.Text) is not { } gtin) continue;
+            extracted = true;
+            if (gtin == gtin14)
+                matches.Add(new TextMatch("GTIN", new OcrWord($"(01){gtin}", hit.Bbox, 100), gtin14));
+        }
+        return extracted ? matches : null;
+    }
+
     /// <summary>GTIN 매칭 — UDI 문자열에서 AI(01) 구간만 찾아, 바운딩 박스도
     /// (01)+14자리 구간으로 잘라 반환한다 (뒤따르는 (10) 등 다른 AI는 제외).</summary>
     private TextMatch? GtinMatch(string gtin14, OcrWord word)
@@ -211,7 +235,7 @@ public sealed class InspectionEngine(StandardsBundle standards,
                                      IReadOnlyList<CrossCheckResult>? barcodeChecks = null,
                                      string extraSearch = "",
                                      (int W, int H)? pageSize = null,
-                                     IReadOnlyList<BarcodeHit>? barcodes = null)   // 호환용 — 카운트에 쓰지 않음
+                                     IReadOnlyList<BarcodeHit>? barcodes = null)   // GTIN 1순위 원천(바코드 판독)
     {
         // 단어 병합(문장 학습) → 교정 사전(오인식 치환) 순으로 적용
         IReadOnlyList<OcrWord> mergedWords = Options.Merges?.Apply(words) ?? words.ToList();
@@ -235,14 +259,26 @@ public sealed class InspectionEngine(StandardsBundle standards,
             // 기본 검출 필드는 LOT/PN/REF/MFG/EXP/GTIN(+중국 규격의 CHINA) —
             // PRODUCTS는 규격이 명시적으로 기대 횟수를 요구할 때만 검사한다
             if (fieldName == "PRODUCTS" && expected is null or <= 0) continue;
-            // GTIN 카운트는 인쇄된 '(01)+14자리' 텍스트 기준 (다른 필드와 동일). 바코드(DataMatrix)는
-            // 카운트 대상이 아니며(박스만 표시), GS1-128의 GTIN은 바코드 검증 표에서 별도로 대조한다.
-            var matches = ApplyZones(fieldName, standardName, pageSize,
+            // GTIN 추출 순서(요청): ① 바코드 판독(GS1-128 등 — DataMatrix 제외)의 AI(01) → ② 실패하면 인쇄 텍스트
+            // OCR '(01)+14자리' → ③ 둘 다 없으면 추출 실패(오류). 다른 필드는 OCR.
+            List<TextMatch> matches;
+            var source = "OCR";
+            if (fieldName == "GTIN" && BarcodeGtinMatches(term, barcodes) is { } fromBarcodes)
+            {
+                matches = fromBarcodes;
+                source = "바코드";
+            }
+            else
+            {
+                matches = ApplyZones(fieldName, standardName, pageSize,
                                      CountField(fieldName, term, effective));
+                if (fieldName == "GTIN" && matches.Count == 0) source = "없음";
+            }
             outcome.Fields[fieldName] = new FieldResult
             {
                 Field = fieldName, Term = term, Expected = expected,
-                Matches = matches,
+                Matches = matches, Source = source,
+                ExtractionFailed = fieldName == "GTIN" && source == "없음" && expected is > 0 && term.Length > 0,
             };
         }
         foreach (var custom in Options.CustomFields)

@@ -29,7 +29,7 @@ UDInspect와 같은 간이 검증 트랙(위험 낮음)을 전제로 합니다.
 | 항목 | 규칙 |
 |---|---|
 | 기본 검출 필드 | LOT / PN / REF / MFG DATE / EXP DATE / GTIN (중국 규격은 CHINA 추가). PRODUCTS는 규격이 기대 횟수를 명시할 때만 |
-| GTIN 카운트 | 인쇄된 `(01)+14자리` 텍스트 기준 (다른 필드와 동일). **DataMatrix는 카운트·검증 대상이 아니며 바운딩 박스만 표시** |
+| GTIN 추출 순서 | ① **바코드 판독**(GS1-128 등 1D GS1 바코드의 AI(01)) → ② 실패하면 **인쇄 텍스트 OCR** `(01)+14자리` → ③ 둘 다 없으면 **추출 실패 오류**(붉은 행 `!` + 상태바 오류 + 사유줄). 필드 표 '출처' 열에 바코드/OCR/없음 표시. 바코드가 판독됐는데 값이 다르면 0건(OCR로 덮지 않음). **DataMatrix는 원천·검증 대상이 아니며 바운딩 박스만 표시** |
 | 바코드 검증(우측 하단 표) | GS1-128 등 1D GS1 바코드만. GTIN은 **맨 앞 AI(01) 다음 14자리**를 기준 DB GTIN과 대조(뒤 (10) 구조가 깨져도 GTIN만은 대조), (10) LOT·(17) 유효기한도 대조. FNC1 구분자 없이 디코드된 경우 기대 LOT 뒤에 이어진 AI를 분리해 대조. GTIN조차 뽑을 수 없으면 '해석 불가' → 확인 필요 |
 | 규격 자동 선택 | **라벨에 인쇄된 양식 문서번호로만** 선택. 규격 표시명에서 자동 유도 — `PML-001`+아랫줄 `Rev.1`→MDR, `PML-001`+`Rev.0`→MDD(문서번호 바로 아래/옆의 Rev를 우선 짝지음), `BSL-01(Rev.5)`→BSC, `A00`→라벨의 `Rev.A00`; `standards.json`의 `doc_patterns`(정규식)로 보강. 목록의 STANDARD 열·국가별 매핑은 쓰지 않음. 미감지면 이전 규격 유지, 문서번호만 읽히고 Rev가 안 읽히면(PML-001) 후보를 표시하고 규격 버튼으로 지정 |
 | 검사자 확인 합격 | 자동 '확인 필요' 페이지를 검사자가 육안 확인 후 **사유와 함께** 합격 처리([결과 목록] 창). 자동 판정은 보존되고 CSV(`INSPECTOR`/`FINAL`/`INSPECTOR_NOTE`)·이력(`inspector_*` 열)·저장 이미지 요약 박스에 남는다. 판정 근거가 바뀌면(재검사로 서명 변경) 자동 해제 |
@@ -51,7 +51,7 @@ UDInspect와 같은 간이 검증 트랙(위험 낮음)을 전제로 합니다.
 ## 빌드 / 테스트 / 실행
 
 ```bash
-# 테스트 (Windows 또는 Linux — 290건)
+# 테스트 (Windows 또는 Linux — 292건)
 dotnet test csharp/tests/LabelSuite.Core.Tests
 # 실행 (Windows)
 dotnet run --project csharp/src/LabelSuite.App
@@ -81,7 +81,7 @@ dotnet publish csharp/src/LabelSuite.App -c Release -r win-x64 --self-contained 
 csharp/
 ├── src/LabelSuite.Core/   # GUI 비의존 순수 로직 (스키마·생성·검사·OCR·바코드·이력)
 ├── src/LabelSuite.App/    # WPF GUI (검사/목록/이력 탭, 설정 창, 뷰어)
-└── tests/                 # xunit 290건 (합성 렌더링 OCR 왕복·DataMatrix 강건성·소스 규약·테마 정합 포함)
+└── tests/                 # xunit 292건 (합성 렌더링 OCR 왕복·DataMatrix 강건성·소스 규약·테마 정합 포함)
 docs/                      # 워크플로 분석·비교 보고서·체크리스트
 .github/workflows/         # 테스트 → 빌드 → 폴더 패키징 → 릴리스
 ```

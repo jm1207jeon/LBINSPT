@@ -76,6 +76,7 @@ public class BarcodeVerificationRuleTests
         Assert.Equal(("(01)08806367067699(10)WRONG", "-", null), BarcodeDetector.Summarize(hits[0], Record));
         var outcome = Engine().Inspect(Record, "MDR", WordsWithPrintedGtin(), [], "", (300, 300), hits);
         Assert.Equal(1, outcome.Fields["GTIN"].Found);
+        Assert.Equal("OCR", outcome.Fields["GTIN"].Source);   // DataMatrix는 원천이 아니므로 OCR 폴백
     }
 
     [Fact]
