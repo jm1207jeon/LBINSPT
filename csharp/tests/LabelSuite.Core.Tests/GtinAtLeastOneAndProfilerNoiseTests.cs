@@ -106,3 +106,47 @@ public class ProfilerNoiseTests
         Assert.True(profiler.Check("k", [new OcrWord("STERILE", (0, 0, 60, 20), 96)], Record).IsAnomaly);
     }
 }
+
+public class LearningSettingsTests
+{
+    [Fact]
+    public void LearningModulesDefaultOffAndLegacyKeyIsHonoured()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var config = new AppConfig(directory);
+            foreach (var module in new[] { "glyph_patterns", "label_type", "same_value_layout", "master_db" })
+                Assert.False(config.LearningEnabled(module), module);
+            Assert.False(config.Section("type_learning").ContainsKey("enabled"));   // 구 키는 기본값에서 제거
+
+            // 구버전 설정: type_learning.enabled=true → label_type 켜짐으로 이어받음 (다른 모듈은 여전히 꺼짐)
+            File.WriteAllText(Path.Combine(directory, "settings.json"),
+                """{"schema_version": 2, "type_learning": {"enabled": true, "min_samples": 5}}""");
+            var legacy = new AppConfig(directory);
+            Assert.True(legacy.LearningEnabled("label_type"));
+            Assert.False(legacy.LearningEnabled("glyph_patterns"));
+            // 새 키가 있으면 새 키가 우선
+            legacy.Section("learning")["label_type"] = false;
+            Assert.False(legacy.LearningEnabled("label_type"));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public void SameValueCheckerDoesNotLearnUnlessEnabled()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName(), "layouts.json");
+        var checker = new SameValueChecker(path, new OcrCorrections(null));
+        var rule = new SameValueRule("LOT", @"^\d{8}$", 2);
+        var words = new List<OcrWord> { new("25090776", (10, 10, 80, 20), 95), new("25090776", (10, 200, 80, 20), 95) };
+        checker.Check("k", [rule], words, (400, 400));
+        Assert.False(File.Exists(path));                 // 기본: 배치 저장 안 함
+        checker.AutoLearn = true;
+        checker.Check("k", [rule], words, (400, 400));
+        Assert.True(File.Exists(path));
+        Directory.Delete(Path.GetDirectoryName(path)!, recursive: true);
+    }
+}
+

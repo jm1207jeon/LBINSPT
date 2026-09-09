@@ -443,7 +443,11 @@ public partial class SettingsWindow : Window
                             && min.AsValue().TryGetValue<int>(out var v) ? v.ToString() : "2",
                     });
         SameValueGrid.ItemsSource = _sameValueRows;
-        TypeLearningCheck.IsChecked = _config.SectionBool("type_learning", "enabled", true);
+        // 자동 학습 모듈 (기본 꺼짐) — label_type은 구버전 type_learning.enabled를 이어받는다
+        GlyphLearningCheck.IsChecked = _config.LearningEnabled("glyph_patterns");
+        TypeLearningCheck.IsChecked = _config.LearningEnabled("label_type");
+        SameValueLearningCheck.IsChecked = _config.LearningEnabled("same_value_layout");
+        MasterLearningCheck.IsChecked = _config.LearningEnabled("master_db");
         TypeMinSamplesBox.Text = _config.SectionInt("type_learning", "min_samples", 5).ToString();
 
         // 라벨 양식 자동 감지
@@ -635,8 +639,13 @@ public partial class SettingsWindow : Window
                 ["min_instances"] = RangeInt("fields.same_value[].min_instances", vm.Min),
             }).ToArray());
         var typeLearning = _config.Section("type_learning");
-        typeLearning["enabled"] = TypeLearningCheck.IsChecked == true;
+        typeLearning.Remove("enabled");   // learning.label_type로 이전
         typeLearning["min_samples"] = RangeInt("type_learning.min_samples", TypeMinSamplesBox.Text);
+        var learning = _config.Section("learning");
+        learning["glyph_patterns"] = GlyphLearningCheck.IsChecked == true;
+        learning["label_type"] = TypeLearningCheck.IsChecked == true;
+        learning["same_value_layout"] = SameValueLearningCheck.IsChecked == true;
+        learning["master_db"] = MasterLearningCheck.IsChecked == true;
 
         // 라벨 양식 자동 감지 규칙
         static double ParsePercent(string text) =>

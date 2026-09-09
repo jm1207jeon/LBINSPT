@@ -134,6 +134,21 @@ public class AppConfig
             changed = true;
         }
 
+        // 구버전 키 이전: type_learning.enabled → learning.label_type (기본값 보충보다 먼저 — 새 키 기본값 false가 덮지 않게)
+        if (Settings["type_learning"] is JsonObject typeLearning
+            && typeLearning["enabled"] is JsonValue legacyEnabled
+            && legacyEnabled.TryGetValue<bool>(out var wasEnabled))
+        {
+            if (Settings["learning"] is not JsonObject learning)
+            {
+                learning = new JsonObject();
+                Settings["learning"] = learning;
+            }
+            learning["label_type"] ??= JsonValue.Create(wasEnabled);
+            typeLearning.Remove("enabled");
+            changed = true;
+        }
+
         // 번들 기본값에 새 키가 추가됐을 때 사용자 settings.json 보충
         var defaults = JsonNode.Parse(ReadEmbedded(SettingsFile))!.AsObject();
         foreach (var (key, value) in defaults)
@@ -398,6 +413,15 @@ public class AppConfig
     public int SectionInt(string section, string key, int fallback) =>
         Section(section)[key] is { } node && node.AsValue().TryGetValue<int>(out var v)
             ? v : fallback;
+
+    /// <summary>자동 학습 모듈 on/off (learning.*) — 기본 꺼짐. label_type은 구버전 키 type_learning.enabled를 이어받는다.</summary>
+    public bool LearningEnabled(string module)
+    {
+        if (Section("learning")[module] is JsonValue v && v.TryGetValue<bool>(out var enabled)) return enabled;
+        if (module == "label_type" && Section("type_learning")["enabled"] is JsonValue legacy
+            && legacy.TryGetValue<bool>(out var legacyEnabled)) return legacyEnabled;
+        return false;
+    }
 
     public bool SectionBool(string section, string key, bool fallback) =>
         Section(section)[key] is { } node && node.AsValue().TryGetValue<bool>(out var v)

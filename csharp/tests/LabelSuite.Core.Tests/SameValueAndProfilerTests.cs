@@ -24,7 +24,7 @@ public class SameValueCheckerTests : IDisposable
     [Fact]
     public void AllEqualInstancesPass()
     {
-        var checker = new SameValueChecker();
+        var checker = new SameValueChecker { AutoLearn = true };   // 배치 학습 동작 검증 — 명시적으로 켬
         var results = checker.Check(Format, [LotRule],
             [At("25090776", 100, 100), At("25090776", 700, 100),
              At("25090776", 400, 800), At("HANARO", 100, 300)], Page);
@@ -37,7 +37,7 @@ public class SameValueCheckerTests : IDisposable
     [Fact]
     public void ValueMismatchBetweenObjectsIsDetected()
     {
-        var checker = new SameValueChecker();
+        var checker = new SameValueChecker { AutoLearn = true };   // 배치 학습 동작 검증 — 명시적으로 켬
         var results = checker.Check(Format, [LotRule],
             [At("25090776", 100, 100), At("25090776", 700, 100),
              At("25090777", 400, 800)], Page);
@@ -50,7 +50,7 @@ public class SameValueCheckerTests : IDisposable
     [Fact]
     public void TooFewInstancesFail()
     {
-        var checker = new SameValueChecker();
+        var checker = new SameValueChecker { AutoLearn = true };   // 배치 학습 동작 검증 — 명시적으로 켬
         var results = checker.Check(Format, [LotRule],
             [At("25090776", 100, 100), At("25090776", 700, 100)], Page);
         Assert.Contains(Assert.Single(results).Issues, i => i.Kind == "개수 부족");
@@ -70,7 +70,7 @@ public class SameValueCheckerTests : IDisposable
     [Fact]
     public void DriftIsCompensatedAndMissingObjectDetected()
     {
-        var checker = new SameValueChecker(LayoutPath);
+        var checker = new SameValueChecker(LayoutPath) { AutoLearn = true };   // 배치 학습 동작 검증 — 명시적으로 켬
         // 1) 합격 라벨 → 배치(3개 위치) 자동 학습
         Assert.True(checker.Check(Format, [LotRule],
             [At("25090776", 100, 100), At("25090776", 700, 100),

@@ -111,7 +111,8 @@ public partial class InspectorView : UserControl
         _engine = BuildEngine();
         _textract = MakeTextract();
         _sameValue = new SameValueChecker(
-            Path.Combine(AppConfig.DataDir(), "same_value_layouts.json"), corrections);
+            Path.Combine(AppConfig.DataDir(), "same_value_layouts.json"), corrections)
+        { AutoLearn = config.LearningEnabled("same_value_layout") };
         _sameValueRules = LoadSameValueRules();
         _formDetector = new LabelFormDetector(
             Path.Combine(AppConfig.DataDir(), "form_templates.json"));
@@ -146,8 +147,8 @@ public partial class InspectorView : UserControl
             {
                 var engine = CurrentOcrEngine();
                 var words = await engine.DetectWordsAsync(analysisImage);
-                // AWS 결과는 신뢰 학습원 — 패턴 라이브러리 자동 축적
-                if (engine.Id == "aws" && words.Count > 0)
+                // AWS 결과는 신뢰 학습원 — 패턴 라이브러리 자동 축적 (설정 learning.glyph_patterns, 기본 꺼짐)
+                if (engine.Id == "aws" && words.Count > 0 && _config.LearningEnabled("glyph_patterns"))
                 {
                     try { _glyphEngine.LearnFrom(analysisImage, words); }
                     catch (Exception) { /* 학습 실패는 검사에 영향 없음 */ }
@@ -386,6 +387,7 @@ public partial class InspectorView : UserControl
         _engine = BuildEngine();
         _textract = MakeTextract();
         _sameValueRules = LoadSameValueRules();
+        _sameValue.AutoLearn = _config.LearningEnabled("same_value_layout");
         _formRules = LoadFormRules();
         UpdateFormRowVisibility();
         _profiler.MinSamples = _config.SectionInt("type_learning", "min_samples", 5);
@@ -537,8 +539,8 @@ public partial class InspectorView : UserControl
         _suppressEvents = false;
         ListStatus.Text = $"{records.Count}건 로드됨";
         ListStatus.Foreground = (Brush)FindResource("SuccessBrush");
-        // 기준정보(마스터 DB) 자동 축적 — 사전 등록값은 보존된다
-        if (_history is not null)
+        // 기준정보(마스터 DB) 자동 축적 — 사전 등록값은 보존된다 (설정 learning.master_db, 기본 꺼짐)
+        if (_history is not null && _config.LearningEnabled("master_db"))
             foreach (var record in records) _history.UpsertMasterFromRecord(record);
         ReinspectCurrent();
     }
@@ -753,6 +755,12 @@ public partial class InspectorView : UserControl
         if (e.Key == Key.Escape && ZoneModeButton.IsChecked == true)
         {
             ZoneModeButton.IsChecked = false;
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == Key.Escape && BarcodePickButton.IsChecked == true)
+        {
+            BarcodePickButton.IsChecked = false;
             e.Handled = true;
             return;
         }
@@ -1392,7 +1400,7 @@ public partial class InspectorView : UserControl
     private void CheckLabelType(int page, string formatKey, PageAnalysis analysis,
                                 LabelRecord record, InspectionOutcome outcome)
     {
-        if (!_config.SectionBool("type_learning", "enabled", true)) return;
+        if (!_config.LearningEnabled("label_type")) return;   // 기본 꺼짐 — 설정 › 자동 학습
         var report = _profiler.Check(formatKey, analysis.Words, record);
         if (report.IsAnomaly && report.MissingTokens.Count == 0)
         {
@@ -1697,25 +1705,30 @@ public partial class InspectorView : UserControl
             BuildGallery(outcome, RenderProcessed(_currentPage));
     }
 
+    /// <summary>뷰어 : 모아보기 = (100−p) : p 별표 비율 (기본 60:40 = 3/5 : 2/5). 창 크기가 바뀌어도 비율이 유지되고
+    /// 모아보기 표는 Viewbox로 폭에 맞춰 자동 확대/축소된다(좌우 스크롤 없음).</summary>
     private void ApplyGalleryVisibility()
     {
         var on = ShowGalleryCheck.IsChecked == true;
-        var width = Math.Clamp(_config?.SectionInt("overlay", "gallery_width", 460) ?? 460, 160, 1600);
-        GalleryColumn.Width = on ? new GridLength(width) : new GridLength(0);
+        var percent = Math.Clamp(_config?.SectionInt("overlay", "gallery_percent", 40) ?? 40, 10, 80);
+        ViewerColumn.Width = new GridLength(on ? 100 - percent : 100, GridUnitType.Star);
+        GalleryColumn.Width = on ? new GridLength(percent, GridUnitType.Star) : new GridLength(0);
         GalleryColumn.MinWidth = on ? 160 : 0;
         GalleryPanel.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
         GallerySplitter.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
         if (!on) ClearGallery();
     }
 
-    /// <summary>분할선을 끌어 폭을 바꾸면 저장 (overlay.gallery_width) — 라벨을 확대해도 모아보기와 겹치지 않게 사용자가 폭을 정한다.</summary>
+    /// <summary>분할선을 끌어 폭을 바꾸면 비율로 저장 (overlay.gallery_percent).</summary>
     private void OnGallerySplitterDragged(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
     {
         if (_config is null) return;
+        var total = ViewerColumn.ActualWidth + GalleryColumn.ActualWidth;
+        if (total <= 0) return;
+        var percent = (int)Math.Round(Math.Clamp(GalleryColumn.ActualWidth / total * 100, 10, 80));
         try
         {
-            _config.Section("overlay")["gallery_width"] =
-                System.Text.Json.Nodes.JsonValue.Create((int)Math.Round(GalleryColumn.ActualWidth));
+            _config.Section("overlay")["gallery_percent"] = System.Text.Json.Nodes.JsonValue.Create(percent);
             _config.SaveSettings();
         }
         catch (Exception ex)
@@ -1969,11 +1982,139 @@ public partial class InspectorView : UserControl
 
     private bool _zoneDragging;
     private Point _zoneStart;   // ViewerImage 표시 좌표
+    private Point _pickStart;   // 바코드 인식 모드 클릭 시작점 (드래그와 구분)
+
+    /// <summary>'바코드 인식' 모드 — 커서가 십자로 바뀌고 라벨 위 바코드(DataMatrix·GS1-128 등)를 클릭하면 그 자리의
+    /// 심볼만 판독해 값·GS1 해석·목록 대조를 보여준다. 영역 등록 모드와는 배타적. Esc 또는 버튼으로 해제.</summary>
+    private void OnBarcodePickChanged(object sender, RoutedEventArgs e)
+    {
+        var on = BarcodePickButton.IsChecked == true;
+        if (on && ZoneModeButton.IsChecked == true) ZoneModeButton.IsChecked = false;
+        ViewerScroll.Cursor = on ? Cursors.Cross : ZoneModeButton.IsChecked == true ? Cursors.Cross : Cursors.Arrow;
+        BarcodePickBanner.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        Status(on ? "바코드 인식 모드 — 라벨 위의 바코드를 클릭하세요 (Esc 또는 버튼으로 해제)" : "바코드 인식 모드 해제");
+    }
+
+    private void PickBarcodeAt(Point displayPoint)
+    {
+        if (_displayed is null || !_pdf.IsOpen) return;
+        var zoom = Math.Max(0.01, _zoom);
+        var x = (int)(displayPoint.X / zoom);
+        var y = (int)(displayPoint.Y / zoom);
+        if (x < 0 || y < 0 || x >= _displayed.Width || y >= _displayed.Height) return;
+        BarcodeHit? hit = null;
+        // 1) 이미 분석된 바코드 중 클릭 지점을 포함하는 것
+        if (_analyses.TryGetValue(_currentPage, out var analysis))
+            hit = analysis.Barcodes.FirstOrDefault(b =>
+                x >= b.Bbox.X - 8 && x <= b.Bbox.X + b.Bbox.W + 8 && y >= b.Bbox.Y - 8 && y <= b.Bbox.Y + b.Bbox.H + 8);
+        // 2) 없으면 클릭 지점 주변만 다시 판독 (전수 탐지가 놓친 심볼)
+        if (hit is null)
+        {
+            var previous = ViewerScroll.Cursor;
+            ViewerScroll.Cursor = Cursors.Wait;
+            try
+            {
+                var image = RenderProcessed(_currentPage);
+                hit = BarcodeDetector.DecodeAt(image, x, y);
+                if (hit is not null)
+                    hit = hit with { Grade = BarcodeGrader.Grade(image, hit.Bbox).Display };
+            }
+            finally { ViewerScroll.Cursor = previous; }
+        }
+        if (hit is null)
+        {
+            Status($"클릭 지점({x},{y}) 주변에서 바코드를 판독하지 못했습니다 — 심볼 중앙을 클릭하거나 배율을 높여 보세요.",
+                   StatusLevel.Warn);
+            return;
+        }
+        ShowBarcodeResult(hit);
+    }
+
+    /// <summary>판독 결과 창 — 종류·등급·판독값(GS 구분자 표시)·GS1 요소·목록 대조. [값 복사]로 클립보드.</summary>
+    private void ShowBarcodeResult(BarcodeHit hit)
+    {
+        var raw = hit.Text.Replace(Gs1.GS.ToString(), "<GS>");
+        var lines = new List<string>();
+        var record = CurrentRecord();
+        string state = "-";
+        string? tip = null;
+        if (BarcodeDetector.IsVerifiable(hit))
+        {
+            try
+            {
+                var message = Gs1.Parse(hit.Text);
+                lines.AddRange(message.Elements.Select(el => $"({el.Ai}) {el.Name}: {el.Value}"));
+                if (message.Partial) lines.Add($"미등록 AI: {string.Join(", ", message.UnknownAis)}");
+            }
+            catch (Gs1ParseException ex)
+            {
+                lines.Add($"GS1 해석 불가: {ex.Message}");
+                if (Gs1.TryExtractGtin(hit.Text) is { } gtin) lines.Add($"(01) GTIN(맨 앞 14자리): {gtin}");
+            }
+            if (record is not null) (_, state, tip) = BarcodeDetector.Summarize(hit, record);
+        }
+        else if (hit.IsDataMatrix)
+            lines.Add("DataMatrix — 검사에서는 박스만 표시하고 카운트·검증에 쓰지 않습니다 (요청 규칙)");
+
+        var panel = new StackPanel { Margin = new Thickness(14), MinWidth = 420 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"{hit.Symbology}" + (hit.Grade is { Length: > 0 } g ? $" · 등급 {g}" : "")
+                   + $" · 위치 ({hit.Bbox.X},{hit.Bbox.Y}) {hit.Bbox.W}×{hit.Bbox.H}px",
+            FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 6),
+        });
+        panel.Children.Add(new TextBlock { Text = "판독값:", Margin = new Thickness(0, 4, 0, 2) });
+        var valueBox = new TextBox
+        {
+            Text = raw, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MaxWidth = 520,
+            FontFamily = new FontFamily("Consolas"),
+        };
+        panel.Children.Add(valueBox);
+        if (lines.Count > 0)
+        {
+            panel.Children.Add(new TextBlock { Text = "GS1 해석:", Margin = new Thickness(0, 8, 0, 2) });
+            panel.Children.Add(new TextBlock { Text = string.Join("\n", lines), FontFamily = new FontFamily("Consolas") });
+        }
+        if (record is not null && state != "-")
+        {
+            var stateText = new TextBlock
+            {
+                Text = $"목록 대조 (LOT {record.Lot}): {state}" + (tip is null ? "" : $"\n{tip}"),
+                Margin = new Thickness(0, 8, 0, 0), FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap,
+                Foreground = (Brush)FindResource(state == "일치" ? "SuccessBrush" : "FailFgBrush"),
+            };
+            panel.Children.Add(stateText);
+        }
+        var copyButton = new Button { Content = "값 복사", MinWidth = 80, Style = (Style)FindResource("PrimaryButton") };
+        var closeButton = new Button { Content = "닫기", IsCancel = true, IsDefault = true, MinWidth = 70 };
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 12, 0, 0),
+        };
+        buttons.Children.Add(copyButton);
+        buttons.Children.Add(closeButton);
+        panel.Children.Add(buttons);
+        var dialog = new Window
+        {
+            Title = "바코드 판독 결과", Content = panel, SizeToContent = SizeToContent.WidthAndHeight,
+            Owner = Window.GetWindow(this), WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false,
+        };
+        copyButton.Click += (_, _) =>
+        {
+            try { Clipboard.SetText(hit.Text); Status("바코드 판독값을 클립보드에 복사했습니다."); }
+            catch (Exception ex) { Status($"클립보드 복사 실패: {ShortMessage(ex.Message)}", StatusLevel.Warn); }
+        };
+        dialog.ShowDialog();
+        Status($"바코드 판독: {hit.Symbology} {(raw.Length > 50 ? raw[..50] + "…" : raw)} — 계속 클릭하거나 Esc로 해제");
+    }
 
     private void OnZoneModeChanged(object sender, RoutedEventArgs e)
     {
         var on = ZoneModeButton.IsChecked == true;
-        ViewerScroll.Cursor = on ? Cursors.Cross : Cursors.Arrow;
+        if (on && BarcodePickButton.IsChecked == true) BarcodePickButton.IsChecked = false;
+        ViewerScroll.Cursor = on || BarcodePickButton.IsChecked == true ? Cursors.Cross : Cursors.Arrow;
         ZoneModeBanner.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
         if (!on && _zoneDragging)
         {
@@ -1989,6 +2130,13 @@ public partial class InspectorView : UserControl
     private void OnViewerMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.LeftButton != MouseButtonState.Pressed || _displayed is null) return;
+        if (BarcodePickButton.IsChecked == true)
+        {
+            _pickStart = e.GetPosition(ViewerImage);
+            _panning = true;   // 드래그하면 그대로 팬, 제자리 클릭이면 MouseUp에서 판독
+            _panStart = e.GetPosition(ViewerScroll);
+            return;
+        }
         if (ZoneModeButton.IsChecked == true)
         {
             // 필드 영역 등록 모드: 드래그 사각형 시작
@@ -2038,8 +2186,19 @@ public partial class InspectorView : UserControl
             e.Handled = true;
             return;
         }
+        var wasPanning = _panning;
         _panning = false;
-        ViewerScroll.Cursor = ZoneModeButton.IsChecked == true ? Cursors.Cross : Cursors.Arrow;
+        var pickMode = BarcodePickButton.IsChecked == true;
+        ViewerScroll.Cursor = ZoneModeButton.IsChecked == true || pickMode ? Cursors.Cross : Cursors.Arrow;
+        if (pickMode && wasPanning && _displayed is not null)
+        {
+            var end = e.GetPosition(ViewerImage);
+            if (Math.Abs(end.X - _pickStart.X) < 6 && Math.Abs(end.Y - _pickStart.Y) < 6)
+            {
+                PickBarcodeAt(end);
+                e.Handled = true;
+            }
+        }
     }
 
     // ---------------- 필드 영역 등록 (드래그/객체 클릭) ----------------

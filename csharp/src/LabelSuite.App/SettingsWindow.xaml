@@ -242,14 +242,29 @@
                             </DataGrid>
                             <TextBlock Style="{StaticResource HintText}"
                                        Text="예: 이름=LOT 3회, 패턴=^\d{8}$, 최소 개수=3 → 8자리 숫자 객체를 전부 찾아 서로 값이 같은지 비교하고, 합격 라벨의 배치를 기준으로 학습해 다음 라벨부터는 스캔·출력 위치 이동을 보정한 뒤 기준 위치마다 값이 있는지 추적합니다. 결과는 검사 탭 바코드 검증 표에 '동일값' 행으로 표시됩니다."/>
-                            <WrapPanel Margin="0,8,0,0">
-                                <CheckBox x:Name="TypeLearningCheck"
-                                          Content="라벨 유형 학습·이상 알람"/>
-                                <TextBlock Text="   판정 시작 표본 수:" VerticalAlignment="Center"/>
-                                <TextBox x:Name="TypeMinSamplesBox" Tag="type_learning.min_samples" Width="46"/>
-                            </WrapPanel>
-                            <TextBlock Style="{StaticResource HintText}"
-                                       Text="검사할 때마다 라벨 전체 OCR 문구를 유형(PN+규격)별로 축적하고, 표본이 쌓인 뒤 기존 유형과 다른 라벨(고정 문구 누락·처음 보는 문구 다수)이 나오면 알람을 띄웁니다."/>
+                            <GroupBox Header="자동 학습 (기본 모두 꺼짐 — 모듈별로 개별 켜기)" Margin="0,10,0,0">
+                                <StackPanel>
+                                    <CheckBox x:Name="GlyphLearningCheck" Content="OCR 패턴 라이브러리 자동 축적"
+                                              ToolTip="AWS Textract 결과를 신뢰 학습원으로 삼아 글자 패턴을 쌓습니다 (패턴 학습·로컬 엔진용)"/>
+                                    <TextBlock Style="{StaticResource HintText}" Margin="20,0,0,4"
+                                               Text="AWS OCR이 읽은 단어 이미지를 글자 패턴으로 축적해 로컬 '패턴 학습' 엔진의 인식률을 올립니다."/>
+                                    <WrapPanel>
+                                        <CheckBox x:Name="TypeLearningCheck" Content="라벨 유형 학습·이상 알람"/>
+                                        <TextBlock Text="   판정 시작 표본 수:" VerticalAlignment="Center"/>
+                                        <TextBox x:Name="TypeMinSamplesBox" Tag="type_learning.min_samples" Width="46"/>
+                                    </WrapPanel>
+                                    <TextBlock Style="{StaticResource HintText}" Margin="20,0,0,4"
+                                               Text="검사할 때마다 라벨 전체 OCR 문구를 유형(PN+규격)별로 축적하고, 표본이 쌓인 뒤 고정 문구가 빠진 라벨이 나오면 알립니다 (저신뢰·기호 조각 토큰은 제외)."/>
+                                    <CheckBox x:Name="SameValueLearningCheck" Content="동일값 패턴 기준 배치 자동 갱신"
+                                              ToolTip="합격 라벨의 객체 배치를 기준 레이아웃으로 저장해 다음 라벨의 위치 이동을 보정합니다"/>
+                                    <TextBlock Style="{StaticResource HintText}" Margin="20,0,0,4"
+                                               Text="꺼져 있으면 동일값 패턴은 현재 라벨 안의 값 상호 비교만 하고 배치를 저장하지 않습니다."/>
+                                    <CheckBox x:Name="MasterLearningCheck" Content="기준정보 DB 자동 축적 (목록 로드 시 PN별 REF·GTIN 저장)"
+                                              ToolTip="검사 목록을 열 때 PN별 REF·GTIN을 기준정보 DB에 자동 등록합니다 (사전 등록값은 보존)"/>
+                                    <TextBlock Style="{StaticResource HintText}" Margin="20,0,0,0"
+                                               Text="꺼져 있으면 기준정보 DB는 이력 탭 › 기준정보에서 직접 등록한 값만 씁니다."/>
+                                </StackPanel>
+                            </GroupBox>
                         </StackPanel>
                     </GroupBox>
                     </StackPanel>

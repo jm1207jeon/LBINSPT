@@ -86,6 +86,47 @@ public static class BarcodeDetector
         return hits;
     }
 
+    /// <summary>사용자가 클릭한 지점의 바코드 1개를 판독한다 (검사 탭 '바코드 인식' 모드). 점 주변을 240→480→960px
+    /// 창으로 잘라 전체 파이프라인(DecodeMultiple + DataMatrix 로케이터)을 돌리고, 박스가 점을 포함하는 심볼을
+    /// 우선, 없으면 창 안에서 가장 가까운 심볼을 돌려준다. 좌표는 원본 이미지 기준으로 되돌린다. 없으면 null.</summary>
+    public static BarcodeHit? DecodeAt(SKBitmap image, int x, int y)
+    {
+        if (image.Width < 8 || image.Height < 8) return null;
+        foreach (var window in new[] { 240, 480, 960 })
+        {
+            var half = window / 2;
+            var x0 = Math.Max(0, x - half);
+            var y0 = Math.Max(0, y - half);
+            var x1 = Math.Min(image.Width, x + half);
+            var y1 = Math.Min(image.Height, y + half);
+            if (x1 - x0 < 16 || y1 - y0 < 16) continue;
+            using var crop = new SKBitmap(x1 - x0, y1 - y0, image.ColorType, image.AlphaType);
+            using (var canvas = new SKCanvas(crop))
+                canvas.DrawBitmap(image, new SKRect(x0, y0, x1, y1), new SKRect(0, 0, crop.Width, crop.Height));
+            var hits = Detect(crop)
+                .Select(h => h with { Bbox = (h.Bbox.X + x0, h.Bbox.Y + y0, h.Bbox.W, h.Bbox.H) })
+                .ToList();
+            if (hits.Count == 0) continue;
+            const int Slack = 20;
+            var containing = hits.Where(h =>
+                x >= h.Bbox.X - Slack && x <= h.Bbox.X + h.Bbox.W + Slack
+                && y >= h.Bbox.Y - Slack && y <= h.Bbox.Y + h.Bbox.H + Slack).ToList();
+            if (containing.Count > 0)
+                return containing.OrderBy(h => (long)h.Bbox.W * h.Bbox.H).First();   // 겹치면 작은(안쪽) 심볼
+            var nearest = hits.OrderBy(h => Distance(h.Bbox, x, y)).First();
+            if (Distance(nearest.Bbox, x, y) <= half) return nearest;
+            if (window == 960) return nearest;
+        }
+        return null;
+    }
+
+    private static double Distance((int X, int Y, int W, int H) box, int x, int y)
+    {
+        var dx = Math.Max(Math.Max(box.X - x, 0), x - (box.X + box.W));
+        var dy = Math.Max(Math.Max(box.Y - y, 0), y - (box.Y + box.H));
+        return Math.Sqrt((double)dx * dx + (double)dy * dy);
+    }
+
     /// <summary>DataMatrix 전수 탐지(로케이터 경로) — 어두운 정방형 후보 영역을 모두 찾아
     /// 각 영역을 잘라 집중 디코딩한다. (ZXing DecodeMultiple이 큰 이미지 속
     /// 여러/작은/맞닿은 DataMatrix를 놓치는 약점을 보완, 위치·크기 무관 전부 검출)

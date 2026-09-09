@@ -24,7 +24,7 @@ public static class PresetBundle
     public static readonly string[] SettingsKeys =
     [
         "shelf_life_months", "ocr", "fields", "preprocess",
-        "type_learning", "label_forms", "overlay", "pdf_render_zoom",
+        "type_learning", "learning", "label_forms", "overlay", "pdf_render_zoom",
     ];
 
     /// <summary>settings.json 안에서도 PC 고유값이라 프리셋에 담지 않는 하위 키.</summary>

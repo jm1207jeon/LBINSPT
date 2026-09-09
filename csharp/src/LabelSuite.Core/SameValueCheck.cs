@@ -40,6 +40,9 @@ public sealed class SameValueChecker(string? layoutPath = null,
     private readonly string? _layoutPath = layoutPath;
     private JsonObject _layouts = LoadLayouts(layoutPath);
 
+    /// <summary>합격 라벨의 배치를 기준 레이아웃으로 자동 갱신할지 (기본 꺼짐 — 설정에서 모듈별 on/off).</summary>
+    public bool AutoLearn { get; set; }
+
     // ---------------- 검사 ----------------
 
     public List<SameValueResult> Check(string formatKey,
@@ -95,8 +98,8 @@ public sealed class SameValueChecker(string? layoutPath = null,
             };
             results.Add(result);
 
-            // 4) 합격 시 현재 배치를 기준 레이아웃으로 갱신 (자동 학습)
-            if (result.Passed && instances.Count >= Math.Max(1, rule.MinInstances))
+            // 4) 합격 시 현재 배치를 기준 레이아웃으로 갱신 (자동 학습 — 설정 learning.same_value_layout)
+            if (AutoLearn && result.Passed && instances.Count >= Math.Max(1, rule.MinInstances))
                 SaveReference(formatKey, rule.Name,
                               instances.Select(i => i.Center).ToList());
         }

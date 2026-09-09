@@ -37,7 +37,7 @@
     "show_numbers": false,
     "show_zones": true,
     "show_gallery": true,
-    "gallery_width": 460
+    "gallery_percent": 40
   },
   "fields": {
     "disabled": [],
@@ -57,8 +57,14 @@
     "crop_label": true
   },
   "type_learning": {
-    "enabled": true,
     "min_samples": 5
+  },
+  "learning": {
+    "_comment": "자동 학습 모듈별 on/off — 기본 모두 꺼짐. 켜면 검사 중 조용히 데이터가 쌓인다 (설정 › 검출 필드·영역 › 자동 학습)",
+    "glyph_patterns": false,
+    "label_type": false,
+    "same_value_layout": false,
+    "master_db": false
   },
   "label_forms": {
     "rules": []

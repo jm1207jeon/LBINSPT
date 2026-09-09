@@ -214,4 +214,33 @@ public class BarcodeDetectorEndToEndTests
 
     private static bool Contains((int X, int Y, int W, int H) rect, int px, int py) =>
         px >= rect.X && px <= rect.X + rect.W && py >= rect.Y && py <= rect.Y + rect.H;
+
+    [Fact]
+    public void DecodeAtReturnsTheSymbolUnderTheCursor()
+    {
+        using var page = new SKBitmap(1400, 1000);
+        using (var canvas = new SKCanvas(page))
+        {
+            canvas.Clear(SKColors.White);
+            using var dataMatrix = Encode(BarcodeFormat.DATA_MATRIX, "(01)08806173612345(10)25090776", 120, 120);
+            canvas.DrawBitmap(dataMatrix, 200, 200);
+            using var code128 = Encode(BarcodeFormat.CODE_128, "0108806173612399", 400, 90);
+            canvas.DrawBitmap(code128, 700, 700);
+        }
+        var dm = BarcodeDetector.DecodeAt(page, 260, 260);
+        Assert.NotNull(dm);
+        Assert.Contains("DataMatrix", dm!.Symbology);
+        Assert.Contains("08806173612345", dm.Text);
+        AssertBoxCovers(dm.Bbox, 200, 200, 120, 120);
+
+        var c128 = BarcodeDetector.DecodeAt(page, 900, 745);
+        Assert.NotNull(c128);
+        Assert.Contains("128", c128!.Symbology);
+        Assert.Contains("08806173612399", c128.Text);
+
+        // 심볼에서 조금 벗어난 클릭도 가장 가까운 심볼로
+        Assert.Contains("08806173612345", BarcodeDetector.DecodeAt(page, 340, 330)!.Text);
+        // 빈 곳(모든 심볼에서 멀리)은 null
+        Assert.Null(BarcodeDetector.DecodeAt(page, 1300, 100));
+    }
 }

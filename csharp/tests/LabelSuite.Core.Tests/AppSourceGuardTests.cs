@@ -131,7 +131,7 @@ public class AppSourceGuardTests
 
         // UI 입력란이 없는 설정 (캐시 크기 등 — settings.json 직접 편집 항목)
         string[] notInUi = ["ocr_cache_max_entries", "page_image_cache_pages",
-                            "overlay.gallery_width"];   // 검사 탭 분할선으로 조절·저장
+                            "overlay.gallery_percent"];   // 검사 탭 분할선으로 조절·저장
         var missing = SettingRanges.All.Select(d => d.Path)
             .Where(p => !p.Contains("[]") && !notInUi.Contains(p) && !tags.Contains(p))
             .ToList();

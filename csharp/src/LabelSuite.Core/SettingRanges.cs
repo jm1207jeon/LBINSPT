@@ -53,7 +53,7 @@ public static class SettingRanges
         new("type_learning.min_samples", 2, 100, 5, true, "건", "유형 학습 최소 표본"),
         new("overlay.thickness", 1, 12, 2, true, "px", "오버레이 선 굵기"),
         new("overlay.fill_alpha", 0, 255, 90, true, "", "오버레이 채움 불투명도"),
-        new("overlay.gallery_width", 160, 1600, 460, true, "px", "필드 모아보기 폭"),
+        new("overlay.gallery_percent", 10, 80, 40, true, "%", "필드 모아보기 폭 비율"),
         // 배열 항목 안의 값 — Normalize가 별도 경로로 처리, Find()로 UI가 참조
         new("fields.same_value[].min_instances", 1, 20, 2, true, "개", "동일값 최소 개수"),
         new("overlay.colors[].rgba", 0, 255, 128, true, "", "오버레이 색상 성분"),
