@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LaVIS 사용 설명서</title>
+<style>
+:root{
+  --ink:#1F2A37; --muted:#5D6B7A; --hint:#7B8794; --line:#D6DCE3; --soft:#F4F6F8; --panel:#FFFFFF;
+  --primary:#1A6FB5; --primary-soft:#E3EEF8; --accent:#1A5276;
+  --ok:#1E8449; --ok-bg:#D5F5E3; --warn:#CA6F1E; --warn-bg:#FDEBD0;
+  --danger:#D9534F; --danger-bg:#FDE2E1; --caution:#F0AD4E;
+  --teal:#008080; --purple:#8000A0; --lowconf:#FF8C00;
+  --imgbg:#2B3440; --radius:8px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:#EEF1F4;color:var(--ink);line-height:1.65;
+  font-family:"Malgun Gothic","맑은 고딕","Apple SD Gothic Neo","Noto Sans KR",Segoe UI,sans-serif;font-size:15px}
+a{color:var(--primary)}
+
+/* ---------- 헤더 ---------- */
+header{background:linear-gradient(135deg,#1A5276,#1A6FB5);color:#fff;padding:30px 40px 26px}
+.brand{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.logo{width:52px;height:52px;flex:0 0 auto}
+header h1{margin:0;font-size:27px;letter-spacing:-.3px}
+header .sub{margin:2px 0 0;opacity:.92;font-size:14px}
+.hdr-meta{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
+.pill{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);
+  padding:3px 11px;border-radius:99px;font-size:12.5px}
+
+/* ---------- 내비 ---------- */
+nav{position:sticky;top:0;z-index:50;background:var(--panel);border-bottom:1px solid var(--line);
+  box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.nav-in{display:flex;gap:2px;overflow-x:auto;padding:0 40px}
+.nav-in a{padding:12px 14px;font-size:14px;font-weight:700;color:var(--muted);text-decoration:none;
+  border-bottom:3px solid transparent;white-space:nowrap}
+.nav-in a:hover{color:var(--primary);background:var(--soft)}
+.nav-in a.on{color:var(--accent);border-bottom-color:var(--primary)}
+
+main{max-width:1180px;margin:0 auto;padding:26px 40px 90px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:26px 30px;margin-bottom:22px;scroll-margin-top:60px}
+h2{font-size:21px;margin:0 0 6px;color:var(--accent);display:flex;align-items:center;gap:10px}
+h2 .num{background:var(--primary);color:#fff;width:28px;height:28px;border-radius:7px;
+  display:inline-flex;align-items:center;justify-content:center;font-size:15px;flex:0 0 auto}
+h3{font-size:16.5px;margin:24px 0 8px;color:var(--accent)}
+h4{font-size:14.5px;margin:16px 0 6px}
+.lead{color:var(--muted);margin:0 0 18px;font-size:14.5px}
+p{margin:8px 0}
+code{background:var(--soft);border:1px solid var(--line);border-radius:4px;padding:1px 5px;
+  font-family:Consolas,"D2Coding",monospace;font-size:12.5px;word-break:break-all}
+kbd{background:#fff;border:1px solid #B6BFC9;border-bottom-width:2px;border-radius:4px;
+  padding:1px 6px;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--accent)}
+
+/* ---------- 표 ---------- */
+.tw{overflow-x:auto;margin:12px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--soft);font-weight:700;white-space:nowrap}
+tbody tr:nth-child(even) td{background:#FAFBFC}
+
+/* ---------- 콜아웃 ---------- */
+.callout{border-left:5px solid;border-radius:6px;padding:13px 16px;margin:14px 0;font-size:14.2px}
+.callout .ttl{font-weight:800;display:block;margin-bottom:3px}
+.c-danger{border-color:var(--danger);background:var(--danger-bg)}
+.c-danger .ttl{color:#A8302C}
+.c-warn{border-color:var(--warn);background:var(--warn-bg)}
+.c-warn .ttl{color:#9C5416}
+.c-info{border-color:var(--primary);background:var(--primary-soft)}
+.c-info .ttl{color:var(--accent)}
+.c-ok{border-color:var(--ok);background:var(--ok-bg)}
+.c-ok .ttl{color:#166638}
+
+/* ---------- 카드 ---------- */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:14px 0}
+.card{border:1px solid var(--line);border-radius:var(--radius);padding:15px 17px;background:#fff}
+.card h4{margin:0 0 5px;color:var(--accent);font-size:15px}
+.card p{margin:0;font-size:13.5px;color:var(--muted)}
+.card .ico{font-size:22px;line-height:1;margin-bottom:7px;display:block}
+
+/* ---------- 단계 ---------- */
+.steps{counter-reset:s;margin:16px 0;padding:0;list-style:none}
+.steps>li{counter-increment:s;position:relative;padding:0 0 20px 52px;border-left:2px dashed var(--line);
+  margin-left:15px}
+.steps>li:last-child{border-left-color:transparent;padding-bottom:0}
+.steps>li::before{content:counter(s);position:absolute;left:-16px;top:-2px;width:32px;height:32px;
+  background:var(--primary);color:#fff;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-weight:800;font-size:14px;box-shadow:0 0 0 4px #fff}
+.steps h4{margin:2px 0 5px;font-size:15.5px;color:var(--accent)}
+.steps p{margin:0 0 6px;font-size:14px}
+
+/* ---------- 화면 목업 ---------- */
+.mockwrap{position:relative;border:1px solid #9AA5B1;border-radius:var(--radius);overflow:hidden;
+  background:#EDF0F3;margin:16px 0 6px;box-shadow:0 3px 10px rgba(0,0,0,.09)}
+.mock{font-size:10.5px;user-select:none}
+.m-title{background:linear-gradient(#3C4756,#2F3947);color:#fff;padding:5px 10px;font-size:11px;font-weight:700}
+.m-tabs{display:flex;gap:2px;background:var(--soft);border-bottom:1px solid var(--line);padding:4px 6px 0}
+.m-tab{padding:5px 14px;border:1px solid var(--line);border-bottom:0;border-radius:5px 5px 0 0;
+  background:#E7EBEF;color:var(--muted);font-weight:700}
+.m-tab.on{background:#fff;color:var(--accent);box-shadow:inset 0 3px 0 var(--primary)}
+.m-body{display:grid;grid-template-columns:1fr 250px;gap:5px;padding:5px;background:#E7EBEF}
+.m-gb{border:1px solid var(--line);border-radius:5px;background:#fff;overflow:hidden}
+.m-gb-hd{background:var(--soft);border-bottom:1px solid var(--line);padding:3px 8px;font-weight:700;
+  color:var(--accent);font-size:10px}
+.m-pad{padding:5px 6px}
+.m-row{display:flex;gap:3px;align-items:center;flex-wrap:wrap}
+.m-btn{border:1px solid #B6BFC9;background:linear-gradient(#FDFDFE,#EFF2F5);border-radius:4px;
+  padding:2px 7px;font-size:9.5px;white-space:nowrap;color:var(--ink)}
+.m-btn.pri{background:linear-gradient(#2C81C8,#1A6FB5);border-color:#155E9B;color:#fff;font-weight:700}
+.m-btn.acc{background:linear-gradient(#2B6D96,#1A5276);border-color:#144257;color:#fff;font-weight:700}
+.m-btn.tog{background:#fff}
+.m-sep{width:1px;height:14px;background:var(--line);margin:0 3px}
+.m-chk::before{content:"☐ "}
+.m-slots{display:flex;gap:1px;margin-top:4px}
+.m-slot{flex:1;height:15px;border:1px solid var(--line);border-radius:2px;display:flex;
+  align-items:center;justify-content:center;font-size:8.5px;background:#fff;position:relative}
+.m-slot.pass{background:var(--ok-bg)}
+.m-slot.chk{background:var(--warn-bg);border-color:var(--warn)}
+.m-slot.idle{background:#E4E8EC;color:#9AA5B1}
+.m-slot.cur{border:2px solid var(--primary);font-weight:800}
+.m-slot.ins{background:var(--ok-bg);border:2px solid var(--ok)}
+.m-slot .band{position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--ok)}
+.m-legend{display:flex;gap:4px;flex-wrap:wrap;background:var(--soft);padding:3px 5px;
+  border-bottom:1px solid var(--line)}
+.m-chip{border:1px solid var(--line);background:#fff;border-radius:9px;padding:1px 6px;font-size:9px;
+  display:flex;align-items:center;gap:3px}
+.m-sw{width:8px;height:8px;border-radius:2px;display:inline-block}
+.m-view{display:grid;grid-template-columns:1fr 5px 1fr;height:190px}
+.m-canvas{background:var(--imgbg);display:flex;align-items:center;justify-content:center;padding:6px}
+.m-split{background:var(--line)}
+.m-gal{background:#fff;overflow:hidden;font-size:8.5px}
+.m-gal-hd{background:var(--soft);border-bottom:1px solid var(--line);padding:2px 5px;
+  font-weight:700;color:var(--accent);display:flex;justify-content:space-between;font-size:9px}
+.m-gal table{font-size:8px}
+.m-gal th,.m-gal td{border:1px solid var(--line);padding:1px 3px;text-align:center;white-space:nowrap}
+.m-gal th{background:var(--ok-bg);color:var(--ok);font-size:8px}
+.m-gal th.bad{background:var(--warn-bg);color:var(--warn)}
+.m-gal td.miss{background:var(--danger-bg);color:#A8302C;font-weight:800}
+.m-gal td.low{outline:2px solid var(--lowconf);outline-offset:-2px}
+.m-gal .crop{display:block;height:8px;background:linear-gradient(90deg,#333 0 60%,transparent 60%);
+  background-size:3px 100%;opacity:.55}
+.m-counts{display:flex;align-items:center;gap:6px;padding:3px 6px}
+.m-big{font-size:26px;font-weight:800;line-height:1}
+.m-big.ok{color:var(--ok)}
+.m-big.wn{color:var(--warn)}
+.m-lbl{font-size:9px;font-weight:700}
+.m-badge{border:2px solid var(--warn);background:#FDF6E3;border-radius:5px;padding:4px 7px;margin:4px 0}
+.m-badge .hl{font-size:14px;font-weight:800;color:var(--warn)}
+.m-badge .rs{font-size:9px;color:var(--warn)}
+.m-badge.ok{border-color:var(--ok)}
+.m-badge.ok .hl,.m-badge.ok .rs{color:var(--ok)}
+.m-tbl{width:100%;border-collapse:collapse;font-size:9px}
+.m-tbl th,.m-tbl td{border:1px solid var(--line);padding:1px 4px;text-align:left}
+.m-tbl th{background:var(--soft);font-size:8.5px}
+.m-tbl tr.pass td{background:var(--ok-bg)}
+.m-tbl tr.fail td{background:var(--warn-bg);font-weight:700}
+.m-tbl tr.err td{background:var(--danger-bg);color:#A8302C;font-weight:700}
+.m-status{display:flex;align-items:center;gap:8px;background:var(--soft);border-top:1px solid var(--line);
+  padding:3px 8px;font-size:9.5px;color:var(--muted)}
+.m-status .grow{flex:1}
+.m-prog{width:70px;height:7px;border:1px solid var(--line);border-radius:4px;background:#fff;overflow:hidden}
+.m-prog i{display:block;height:100%;width:72%;background:var(--primary)}
+
+/* 핫스팟 */
+.hs{position:absolute;width:23px;height:23px;border-radius:50%;border:2px solid #fff;
+  background:var(--danger);color:#fff;font-weight:800;font-size:12px;cursor:pointer;padding:0;
+  box-shadow:0 2px 6px rgba(0,0,0,.35);transition:transform .12s;z-index:5}
+.hs:hover{transform:scale(1.22)}
+.hs.on{background:var(--accent);transform:scale(1.22)}
+.hs:focus-visible{outline:3px solid var(--caution);outline-offset:2px}
+.hs-panel{border:1px solid var(--line);border-left:5px solid var(--primary);border-radius:6px;
+  background:var(--primary-soft);padding:12px 16px;min-height:76px}
+.hs-panel h4{margin:0 0 4px;color:var(--accent);font-size:15px}
+.hs-panel p{margin:0;font-size:14px}
+.hs-hint{font-size:12.5px;color:var(--hint);margin:4px 0 0}
+
+/* ---------- 아코디언 ---------- */
+details{border:1px solid var(--line);border-radius:6px;margin:8px 0;background:#fff}
+details[open]{border-color:var(--primary)}
+summary{cursor:pointer;padding:11px 15px;font-weight:700;color:var(--accent);font-size:14.5px;
+  list-style:none;display:flex;justify-content:space-between;align-items:center;gap:10px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"▾";color:var(--primary);font-size:13px;transition:transform .15s}
+details[open] summary::after{transform:rotate(180deg)}
+details[open] summary{border-bottom:1px solid var(--line);background:var(--soft)}
+.det-body{padding:13px 16px}
+.det-body>*:first-child{margin-top:0}
+.det-body>*:last-child{margin-bottom:0}
+
+/* ---------- 복사 가능 경로 ---------- */
+.pathbox{display:flex;align-items:center;gap:9px;background:var(--soft);border:1px solid var(--line);
+  border-radius:6px;padding:9px 12px;margin:8px 0;flex-wrap:wrap}
+.pathbox code{background:#fff;flex:1;min-width:220px;font-size:12.5px;padding:4px 7px}
+.copybtn{border:1px solid var(--primary);background:#fff;color:var(--primary);border-radius:5px;
+  padding:4px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
+.copybtn:hover{background:var(--primary);color:#fff}
+.copybtn.done{background:var(--ok);border-color:var(--ok);color:#fff}
+
+/* ---------- 설정 검색 ---------- */
+.searchbar{display:flex;gap:9px;align-items:center;margin:12px 0;flex-wrap:wrap}
+.searchbar input{flex:1;min-width:210px;padding:8px 12px;border:1px solid var(--line);border-radius:6px;
+  font-family:inherit;font-size:14px}
+.searchbar input:focus{outline:2px solid var(--primary);outline-offset:-1px;border-color:var(--primary)}
+.filterbtn{border:1px solid var(--line);background:#fff;border-radius:99px;padding:5px 13px;
+  font-size:12.5px;cursor:pointer;font-family:inherit;color:var(--muted)}
+.filterbtn.on{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:700}
+.nores{color:var(--hint);font-size:13.5px;padding:10px 2px;display:none}
+
+/* ---------- 체크리스트 ---------- */
+.chk{list-style:none;padding:0;margin:12px 0}
+.chk li{border:1px solid var(--line);border-radius:6px;margin:6px 0;padding:10px 13px;background:#fff;
+  display:flex;gap:11px;align-items:flex-start;font-size:14px}
+.chk li.done{background:var(--ok-bg);border-color:var(--ok)}
+.chk li.done .txt{text-decoration:line-through;opacity:.7}
+.chk input{margin-top:3px;width:17px;height:17px;flex:0 0 auto;accent-color:var(--ok);cursor:pointer}
+.chk .txt{flex:1}
+.chk .txt b{color:var(--accent)}
+.chk-bar{display:flex;align-items:center;gap:11px;font-size:13.5px;color:var(--muted);margin-top:10px}
+.chk-bar .track{flex:1;height:9px;background:var(--soft);border:1px solid var(--line);
+  border-radius:99px;overflow:hidden}
+.chk-bar .fill{height:100%;width:0;background:var(--ok);transition:width .2s}
+.resetbtn{border:1px solid var(--line);background:#fff;border-radius:5px;padding:4px 11px;
+  font-size:12.5px;cursor:pointer;font-family:inherit;color:var(--muted)}
+
+/* 색 견본 */
+.swatches{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px;margin:12px 0}
+.sw{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:6px;
+  padding:8px 11px;font-size:13px;background:#fff}
+.sw .box{width:20px;height:20px;border-radius:4px;flex:0 0 auto;border:1px solid rgba(0,0,0,.18)}
+
+footer{text-align:center;color:var(--hint);font-size:12.5px;padding:22px 40px 40px}
+
+@media (max-width:860px){
+  header,main,.nav-in{padding-left:18px;padding-right:18px}
+  main{padding-top:18px}
+  section{padding:20px 17px}
+  .m-body{grid-template-columns:1fr}
+  .m-view{grid-template-columns:1fr}
+  .mockwrap .hs{display:none}
+}
+@media print{
+  body{background:#fff}
+  nav,.copybtn,.resetbtn,.searchbar,.hs{display:none!important}
+  section{break-inside:avoid;box-shadow:none;border-color:#BBB;page-break-inside:avoid}
+  details{break-inside:avoid}
+  details:not([open])>summary::after{content:""}
+  details>.det-body{display:block!important}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+      <rect x="6" y="8" width="52" height="40" rx="5" fill="#fff" opacity=".95"/>
+      <rect x="12" y="15" width="24" height="3.5" rx="1.7" fill="#1A5276"/>
+      <rect x="12" y="22" width="17" height="3.5" rx="1.7" fill="#1A6FB5"/>
+      <rect x="12" y="29" width="21" height="3.5" rx="1.7" fill="#1A6FB5"/>
+      <g fill="#1A5276">
+        <rect x="41" y="15" width="2.4" height="18"/><rect x="45" y="15" width="1.2" height="18"/>
+        <rect x="48" y="15" width="2.4" height="18"/><rect x="52" y="15" width="1.2" height="18"/>
+      </g>
+      <circle cx="44" cy="45" r="14" fill="#1E8449"/>
+      <path d="M37 45.5l5 5 10-11" stroke="#fff" stroke-width="4.2" fill="none"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div>
+      <h1>LaVIS 사용 설명서</h1>
+      <p class="sub">Label Verification &amp; Inspection System — 라벨 검증·검사 시스템</p>
+    </div>
+  </div>
+  <div class="hdr-meta">
+    <span class="pill">품질관리팀 출하검사용</span>
+    <span class="pill">Windows 10/11 · 설치 불필요</span>
+    <span class="pill">검사 보조 도구 (최종 판정은 검사자)</span>
+  </div>
+</header>
+
+<nav>
+  <div class="nav-in">
+    <a href="#intro" class="on">1. 프로그램 소개</a>
+    <a href="#install">2. 설치·실행</a>
+    <a href="#screen">3. 화면 살펴보기</a>
+    <a href="#basic">4. 기본 사용법</a>
+    <a href="#verdict">5. 판정 읽는 법</a>
+    <a href="#extra">6. 부가 기능</a>
+    <a href="#settings">7. 설정·옵션</a>
+    <a href="#limits">8. 한계·확인 사항</a>
+    <a href="#trouble">9. 문제 해결</a>
+  </div>
+</nav>
+
+<main>
+
+<!-- ============ 최상단 경고 ============ -->
+<div class="callout c-danger" style="font-size:15px">
+  <span class="ttl">⚠ 가장 먼저 확인하세요 — 검사 기록의 판정란은 &lsquo;P(합격)&rsquo;로 기본 입력됩니다</span>
+  검사 성적서·기록지의 판정란에는 <b>합격(P)이 미리 채워져 있습니다.</b>
+  LaVIS가 <b>&lsquo;확인 필요&rsquo;</b>로 표시한 라벨을 검사자가 확인해 <b>실제로 부적합</b>이면,
+  기록의 판정란을 <b>반드시 부적합으로 직접 고쳐 적어야 합니다.</b>
+  프로그램은 기록지의 판정란을 대신 바꾸지 않습니다. 자세한 내용은
+  <a href="#limits">8. 한계·확인 사항</a>을 보세요.
+</div>
+
+<!-- ============ 1. 소개 ============ -->
+<section id="intro">
+  <h2><span class="num">1</span> 프로그램 소개</h2>
+  <p class="lead">LaVIS는 <b>라벨 인쇄 PDF</b>를 읽어, 인쇄된 글자와 바코드가 <b>주문 목록과 일치하는지</b>
+  자동으로 대조해 주는 출하검사 보조 프로그램입니다. 검사자가 눈으로 하나씩 대조하던 일을
+  화면에서 한 번에 확인할 수 있게 정리해 줍니다.</p>
+
+  <h3>이 프로그램이 하는 일</h3>
+  <div class="cards">
+    <div class="card"><span class="ico">📋</span><h4>검사 목록 생성</h4>
+      <p>주문일정·품목번호·BSC 엑셀 3종을 합쳐 LOT·PN·REF·제조일·유효기간·GTIN 목록을 만듭니다.</p></div>
+    <div class="card"><span class="ico">🔍</span><h4>라벨 자동 대조</h4>
+      <p>PDF의 글자를 읽어(OCR) 목록과 대조하고, 필요한 횟수만큼 인쇄됐는지 셉니다.</p></div>
+    <div class="card"><span class="ico">▣</span><h4>바코드 검증</h4>
+      <p>GS1-128 바코드의 GTIN·LOT·유효기간을 목록과 대조합니다. DataMatrix는 위치만 표시합니다.</p></div>
+    <div class="card"><span class="ico">⚡</span><h4>전 페이지 자동 검사</h4>
+      <p>버튼 한 번으로 모든 페이지를 검사하고 <b>부적합 로트만</b> 모아 보여 줍니다.</p></div>
+    <div class="card"><span class="ico">🗂️</span><h4>필드 모아보기</h4>
+      <p>같은 항목(LOT·PN·REF…)의 인쇄 부분만 잘라 표로 모아 줍니다. 다른 값이 눈에 바로 띕니다.</p></div>
+    <div class="card"><span class="ico">💾</span><h4>결과 기록</h4>
+      <p>표시가 그려진 이미지, 검사 이력(DB), 전체 페이지 CSV로 남깁니다.</p></div>
+  </div>
+
+  <h3>특징</h3>
+  <div class="tw"><table>
+    <thead><tr><th>항목</th><th>내용</th></tr></thead>
+    <tbody>
+      <tr><td>설치</td><td>설치 프로그램 없음. 폴더를 복사하고 <code>LaVIS.exe</code>만 실행하면 됩니다</td></tr>
+      <tr><td>대상 파일</td><td>라벨 인쇄 PDF (한 페이지에 라벨 여러 장), 검사 목록 xlsx</td></tr>
+      <tr><td>규격 선택</td><td>라벨에 인쇄된 <b>문서번호</b>(<code>Rev.A00</code>, <code>BSL-01</code>,
+        <code>PML-001</code>+<code>Rev.1</code>)를 읽어 자동으로 고릅니다</td></tr>
+      <tr><td>판정</td><td><b>합격</b> 또는 <b>확인 필요</b> 두 가지. &lsquo;확인 필요&rsquo;는 불합격이 아니라
+        <b>검사자가 봐야 할 페이지</b>라는 뜻입니다</td></tr>
+      <tr><td>기록 위치</td><td>결과 이미지·CSV는 지정한 폴더, 설정·학습·이력은 <code>%APPDATA%\LaVIS</code></td></tr>
+      <tr><td>자매 프로그램</td><td>UDInspect (바코드 스캐너로 UDI를 읽어 성적서를 만드는 프로그램).
+        화면 색·버튼 규칙이 같습니다</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="callout c-info">
+    <span class="ttl">규제상 위치</span>
+    LaVIS는 <b>검사 보조 도구</b>입니다. 화면의 판정은 참고값이며 최종 합격·불합격은 검사자가 결정합니다.
+    전자서명·감사추적(21 CFR Part 11) 대상 시스템이 아닙니다.
+  </div>
+</section>
+
+<!-- ============ 2. 설치 ============ -->
+<section id="install">
+  <h2><span class="num">2</span> 설치와 실행</h2>
+  <p class="lead">LaVIS는 <b>설치가 필요 없습니다.</b> 공용 폴더에서 프로그램 폴더를 복사해 실행하면 끝입니다.</p>
+
+  <h3>프로그램 위치</h3>
+  <div class="pathbox">
+    <code>\\10.1.205.223\품질관리팀\01. 공용\C02 프로그램\LaVIS</code>
+    <button class="copybtn" data-copy="\\10.1.205.223\품질관리팀\01. 공용\C02 프로그램\LaVIS">경로 복사</button>
+  </div>
+  <p style="font-size:14px;color:var(--muted);margin-top:0">
+    탐색기 주소창에 붙여넣고 <kbd>Enter</kbd>를 누르면 폴더가 열립니다.</p>
+
+  <h3>라이브러리 폴더</h3>
+  <div class="pathbox">
+    <code>\\10.1.205.223\품질관리팀\01. 공용\C02 프로그램\프로그램 라이브러리</code>
+    <button class="copybtn" data-copy="\\10.1.205.223\품질관리팀\01. 공용\C02 프로그램\프로그램 라이브러리">경로 복사</button>
+  </div>
+
+  <div class="callout c-ok">
+    <span class="ttl">✓ LaVIS는 라이브러리를 설치하지 않아도 실행됩니다</span>
+    LaVIS 폴더 안에 필요한 실행 파일이 모두 들어 있습니다(자체 포함 배포).
+    아래 라이브러리는 <b>같은 폴더에 있는 다른 프로그램(UDInspect)용</b>이거나 <b>예비용</b>입니다.
+  </div>
+
+  <div class="tw"><table>
+    <thead><tr><th>라이브러리</th><th>LaVIS에 필요한가</th><th>용도</th></tr></thead>
+    <tbody>
+      <tr><td><code>windowsdesktop-runtime-8.0.29-win-x64</code></td>
+        <td>✗ 불필요<br><span style="font-size:12.5px;color:var(--muted)">(예비용)</span></td>
+        <td>.NET 8 데스크톱 런타임. LaVIS는 런타임을 폴더에 포함해 배포하므로 없어도 실행됩니다.
+          다른 .NET 프로그램에서 필요할 때 설치하세요</td></tr>
+      <tr><td><code>Zebra_CoreScanner_Driver_(64bit)_v3.08.0014</code></td>
+        <td>✗ 불필요</td>
+        <td>Zebra 바코드 스캐너 드라이버. <b>UDInspect</b>(스캐너로 UDI를 읽는 프로그램)에서 씁니다.
+          LaVIS는 스캐너를 쓰지 않고 PDF 파일만 읽습니다</td></tr>
+      <tr><td><code>Zebra_Scanner_SDK_(64bit)_v3.07.0009</code></td>
+        <td>✗ 불필요</td>
+        <td>위와 같음 (UDInspect용)</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="callout c-warn">
+    <span class="ttl">AWS 자격증명 — OCR을 쓰려면 필요합니다</span>
+    LaVIS의 기본 글자 인식 엔진은 <b>AWS Textract</b>(온라인)입니다. 처음 쓰는 PC에서는
+    <code>C:\Users\사용자\.aws\credentials</code> 파일에 자격증명이 있어야 합니다.
+    상태바 왼쪽에 <b>&ldquo;AWS 인증 확인됨&rdquo;</b>이 뜨면 정상입니다.
+    자격증명이 없으면 설정에서 로컬 엔진(<b>패턴 학습</b> 또는 <b>ONNX</b>)으로 바꿔 오프라인으로도 쓸 수 있습니다
+    (인식률은 낮아집니다). 자격증명 발급은 전산 담당자에게 문의하세요.
+  </div>
+
+  <h3>실행 순서</h3>
+  <ol class="steps">
+    <li><h4>폴더를 내 PC로 복사</h4>
+      <p>공용 폴더의 <code>LaVIS</code> 폴더 전체를 바탕화면이나 <code>C:\</code> 아래로 복사합니다.
+      네트워크 폴더에서 바로 실행하면 느리므로 <b>복사해서 쓰는 것을 권장</b>합니다.</p></li>
+    <li><h4>LaVIS.exe 실행</h4>
+      <p>폴더 안의 <code>LaVIS.exe</code>를 더블클릭합니다. 같은 폴더의 <code>*.dll</code> 파일과
+      <code>models</code> 폴더는 <b>지우거나 옮기지 마세요.</b></p>
+      <p>Windows에서 &ldquo;PC를 보호했습니다&rdquo; 경고가 뜨면 <b>추가 정보 → 실행</b>을 누릅니다.</p></li>
+    <li><h4>바로 가기 만들기 (선택)</h4>
+      <p><code>LaVIS.exe</code> 우클릭 → <b>바로 가기 만들기</b> → 바탕화면으로 옮기면 편합니다.</p></li>
+    <li><h4>첫 실행 확인</h4>
+      <p>창 제목이 <code>LaVIS - Label Verification &amp; Inspection System Rev.00</code>이고,
+      아래 상태바에 <b>AWS 인증 확인됨</b> 또는 <b>OCR: 엔진명</b>이 표시되면 준비 완료입니다.</p></li>
+  </ol>
+
+  <div class="callout c-info">
+    <span class="ttl">설정과 학습 데이터는 어디에 저장되나요?</span>
+    프로그램 폴더가 아니라 <code>%APPDATA%\LaVIS</code>(사용자별 폴더)에 저장됩니다.
+    그래서 <b>프로그램 폴더를 새 버전으로 덮어써도 설정·교정·이력이 유지됩니다.</b>
+    설정 창의 <b>[설정 폴더 열기]</b>로 이 폴더를 열 수 있습니다.
+  </div>
+</section>
+
+<!-- ============ 3. 화면 ============ -->
+<section id="screen">
+  <h2><span class="num">3</span> 화면 살펴보기 <span style="font-size:13px;font-weight:400;color:var(--hint)">(번호를 눌러 보세요)</span></h2>
+  <p class="lead">아래는 <b>라벨 검사</b> 탭의 구성도입니다. 빨간 번호를 누르면 그 부분의 설명이 아래에 나옵니다.</p>
+
+  <div class="mockwrap">
+    <div class="mock">
+      <div class="m-title">LaVIS - Label Verification &amp; Inspection System Rev.00</div>
+      <div class="m-tabs">
+        <div class="m-tab">목록 생성</div>
+        <div class="m-tab on">라벨 검사</div>
+        <div class="m-tab">검사 이력</div>
+      </div>
+      <div class="m-body">
+        <!-- 좌측 -->
+        <div>
+          <div class="m-gb" style="margin-bottom:5px">
+            <div class="m-gb-hd">라벨 PDF</div>
+            <div class="m-pad">
+              <div class="m-row">
+                <span class="m-btn pri">PDF 열기</span>
+                <span style="color:var(--accent);font-weight:700">Label_2509.pdf · 12페이지</span>
+                <span class="m-sep"></span>
+                <span class="m-btn">⏮</span><span class="m-btn">◀</span>
+                <span class="m-btn">▶</span><span class="m-btn">⏭</span>
+                <span class="m-btn">다음 확인 대상 ▶</span>
+                <span class="m-sep"></span>
+                <span class="m-btn acc">▶ 자동 검사</span>
+                <span class="m-btn">결과 목록</span>
+                <span style="font-weight:700">3 / 12</span>
+                <span style="color:var(--ok)">OCR 완료 12/12 ✓</span>
+                <span style="margin-left:auto" class="m-chk">자동 저장</span>
+                <span class="m-btn pri">결과 저장</span>
+              </div>
+              <div class="m-row" style="margin-top:3px">
+                <span>배율:</span>
+                <span style="display:inline-block;width:70px;height:3px;background:var(--line);
+                  border-radius:2px;position:relative">
+                  <i style="position:absolute;left:34%;top:-3px;width:9px;height:9px;border-radius:50%;
+                    background:var(--primary);display:block"></i></span>
+                <span>100%</span>
+                <span class="m-sep"></span>
+                <span class="m-btn tog">✚ 필드 영역 등록</span>
+                <span class="m-btn tog">▣ 바코드 인식</span>
+                <span class="m-chk">영역 표시</span>
+                <span class="m-chk">필드 모아보기</span>
+                <span class="m-btn">OCR 로그</span>
+                <span class="m-sep"></span>
+                <span class="m-btn">CSV 내보내기</span>
+                <span class="m-btn">저장 경로</span>
+              </div>
+              <div class="m-slots">
+                <div class="m-slot pass">✓1<span class="band"></span></div>
+                <div class="m-slot pass">✓2<span class="band"></span></div>
+                <div class="m-slot chk cur">!3</div>
+                <div class="m-slot pass">✓4</div>
+                <div class="m-slot ins">✓5</div>
+                <div class="m-slot chk">?6</div>
+                <div class="m-slot pass">✓7</div>
+                <div class="m-slot">8</div>
+                <div class="m-slot idle">9</div>
+                <div class="m-slot idle">10</div>
+                <div class="m-slot idle">11</div>
+                <div class="m-slot idle">12</div>
+              </div>
+            </div>
+          </div>
+          <div class="m-gb">
+            <div class="m-gb-hd">검사 화면</div>
+            <div class="m-legend">
+              <span class="m-chip"><i class="m-sw" style="background:#FF9999;border:1px solid red"></i>합격 필드</span>
+              <span class="m-chip"><i class="m-sw" style="background:var(--warn-bg);border:1px solid var(--warn)"></i>확인 필요</span>
+              <span class="m-chip"><i class="m-sw" style="background:var(--teal)"></i>바코드</span>
+              <span class="m-chip"><i class="m-sw" style="background:var(--purple)"></i>문서번호</span>
+              <span class="m-chip"><i class="m-sw" style="border:2px dashed var(--lowconf)"></i>저신뢰 단어</span>
+              <span class="m-chip"><i class="m-sw" style="border:1.5px dashed var(--primary)"></i>등록 영역</span>
+              <span class="m-chip">⌨ 단축키</span>
+            </div>
+            <div class="m-view">
+              <div class="m-canvas">
+                <!-- 라벨 목업 -->
+                <svg viewBox="0 0 200 150" style="width:100%;max-height:170px" aria-label="라벨 이미지 예시">
+                  <rect x="4" y="4" width="192" height="142" rx="3" fill="#fff"/>
+                  <rect x="10" y="10" width="60" height="7" fill="#333"/>
+                  <!-- LOT (빨강) -->
+                  <rect x="9" y="24" width="42" height="10" fill="rgba(255,0,0,.35)" stroke="red"/>
+                  <text x="12" y="32" font-size="7" fill="#111">LOT 25090776</text>
+                  <!-- REF (초록) -->
+                  <rect x="9" y="38" width="52" height="10" fill="rgba(0,200,0,.3)" stroke="#0a0"/>
+                  <text x="12" y="46" font-size="7" fill="#111">REF NCN20-080</text>
+                  <!-- PN (파랑) -->
+                  <rect x="9" y="52" width="40" height="10" fill="rgba(0,0,255,.25)" stroke="#00f"/>
+                  <text x="12" y="60" font-size="7" fill="#111">PN HANARO-01</text>
+                  <!-- MFG / EXP -->
+                  <rect x="9" y="66" width="46" height="10" fill="rgba(220,220,0,.45)" stroke="#cc0"/>
+                  <text x="12" y="74" font-size="7" fill="#111">2024-05-10</text>
+                  <rect x="9" y="80" width="46" height="10" fill="rgba(255,0,255,.28)" stroke="#c0c"/>
+                  <text x="12" y="88" font-size="7" fill="#111">2027-05-09</text>
+                  <!-- GTIN (청록) -->
+                  <rect x="9" y="94" width="66" height="10" fill="rgba(0,255,255,.35)" stroke="#0aa"/>
+                  <text x="12" y="102" font-size="6.5" fill="#111">(01)08806367067654</text>
+                  <!-- 문서번호 (보라) -->
+                  <rect x="120" y="60" width="52" height="20" fill="none" stroke="#8000A0" stroke-width="1.4"/>
+                  <text x="122" y="68" font-size="7" fill="#111">PML-001</text>
+                  <text x="122" y="77" font-size="7" fill="#111">Rev.1</text>
+                  <rect x="118" y="52" width="42" height="7" fill="#8000A0"/>
+                  <text x="120" y="58" font-size="5" fill="#fff">문서번호: PML-001 Rev.1</text>
+                  <!-- DataMatrix (청록 박스) -->
+                  <g>
+                    <rect x="126" y="96" width="26" height="26" fill="#000"/>
+                    <rect x="129" y="99" width="20" height="20" fill="#fff"/>
+                    <g fill="#000">
+                      <rect x="129" y="99" width="3" height="20"/><rect x="129" y="116" width="20" height="3"/>
+                      <rect x="135" y="102" width="3" height="3"/><rect x="141" y="102" width="3" height="3"/>
+                      <rect x="138" y="108" width="3" height="3"/><rect x="144" y="111" width="3" height="3"/>
+                      <rect x="132" y="105" width="3" height="3"/><rect x="146" y="99" width="3" height="6"/>
+                    </g>
+                    <rect x="122" y="92" width="34" height="34" fill="none" stroke="#008080" stroke-width="1.6"/>
+                    <rect x="122" y="86" width="30" height="6" fill="#008080"/>
+                    <text x="124" y="91" font-size="4.5" fill="#fff">GS1 DataMatrix</text>
+                  </g>
+                  <!-- GS1-128 -->
+                  <g>
+                    <g fill="#000">
+                      <rect x="90" y="118" width="1.5" height="16"/><rect x="93" y="118" width="1" height="16"/>
+                      <rect x="96" y="118" width="2" height="16"/><rect x="100" y="118" width="1" height="16"/>
+                      <rect x="103" y="118" width="1.5" height="16"/><rect x="107" y="118" width="1" height="16"/>
+                      <rect x="110" y="118" width="2" height="16"/><rect x="114" y="118" width="1" height="16"/>
+                    </g>
+                    <rect x="87" y="115" width="32" height="22" fill="none" stroke="#008080" stroke-width="1.6"/>
+                    <rect x="87" y="109" width="20" height="6" fill="#008080"/>
+                    <text x="89" y="114" font-size="4.5" fill="#fff">GS1-128</text>
+                  </g>
+                </svg>
+              </div>
+              <div class="m-split"></div>
+              <div class="m-gal">
+                <div class="m-gal-hd"><span>필드 모아보기</span><span>미검출 1 · 13행 × 6항목</span></div>
+                <table>
+                  <tr><th style="background:var(--soft);color:var(--muted)">#</th>
+                    <th>LOT 13/13</th><th>PN 3/3</th><th class="bad">REF 12/13</th>
+                    <th>MFG 2/2</th><th>EXP 2/2</th><th>GTIN 1/≥1</th></tr>
+                  <tr><td>1</td><td><i class="crop"></i></td><td><i class="crop"></i></td>
+                    <td><i class="crop"></i></td><td><i class="crop"></i></td>
+                    <td><i class="crop"></i></td><td><i class="crop"></i></td></tr>
+                  <tr><td>2</td><td><i class="crop"></i></td><td><i class="crop"></i></td>
+                    <td class="low"><i class="crop"></i></td><td><i class="crop"></i></td>
+                    <td><i class="crop"></i></td><td></td></tr>
+                  <tr><td>3</td><td><i class="crop"></i></td><td><i class="crop"></i></td>
+                    <td><i class="crop"></i></td><td></td><td></td><td></td></tr>
+                  <tr><td>4</td><td><i class="crop"></i></td><td></td>
+                    <td class="miss">미검출</td><td></td><td></td><td></td></tr>
+                  <tr><td>5</td><td><i class="crop"></i></td><td></td>
+                    <td><i class="crop"></i></td><td></td><td></td><td></td></tr>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- 우측 -->
+        <div>
+          <div class="m-counts">
+            <span class="m-big ok">7</span><span class="m-lbl" style="color:var(--ok)">합격</span>
+            <span class="m-big wn">2</span><span class="m-lbl" style="color:var(--warn)">확인 필요</span>
+            <span style="font-size:9px;font-weight:700;color:var(--hint);margin-left:auto">
+              검사 9 / 12 · 미검사 3<br><span style="color:var(--danger)">● 결과 미저장 2건</span></span>
+          </div>
+          <div class="m-gb" style="margin-bottom:4px">
+            <div class="m-gb-hd">검사 목록 / 규격</div>
+            <div class="m-pad" style="font-size:9px">
+              <div class="m-row"><span class="m-btn">목록 열기</span>
+                <span style="color:var(--ok)">248건 로드됨</span></div>
+              <div class="m-row" style="margin-top:3px">
+                <span style="width:26px">LOT:</span>
+                <span style="flex:1;border:1px solid var(--line);border-radius:3px;padding:1px 4px;
+                  background:#fff">25090776 ▾</span>
+                <span style="color:var(--ok);font-weight:700">자동(정확)</span></div>
+              <div class="m-row" style="margin-top:3px;align-items:flex-start">
+                <span style="width:26px">규격:</span>
+                <span style="flex:1;display:flex;gap:2px;flex-wrap:wrap">
+                  <span class="m-btn" style="background:var(--primary);color:#fff;border-color:var(--accent)">PML-001(Rev.1)</span>
+                  <span class="m-btn">PML-001(Rev.0)</span>
+                  <span class="m-btn">BSL-01(Rev.5)</span>
+                  <span class="m-btn">A00</span></span></div>
+              <div class="m-row" style="margin-top:3px">
+                <span style="width:26px">문서:</span>
+                <span style="color:var(--ok);font-weight:700">PML-001 Rev.1 → PML-001(Rev.1)</span></div>
+              <div class="m-row" style="margin-top:3px">
+                <span style="width:26px">검색:</span>
+                <span style="flex:1;border:1px solid var(--line);border-radius:3px;padding:1px 4px;
+                  background:#fff">&nbsp;</span></div>
+            </div>
+          </div>
+          <div class="m-badge">
+            <div class="hl">⚠ 확인 필요 (CHECK)</div>
+            <div class="rs">규격 PML-001(Rev.1) · REF 12/13 · GTIN 바코드 불일치</div>
+          </div>
+          <div class="m-gb" style="margin-bottom:4px">
+            <div class="m-gb-hd">필드별 검출</div>
+            <table class="m-tbl">
+              <tr><th></th><th>항목</th><th>검사 값</th><th>검출/기준</th><th>출처</th></tr>
+              <tr class="pass"><td>✓</td><td>LOT</td><td>25090776</td><td>13/13</td><td>OCR</td></tr>
+              <tr class="pass"><td>✓</td><td>PN</td><td>HANARO-01</td><td>3/3</td><td>OCR</td></tr>
+              <tr class="fail"><td>✗</td><td>REF</td><td>NCN20-080-230</td><td>12/13</td><td>OCR</td></tr>
+              <tr class="pass"><td>✓</td><td>MFG DATE</td><td>2024-05-10</td><td>2/2</td><td>OCR</td></tr>
+              <tr class="pass"><td>✓</td><td>EXP DATE</td><td>2027-05-09</td><td>2/2</td><td>OCR</td></tr>
+              <tr class="pass"><td>✓</td><td>GTIN</td><td>08806367067654</td><td>1/≥1</td><td>바코드</td></tr>
+            </table>
+          </div>
+          <div class="m-gb">
+            <div class="m-gb-hd">바코드 검증</div>
+            <table class="m-tbl">
+              <tr><th>No.</th><th>종류</th><th>등급</th><th>값</th><th>일치</th></tr>
+              <tr class="pass"><td>#1</td><td>GS1-128</td><td>A (3.8)</td>
+                <td>(01)08806367067654(10)25090776</td><td>일치</td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="m-status">
+        <span style="color:var(--ok)">● AWS 인증 확인됨</span>
+        <span class="grow">[10:24:31] p3: 라벨에서 REF를 12회만 찾았습니다 — 확인 필요</span>
+        <span class="m-prog"><i></i></span>
+        <span>v1.0.0</span><span>⚙ 설정</span>
+      </div>
+    </div>
+
+    <button class="hs" style="left:5.5%;top:14%"  data-k="a">1</button>
+    <button class="hs" style="left:32%;top:14%"   data-k="b">2</button>
+    <button class="hs" style="left:5.5%;top:26%"  data-k="c">3</button>
+    <button class="hs" style="left:20%;top:55%"   data-k="d">4</button>
+    <button class="hs" style="left:52%;top:55%"   data-k="e">5</button>
+    <button class="hs" style="left:80%;top:9%"    data-k="f">6</button>
+    <button class="hs" style="left:80%;top:24%"   data-k="g">7</button>
+    <button class="hs" style="left:80%;top:44%"   data-k="h">8</button>
+    <button class="hs" style="left:80%;top:60%"   data-k="i">9</button>
+    <button class="hs" style="left:80%;top:82%"   data-k="j">10</button>
+    <button class="hs" style="left:5.5%;top:93%"  data-k="k">11</button>
+  </div>
+
+  <div class="hs-panel" id="hsPanel">
+    <h4 id="hsTitle">번호를 눌러 보세요</h4>
+    <p id="hsText">화면 각 부분의 이름과 역할이 여기에 표시됩니다.</p>
+    <p class="hs-hint" id="hsHint"></p>
+  </div>
+
+  <div class="callout c-info" style="margin-top:16px">
+    <span class="ttl">이 그림에 대하여</span>
+    위 화면은 실제 프로그램의 배치를 그대로 옮긴 <b>구성도</b>입니다.
+    실제 화면의 사진(스크린샷)으로 바꾸고 싶으면, 프로그램에서 <kbd>Alt</kbd>+<kbd>PrintScreen</kbd>으로
+    창을 캡처해 이 자리에 넣으면 됩니다.
+  </div>
+</section>
+
+<!-- ============ 4. 기본 사용법 ============ -->
+<section id="basic">
+  <h2><span class="num">4</span> 기본 사용법</h2>
+  <p class="lead">하루 검사의 표준 흐름입니다. 익숙해지면 <b>2 → 3 → 6</b>만으로도 끝납니다.</p>
+
+  <ol class="steps">
+    <li>
+      <h4>검사 목록 준비 — &lsquo;목록 생성&rsquo; 탭</h4>
+      <p>이미 만들어 둔 목록 xlsx가 있으면 이 단계를 건너뛰고 <b>2단계</b>에서 [목록 열기]로 불러오면 됩니다.</p>
+      <p>① <b>[주문일정 체크리스트]</b> · <b>[제품 품목번호 리스트]</b> · (일본 건이 있으면) <b>[BSC FGD 리스트]</b>
+      엑셀을 각각 선택합니다.<br>
+      ② 가운데 <b>제조일 선택</b> 트리에서 검사할 날짜를 체크합니다.<br>
+      ③ <b>[리스트 생성]</b> → 미리보기와 <b>경고/오류</b> 패널을 확인합니다.<br>
+      ④ <b>[엑셀로 저장]</b>(보관용) 또는 <b>[검사 탭으로 보내기 →]</b>(바로 검사).</p>
+      <div class="callout c-warn" style="margin:8px 0 0">
+        <span class="ttl">경고 패널을 꼭 보세요</span>
+        &ldquo;GTIN을 찾지 못했습니다&rdquo;, &ldquo;REF 셀이 날짜라 비웠습니다&rdquo; 같은 경고가 있으면
+        그 LOT은 검사에서 <b>확인 필요</b>가 됩니다. 입력 엑셀을 먼저 고치는 편이 빠릅니다.
+      </div>
+    </li>
+
+    <li>
+      <h4>라벨 PDF 열기 — &lsquo;라벨 검사&rsquo; 탭</h4>
+      <p><b>[PDF 열기]</b>를 누르거나 <b>PDF 파일을 창 안으로 끌어다 놓습니다</b>(<kbd>Ctrl</kbd>+<kbd>O</kbd>).</p>
+      <p>파일을 열면 <b>모든 페이지의 글자 인식이 백그라운드로 시작</b>됩니다.
+      툴바의 <code>OCR 진행 3/12…</code>가 <code>OCR 완료 12/12 ✓</code>가 되면 전부 준비된 것입니다.
+      기다리는 동안에도 페이지를 넘겨볼 수 있습니다.</p>
+    </li>
+
+    <li>
+      <h4>자동 검사 실행</h4>
+      <p><b>[▶ 자동 검사]</b>를 누릅니다. 첫 페이지부터 순서대로 검사하며 상태바에
+      <code>자동 검사 5/12 · 합격 4 · 부적합 1</code>처럼 진행이 표시됩니다.</p>
+      <p>중간에 멈추려면 <b>[■ 자동 검사 중지]</b>를 누르거나 <kbd>Esc</kbd>. 그때까지의 판정은 유지됩니다.</p>
+      <p>끝나면 <b>결과 목록</b> 창이 <b>&lsquo;부적합만 보기&rsquo;</b> 상태로 자동으로 열립니다.</p>
+    </li>
+
+    <li>
+      <h4>부적합 페이지 확인</h4>
+      <p>결과 목록에서 <b>행을 더블클릭</b>하면 그 페이지로 이동합니다. 원인을 이렇게 찾습니다.</p>
+      <p>· <b>판정 배지 사유줄</b> — <code>REF 12/13 · GTIN 바코드 불일치</code>처럼 무엇이 문제인지 한 줄로<br>
+      · <b>필드별 검출 표</b> — ✗ 표시된 항목의 검출/기준 숫자<br>
+      · <b>필드 모아보기</b>(우측 표) — <span style="color:#A8302C;font-weight:700">빨간 &lsquo;미검출&rsquo;</span> 칸,
+        <span style="color:var(--lowconf);font-weight:700">주황 테두리</span>(저신뢰) 칸을 찾습니다.
+        칸을 <b>클릭하면 라벨의 그 위치로 화면이 이동</b>합니다.</p>
+    </li>
+
+    <li>
+      <h4>문제 해결하고 재검사</h4>
+      <div class="tw"><table>
+        <thead><tr><th>증상</th><th>해결</th></tr></thead>
+        <tbody>
+          <tr><td>글자를 잘못 읽음 (2S090776 등)</td>
+            <td>필드 표에서 그 행을 <b>더블클릭</b> → 후보에서 올바른 값 선택 → 교정 등록.
+              이후 같은 오인식은 자동으로 고쳐집니다</td></tr>
+          <tr><td>값이 두 조각으로 나뉘어 인식</td>
+            <td><b>[OCR 로그]</b>(<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd>) → 두 단어 선택 →
+              <b>[선택 병합 학습]</b></td></tr>
+          <tr><td>엉뚱한 곳의 글자가 잡힘</td>
+            <td><b>[✚ 필드 영역 등록]</b> → 라벨에서 그 항목이 있어야 할 영역을 드래그 →
+              필드 선택. 이후 그 영역 안의 검출만 인정합니다</td></tr>
+          <tr><td>LOT이 <code>⚠ 미매칭</code></td>
+            <td><kbd>Ctrl</kbd>+<kbd>L</kbd>로 LOT 목록을 열어 직접 고릅니다</td></tr>
+          <tr><td>규격이 잘못 선택됨</td>
+            <td>우측 <b>규격</b> 버튼을 직접 누릅니다 (그 페이지만 수동 지정)</td></tr>
+        </tbody>
+      </table></div>
+      <p style="margin-top:8px">고친 뒤 <kbd>F5</kbd>로 재검사합니다. 합격이 되면 결과 목록에서 사라집니다.</p>
+    </li>
+
+    <li>
+      <h4>검사자 확인 합격 처리 (필요할 때만)</h4>
+      <p>라벨을 <b>눈으로 봤을 때 실제로는 정상</b>인데 프로그램만 &lsquo;확인 필요&rsquo;로 표시하는 경우
+      (인쇄가 흐려 OCR이 못 읽은 경우 등)에 사용합니다.</p>
+      <p>결과 목록에서 그 행을 선택 → <b>[합격 처리 (검사자 확인)…]</b> → <b>사유를 반드시 입력</b>합니다.
+      사유가 비어 있으면 처리되지 않습니다.</p>
+      <p>처리하면 판정이 <b>✓ 합격 (검사자 확인)</b>으로 바뀌고, 사유·처리자·시각이 이미지·이력·CSV에 남습니다.</p>
+      <div class="callout c-danger" style="margin:8px 0 0">
+        <span class="ttl">실제로 부적합이면 합격 처리하지 마세요</span>
+        라벨에 진짜 오류가 있으면 합격 처리하지 말고, <b>검사 기록지의 판정란을 부적합으로 고쳐 적고</b>
+        불량 처리 절차를 따르세요.
+      </div>
+    </li>
+
+    <li>
+      <h4>결과 저장·기록</h4>
+      <p>· <b>[결과 저장]</b>(<kbd>Ctrl</kbd>+<kbd>S</kbd>) — 현재 페이지의 표시가 그려진 이미지를 저장하고 이력에 남깁니다<br>
+      · <b>[자동 저장]</b> 체크 — 페이지 검사가 끝날 때마다 자동으로 저장합니다 (같은 판정은 한 번만)<br>
+      · <b>[CSV 내보내기]</b> — 전체 페이지를 한 줄씩 CSV로 (미검사 페이지도 포함)<br>
+      · 집계 줄의 <b><span style="color:var(--danger)">● 결과 미저장 N건</span></b>이 사라지고
+        <b><span style="color:var(--ok)">✓ 결과 저장됨</span></b>이 되면 완료입니다</p>
+    </li>
+  </ol>
+
+  <h3>자주 쓰는 단축키</h3>
+  <div class="tw"><table>
+    <thead><tr><th>키</th><th>기능</th><th>키</th><th>기능</th></tr></thead>
+    <tbody>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>PDF 열기</td>
+        <td><kbd>N</kbd></td><td>다음 확인 대상 페이지로</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>결과 저장</td>
+        <td><kbd>←</kbd> <kbd>→</kbd></td><td>이전/다음 페이지</td></tr>
+      <tr><td><kbd>F5</kbd></td><td>현재 페이지 재검사</td>
+        <td><kbd>Home</kbd> <kbd>End</kbd></td><td>첫/끝 페이지</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>LOT 직접 고르기</td>
+        <td><kbd>Q</kbd> <kbd>E</kbd> · 휠</td><td>확대 / 축소</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>추가 검색어 입력</td>
+        <td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>화면 이동</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd></td><td>OCR 인식 로그</td>
+        <td><kbd>Esc</kbd></td><td>모드 해제 / 자동 검사 중지</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 5. 판정 읽는 법 ============ -->
+<section id="verdict">
+  <h2><span class="num">5</span> 판정과 색 읽는 법</h2>
+
+  <h3>판정 배지</h3>
+  <div class="tw"><table>
+    <thead><tr><th>표시</th><th>뜻</th><th>해야 할 일</th></tr></thead>
+    <tbody>
+      <tr><td style="color:var(--ok);font-weight:800">✓ 합격 (PASSED)</td>
+        <td>모든 검사 항목이 기준과 일치</td><td>다음 페이지로 진행</td></tr>
+      <tr><td style="color:var(--warn);font-weight:800">⚠ 확인 필요 (CHECK)</td>
+        <td><b>불합격이 아닙니다.</b> 검사자가 눈으로 확인해야 하는 페이지</td>
+        <td>사유줄을 읽고 원인 확인 → 고치거나, 실제 부적합이면 기록지에 부적합 기입</td></tr>
+      <tr><td style="color:var(--ok);font-weight:800">✓ 합격 (검사자 확인)</td>
+        <td>검사자가 눈으로 확인하고 사유와 함께 합격 확정</td><td>사유가 기록에 남습니다</td></tr>
+      <tr><td style="color:var(--danger);font-weight:800">! 추출 실패</td>
+        <td>GTIN을 바코드로도 글자로도 읽지 못함 (오류)</td>
+        <td>바코드 인쇄 상태 확인, [▣ 바코드 인식]으로 직접 판독</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>페이지 슬롯 (툴바 아래 띠)</h3>
+  <div class="swatches">
+    <div class="sw"><span class="box" style="background:#E4E8EC"></span>회색 — OCR 대기</div>
+    <div class="sw"><span class="box" style="background:#fff"></span>흰색 — 검사 대기</div>
+    <div class="sw"><span class="box" style="background:var(--ok-bg)"></span>✓ 녹색 — 합격</div>
+    <div class="sw"><span class="box" style="background:var(--warn-bg);border-color:var(--warn)"></span>! 주황 — 확인 필요</div>
+    <div class="sw"><span class="box" style="background:var(--warn-bg);border:2px solid var(--warn)"></span>? — LOT 미매칭</div>
+    <div class="sw"><span class="box" style="background:var(--ok-bg);border:2px solid var(--ok)"></span>굵은 초록 — 검사자 확인 합격</div>
+    <div class="sw"><span class="box" style="background:#fff;border:3px solid var(--primary)"></span>파란 굵은 테두리 — 현재 페이지</div>
+    <div class="sw"><span class="box" style="background:#fff;border-bottom:4px solid var(--ok)"></span>아래 초록 띠 — 저장됨</div>
+  </div>
+  <p style="font-size:13.5px;color:var(--muted)">슬롯을 클릭하면 그 페이지로 바로 이동합니다.</p>
+
+  <h3>라벨 위 표시 색</h3>
+  <div class="swatches">
+    <div class="sw"><span class="box" style="background:rgba(255,0,0,.4);border-color:red"></span>LOT</div>
+    <div class="sw"><span class="box" style="background:rgba(0,0,255,.4);border-color:blue"></span>PN</div>
+    <div class="sw"><span class="box" style="background:rgba(0,255,0,.4);border-color:green"></span>REF</div>
+    <div class="sw"><span class="box" style="background:rgba(255,255,0,.55);border-color:#cc0"></span>MFG DATE</div>
+    <div class="sw"><span class="box" style="background:rgba(255,0,255,.4);border-color:#c0c"></span>EXP DATE</div>
+    <div class="sw"><span class="box" style="background:rgba(0,255,255,.5);border-color:#0aa"></span>GTIN</div>
+    <div class="sw"><span class="box" style="background:var(--teal)"></span>바코드 (위치 표시)</div>
+    <div class="sw"><span class="box" style="background:var(--purple)"></span>문서번호 · 양식</div>
+    <div class="sw"><span class="box" style="border:2px dashed var(--lowconf)"></span>저신뢰 단어 (주황 파선)</div>
+    <div class="sw"><span class="box" style="border:2px dashed var(--primary)"></span>등록한 검출 영역</div>
+  </div>
+  <p style="font-size:13.5px;color:var(--muted)">
+    필드 색은 <b>설정 → 표시</b>에서 바꿀 수 있습니다. 저장되는 결과 이미지도 같은 색을 씁니다.</p>
+
+  <div class="callout c-info">
+    <span class="ttl">필드 모아보기 표 읽는 법</span>
+    <b>열</b>은 항목(LOT·PN·REF·MFG·EXP·GTIN), <b>행</b>은 규격이 요구하는 인쇄 횟수입니다.
+    같은 열의 칸들은 <b>모두 같은 값이어야 정상</b>이므로, 한 칸만 글자가 달라 보이면 바로 눈에 띕니다.
+    <span style="color:#A8302C;font-weight:700">빨강 = 미검출</span>,
+    <span style="color:var(--lowconf);font-weight:700">주황 테두리 = 인식 신뢰도 낮음</span>,
+    <span style="color:#B8860B;font-weight:700">노랑 테두리 = 기준보다 많이 검출</span>입니다.
+  </div>
+</section>
+
+<!-- ============ 6. 부가 기능 ============ -->
+<section id="extra">
+  <h2><span class="num">6</span> 부가 기능</h2>
+  <p class="lead">필요할 때만 쓰는 기능입니다. 제목을 눌러 펼쳐 보세요.</p>
+
+  <details open><summary>▣ 바코드 인식 — 바코드를 클릭해 값 확인하기</summary>
+    <div class="det-body">
+      <p>라벨의 특정 바코드에 어떤 값이 들어 있는지 바로 확인하고 싶을 때 씁니다.</p>
+      <p><b>사용법</b> ① 툴바 <b>[▣ 바코드 인식]</b> 클릭 → 커서가 <b>십자 모양</b>으로 바뀌고 안내 배너가 뜹니다.
+      ② 라벨 위의 바코드(DataMatrix 또는 GS1-128)를 <b>클릭</b>합니다.
+      ③ 판독 결과 창에 <b>종류 · 등급 · 판독값 · GS1 항목별 해석 · 현재 LOT과의 대조 결과</b>가 나옵니다.
+      ④ <b>[값 복사]</b>로 클립보드에 복사할 수 있습니다.</p>
+      <p><b>참고</b> · 드래그는 화면 이동으로 동작하므로 <b>제자리 클릭</b>해야 판독됩니다.
+      · 자동 검출이 놓친 바코드도 클릭 지점 주변을 다시 읽어 찾아냅니다.
+      · <kbd>Esc</kbd> 또는 버튼을 다시 눌러 해제합니다.</p>
+    </div>
+  </details>
+
+  <details><summary>✚ 필드 영역 등록 — 검출 위치 제한하기</summary>
+    <div class="det-body">
+      <p>라벨의 엉뚱한 위치에서 값이 잡히거나, 특정 위치에서만 인정하고 싶을 때 씁니다.</p>
+      <p>① <b>[✚ 필드 영역 등록]</b> 클릭 → ② 라벨 위를 <b>드래그</b>(영역 지정) 또는 <b>클릭</b>(그 글자 상자를 그대로 사용)
+      → ③ 대화상자에서 <b>필드</b>와 <b>적용 규격</b>(전체 또는 특정 규격)을 고릅니다.</p>
+      <p>등록하면 <b>그 영역 안에서 검출된 것만 인정</b>합니다. 등록된 영역은 파란 점선으로 계속 표시됩니다
+      (<b>[영역 표시]</b> 체크로 켜고 끔). 같은 필드에 이미 영역이 있으면 <b>교체할지 추가할지</b> 물어봅니다.</p>
+    </div>
+  </details>
+
+  <details><summary>📄 OCR 인식 로그 — 실제로 읽은 글자 전부 보기</summary>
+    <div class="det-body">
+      <p><b>[OCR 로그]</b> 또는 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd>. 그 페이지에서 프로그램이
+      실제로 읽어낸 <b>모든 단어</b>를 위에서 아래 순으로 보여 줍니다. 각 단어의 <b>인식 신뢰도(%)</b>도 나옵니다.</p>
+      <p>왜 검출이 안 됐는지 확인할 때 가장 확실한 방법입니다. 여기서 <b>[선택 병합 학습]</b>(나뉘어 읽힌 값 합치기)과
+      <b>교정 등록</b>(오인식 고치기)을 할 수 있습니다.</p>
+    </div>
+  </details>
+
+  <details><summary>🔧 미검출 진단 — 왜 못 찾았는지 알려주기</summary>
+    <div class="det-body">
+      <p>필드 표에서 <b>검출이 0인 행을 더블클릭</b>하면 원인을 분석해 알려 줍니다.</p>
+      <p>· 페이지 평균 인식 신뢰도가 낮음 · 가장 비슷하게 읽힌 글자와 유사도
+      · 값이 여러 단어로 나뉨 · 최소 신뢰도 필터가 걸러냄 · 대비 보정이 꺼져 있음</p>
+      <p>이어서 <b>[OCR 로그 열기]</b> 또는 <b>[인식 강화 후 재OCR]</b>(대비 보정 + 배율 5.0 + 신뢰도 필터 해제)을
+      선택할 수 있습니다.</p>
+      <div class="callout c-warn" style="margin:8px 0 0">
+        <span class="ttl">재OCR은 AWS 과금이 발생합니다</span>
+        [인식 강화 후 재OCR]은 PDF 전체를 다시 인식합니다. 주황색 버튼이며 확인을 거칩니다.
+      </div>
+    </div>
+  </details>
+
+  <details><summary>📋 결과 목록 — 부적합 로트만 모아 보기</summary>
+    <div class="det-body">
+      <p>툴바 <b>[결과 목록]</b> 또는 자동 검사 완료 시 자동으로 열립니다. 검사 화면 옆에 띄워 두고 쓸 수 있습니다.</p>
+      <p>· 상단에 <b>부적합 n · 합격 n(검사자 확인 n) · 미검사 n / 전체 n페이지</b> 요약<br>
+      · <b>[부적합만 보기]</b> 체크를 풀면 합격 로트도 함께 보입니다<br>
+      · 행 <b>더블클릭</b> 또는 <b>[이 페이지로 이동]</b>으로 해당 페이지 열기<br>
+      · <b>[합격 처리 (검사자 확인)…]</b> / <b>[합격 처리 취소]</b></p>
+    </div>
+  </details>
+
+  <details><summary>🗄️ 검사 이력 탭 — 지난 검사 찾아보기</summary>
+    <div class="det-body">
+      <p>저장한 검사 결과가 모두 쌓입니다. <b>LOT 부분 검색</b>과 <b>판정 필터</b>(전체/합격/확인 필요)로 찾습니다.</p>
+      <p>· 행을 더블클릭하면 저장된 <b>결과 이미지</b>가 열립니다<br>
+      · <b>[LOT 리포트 내보내기]</b> — 특정 LOT의 검사 내역을 엑셀로<br>
+      · <b>[기준정보 DB]</b> — PN별 REF·GTIN·기대 바코드 종류를 미리 등록해 두면 목록과 대조합니다</p>
+    </div>
+  </details>
+
+  <details><summary>📦 프리셋 — 다른 PC로 설정 옮기기</summary>
+    <div class="det-body">
+      <p>설정 → <b>규격 · 양식 감지</b> 탭의 <b>[프리셋 내보내기]</b>로 <code>.lavispreset</code> 파일을 만듭니다.</p>
+      <p><b>포함</b> 규격 정의 · 필드 규칙 · 검출 영역 · 양식 감지 · 컬럼 매핑 · 학습 데이터(교정·병합)<br>
+      <b>제외</b> 저장 폴더 · AWS 설정 · OCR 엔진 선택 (PC마다 다르므로)</p>
+      <p>다른 PC에서 <b>[프리셋 가져오기]</b> → 내용 확인 → 적용(재시작). 가져오기 전에 현재 설정이 자동 백업됩니다.</p>
+    </div>
+  </details>
+
+  <details><summary>ℹ️ 프로그램 정보 — 버전 확인</summary>
+    <div class="det-body">
+      <p>상태바 오른쪽의 <b>버전 번호(v…)를 클릭</b>하면 프로그램 정보가 뜹니다.
+      <b>버전 · 빌드 · .NET 버전 · 데이터 폴더 위치 · 로그 파일 위치</b>를 확인할 수 있습니다.</p>
+      <p>문제를 보고할 때 이 버전 번호를 함께 알려 주세요. <kbd>Esc</kbd>로 닫습니다.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 7. 설정 ============ -->
+<section id="settings">
+  <h2><span class="num">7</span> 세부 설정과 옵션</h2>
+  <p class="lead">상태바 오른쪽 <b>⚙ 설정</b>을 누르면 5개 탭이 있는 설정 창이 열립니다.
+  저장하면 <b>즉시 검사에 반영</b>됩니다.</p>
+
+  <div class="cards">
+    <div class="card"><h4>일반 · 저장 · AWS</h4>
+      <p>저장 폴더, 자동 저장 기본값, 결과 이미지 크기·품질, CSV 옵션, AWS 리전·프로필, 유효기간 개월</p></div>
+    <div class="card"><h4>OCR 엔진 · 교정</h4>
+      <p>인식 엔진 선택, 인식 품질 임계값, 대비 보정, 교정 사전·병합 규칙 편집</p></div>
+    <div class="card"><h4>검출 필드 · 영역</h4>
+      <p>검사할 필드 선택, 커스텀 필드, 검출 영역, 문자 제약, 동일값 패턴, <b>자동 학습 on/off</b></p></div>
+    <div class="card"><h4>규격 · 양식 감지</h4>
+      <p>규격별 기대 출현 횟수, 양식 감지 규칙, 프리셋 내보내기/가져오기, 설정 폴더 열기</p></div>
+    <div class="card"><h4>표시</h4>
+      <p>필드별 색상, 표시 선 굵기·투명도, 번호 표시, 영역 표시</p></div>
+  </div>
+
+  <h3>설정 항목 찾기</h3>
+  <div class="searchbar">
+    <input type="text" id="setSearch" placeholder="설정 이름이나 키워드로 검색 (예: 저장, OCR, 색)" aria-label="설정 검색">
+    <button class="filterbtn on" data-tab="all">전체</button>
+    <button class="filterbtn" data-tab="일반">일반·저장·AWS</button>
+    <button class="filterbtn" data-tab="OCR">OCR·교정</button>
+    <button class="filterbtn" data-tab="필드">검출 필드·영역</button>
+    <button class="filterbtn" data-tab="규격">규격·양식</button>
+    <button class="filterbtn" data-tab="표시">표시</button>
+  </div>
+  <div class="tw"><table id="setTable">
+    <thead><tr><th>탭</th><th>설정</th><th>기본값</th><th>설명</th></tr></thead>
+    <tbody>
+      <tr data-tab="일반"><td>일반</td><td>저장 경로</td><td>내 문서\LaVIS_결과</td>
+        <td>결과 이미지를 저장할 폴더. 네트워크 드라이브면 접근 가능한지 자동으로 확인합니다</td></tr>
+      <tr data-tab="일반"><td>일반</td><td>자동 저장 기본</td><td>꺼짐</td>
+        <td>켜면 페이지 검사가 끝날 때마다 결과 이미지를 저장합니다 (같은 판정은 한 번만)</td></tr>
+      <tr data-tab="일반"><td>일반</td><td>결과 이미지 축소 배율</td><td>0.5</td>
+        <td>저장 이미지 크기. 작을수록 용량이 줄지만 글자가 흐려집니다</td></tr>
+      <tr data-tab="일반"><td>일반</td><td>JPEG 품질</td><td>90</td><td>결과 이미지 화질 (30~100)</td></tr>
+      <tr data-tab="일반"><td>일반</td><td>CSV 텍스트 보호</td><td>켜짐</td>
+        <td>LOT·GTIN을 <code>="값"</code>으로 감싸 엑셀에서 앞의 0이 사라지거나 지수 표기로 바뀌는 것을 막습니다</td></tr>
+      <tr data-tab="일반"><td>일반</td><td>AWS 리전 / 프로필</td><td>ap-northeast-2 / (비움)</td>
+        <td>Textract 사용 리전과 자격증명 프로필 이름</td></tr>
+      <tr data-tab="일반"><td>일반</td><td>유효기간 (개월)</td><td>36</td>
+        <td>목록 생성 시 유효기한 = 제조일 + 이 개월 − 1일</td></tr>
+      <tr data-tab="OCR"><td>OCR</td><td>인식 엔진</td><td>AWS Textract</td>
+        <td>AWS(정확·온라인·과금) / 패턴 학습(로컬) / ONNX(로컬). 로컬은 오프라인이지만 인식률이 낮습니다</td></tr>
+      <tr data-tab="OCR"><td>OCR</td><td>PDF 렌더 배율</td><td>4.0</td>
+        <td>높을수록 작은 글자를 잘 읽지만 느리고 메모리를 많이 씁니다 (1~8)</td></tr>
+      <tr data-tab="OCR"><td>OCR</td><td>최소 신뢰도</td><td>0</td>
+        <td>이 값 미만으로 읽은 글자를 버립니다. <b>0을 권장</b>합니다 (필요한 글자가 버려질 수 있음)</td></tr>
+      <tr data-tab="OCR"><td>OCR</td><td>저신뢰 단어 기준</td><td>70</td>
+        <td>이 값 미만인 단어에 주황 파선을 그려 육안 확인을 유도합니다</td></tr>
+      <tr data-tab="OCR"><td>OCR</td><td>저신뢰 평균 기준</td><td>80</td>
+        <td>페이지 평균이 이 값 미만이면 인식 품질 경고를 표시합니다</td></tr>
+      <tr data-tab="OCR"><td>OCR</td><td>이미지 대비 보정</td><td>꺼짐</td>
+        <td>흐리게 인쇄된 라벨에 도움이 됩니다. 켜면 다시 인식합니다</td></tr>
+      <tr data-tab="OCR"><td>OCR</td><td>혼동 문자 허용</td><td>켜짐</td>
+        <td>O↔0, I↔1, S↔5 같은 혼동을 같은 글자로 봅니다</td></tr>
+      <tr data-tab="OCR"><td>OCR</td><td>교정 사전 / 병합 규칙</td><td>—</td>
+        <td>등록된 오인식 교정과 단어 병합 규칙을 직접 편집·삭제합니다</td></tr>
+      <tr data-tab="필드"><td>필드</td><td>검사 제외 필드</td><td>없음</td>
+        <td>검사하지 않을 항목을 고릅니다. <b>LOT은 제외할 수 없습니다</b>(매칭 기준)</td></tr>
+      <tr data-tab="필드"><td>필드</td><td>커스텀 필드</td><td>없음</td>
+        <td>기본 6개 외에 찾을 값을 추가합니다 (고정 문자열 또는 정규식, 기대 횟수 지정 가능)</td></tr>
+      <tr data-tab="필드"><td>필드</td><td>검출 영역</td><td>없음</td>
+        <td>화면에서 드래그로 등록한 영역 목록. 여기서 직접 수정·삭제할 수 있습니다</td></tr>
+      <tr data-tab="필드"><td>필드</td><td>문자 제약</td><td>날짜·GTIN은 숫자만</td>
+        <td>필드별 허용/금지 문자. 위반 문자를 자동 복원합니다 (날짜의 O → 0)</td></tr>
+      <tr data-tab="필드"><td>필드</td><td>동일값 패턴</td><td>없음</td>
+        <td>라벨 안 여러 위치의 같은 값을 서로 비교합니다 (이름·정규식·최소 개수)</td></tr>
+      <tr data-tab="필드"><td>필드</td><td><b>자동 학습 (4종)</b></td><td><b>모두 꺼짐</b></td>
+        <td>OCR 패턴 축적 / 라벨 유형 학습 / 동일값 배치 갱신 / 기준정보 DB 자동 축적.
+          필요한 것만 개별로 켭니다</td></tr>
+      <tr data-tab="규격"><td>규격</td><td>기대 출현 횟수</td><td>규격마다 다름</td>
+        <td>규격별로 각 항목이 라벨에 몇 번 인쇄돼야 하는지. 더블클릭으로 수정. 0 = 검사 안 함.
+          <b>GTIN은 규격과 무관하게 1개 이상이면 합격</b></td></tr>
+      <tr data-tab="규격"><td>규격</td><td>라벨 양식 자동 감지</td><td>없음 (선택)</td>
+        <td>문서번호 자동 인식으로 부족할 때, 위치+패턴 규칙을 추가합니다</td></tr>
+      <tr data-tab="규격"><td>규격</td><td>프리셋 내보내기/가져오기</td><td>—</td>
+        <td>설정·규칙·학습을 한 파일로 묶어 다른 PC에 옮깁니다</td></tr>
+      <tr data-tab="규격"><td>규격</td><td>설정 폴더 열기</td><td>—</td>
+        <td><code>%APPDATA%\LaVIS</code>를 엽니다. 규격 표시명·컬럼 매핑 등 고급 설정은 여기 JSON을 직접 편집</td></tr>
+      <tr data-tab="표시"><td>표시</td><td>필드 색상</td><td>LOT 빨강 등</td>
+        <td>항목별 표시 색. 화면과 저장 이미지에 함께 적용됩니다</td></tr>
+      <tr data-tab="표시"><td>표시</td><td>선 굵기 / 채움 투명도</td><td>2 / 90</td>
+        <td>표시 상자의 테두리 굵기와 반투명 채움 정도</td></tr>
+      <tr data-tab="표시"><td>표시</td><td>번호 표시</td><td>꺼짐</td>
+        <td>검출된 상자마다 순번을 함께 그립니다</td></tr>
+      <tr data-tab="표시"><td>표시</td><td>필드 모아보기 폭</td><td>40%</td>
+        <td>검사 화면에서 분할선을 끌어 조절해도 저장됩니다</td></tr>
+    </tbody>
+  </table></div>
+  <p class="nores" id="setNoRes">검색 결과가 없습니다.</p>
+
+  <div class="callout c-info">
+    <span class="ttl">숫자 입력이 빨갛게 변하면</span>
+    허용 범위를 벗어난 값입니다. 마우스를 올리면 허용 범위가 툴팁으로 표시되며,
+    범위를 고치기 전에는 저장되지 않습니다.
+  </div>
+</section>
+
+<!-- ============ 8. 한계·확인 사항 ============ -->
+<section id="limits">
+  <h2><span class="num">8</span> 프로그램의 한계와 확인해야 할 사항</h2>
+
+  <div class="callout c-danger" style="font-size:15px">
+    <span class="ttl">① 검사 기록의 판정란은 &lsquo;P(합격)&rsquo;로 기본 입력됩니다 — 가장 중요</span>
+    <p style="margin:6px 0">검사 성적서·기록지의 판정란에는 <b>합격(P)이 미리 채워져 있습니다.</b>
+    LaVIS는 화면과 저장 파일에 판정을 표시할 뿐, <b>기록지의 판정란을 대신 바꾸지 않습니다.</b></p>
+    <p style="margin:6px 0"><b>따라서 검사자는 반드시:</b></p>
+    <p style="margin:6px 0">· LaVIS가 <b>&lsquo;확인 필요&rsquo;</b>로 표시한 페이지를 <b>빠짐없이 확인</b>하고<br>
+    · 확인 결과 <b>실제로 부적합</b>이면 <b>기록의 판정란을 부적합으로 직접 고쳐 적고</b><br>
+    · 사내 불량·부적합 처리 절차를 따라야 합니다.</p>
+    <p style="margin:6px 0 0">기본값 P를 그대로 두면 <b>부적합이 합격으로 기록되어 출하될 수 있습니다.</b>
+    자동 검사 후 결과 목록의 <b>부적합 건수가 0인지</b> 반드시 확인하세요.</p>
+  </div>
+
+  <h3>그 밖의 한계</h3>
+  <div class="tw"><table>
+    <thead><tr><th>한계</th><th>확인·대응 방법</th></tr></thead>
+    <tbody>
+      <tr><td><b>OCR은 100%가 아닙니다</b><br>인쇄가 흐리거나 폰트가 특이하면 못 읽습니다</td>
+        <td>&lsquo;확인 필요&rsquo; 페이지는 반드시 눈으로 확인. 저신뢰(주황 파선) 표시를 놓치지 마세요</td></tr>
+      <tr><td><b>DataMatrix는 검증하지 않습니다</b><br>위치(청록 박스)만 표시합니다</td>
+        <td>DataMatrix 값 확인이 필요하면 <b>[▣ 바코드 인식]</b>으로 클릭해 직접 판독하세요</td></tr>
+      <tr><td><b>바코드 등급은 참고값입니다</b><br>A~F 표시는 간이 근사입니다</td>
+        <td>정식 바코드 검증(ISO/IEC 15415)은 검교정된 전용 장비의 성적서로 대신할 수 없습니다</td></tr>
+      <tr><td><b>문서번호가 없는 라벨</b><br>중국 규격 등은 규격 자동 선택이 안 됩니다</td>
+        <td>우측 <b>규격</b> 버튼으로 직접 지정하세요. &lsquo;문서: 미감지&rsquo;로 표시됩니다</td></tr>
+      <tr><td><b>LOT을 못 읽으면 이전 LOT으로 검사</b><br>다른 LOT과 대조돼 오판할 수 있습니다</td>
+        <td>이 경우 <b>반드시 &lsquo;확인 필요&rsquo;</b>가 되고 슬롯에 <b>?</b>가 표시됩니다.
+          <kbd>Ctrl</kbd>+<kbd>L</kbd>로 LOT을 직접 고른 뒤 <kbd>F5</kbd></td></tr>
+      <tr><td><b>라벨 정렬은 하늘색 이형지 기준</b><br>배경이 다르면 크롭이 생략됩니다</td>
+        <td>&lsquo;정렬: 이형지 미감지&rsquo;로 표시됩니다. 검사는 그대로 진행되지만 인식률이 떨어질 수 있습니다</td></tr>
+      <tr><td><b>판정은 페이지 단위</b><br>한 페이지 안 라벨 한 장만 따로 판정할 수 없습니다</td>
+        <td>필드 모아보기에서 <b>어느 행(몇 번째 라벨)</b>이 문제인지 확인하세요</td></tr>
+      <tr><td><b>AWS OCR은 과금됩니다</b><br>페이지 수만큼 비용이 발생합니다</td>
+        <td>같은 PDF는 캐시로 재사용되어 다시 과금되지 않습니다. [인식 강화 후 재OCR]만 주의</td></tr>
+      <tr><td><b>전자서명·감사추적 기능이 없습니다</b></td>
+        <td>21 CFR Part 11 대상 기록으로 쓸 수 없습니다. 정식 기록은 사내 양식으로 별도 관리하세요</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>검사 종료 전 확인 체크리스트</h3>
+  <p style="font-size:14px;color:var(--muted);margin-top:0">체크 상태는 이 PC의 브라우저에 저장됩니다.</p>
+  <ul class="chk" id="checklist">
+    <li><input type="checkbox" id="c1"><label class="txt" for="c1">
+      집계 줄의 <b>미검사</b>가 <b>0</b>인가? (OCR 실패·건너뛴 페이지가 없는지)</label></li>
+    <li><input type="checkbox" id="c2"><label class="txt" for="c2">
+      결과 목록의 <b>부적합 건수</b>를 확인하고, 모든 &lsquo;확인 필요&rsquo; 페이지를 눈으로 봤는가?</label></li>
+    <li><input type="checkbox" id="c3"><label class="txt" for="c3">
+      <b>실제 부적합</b>이 있었다면 <b>검사 기록의 판정란을 부적합으로 고쳐 적었는가?</b>
+      (기본값 P 그대로 두지 않았는가)</label></li>
+    <li><input type="checkbox" id="c4"><label class="txt" for="c4">
+      <b>검사자 확인 합격</b>으로 처리한 건은 <b>사유가 정확히</b> 적혔는가?</label></li>
+    <li><input type="checkbox" id="c5"><label class="txt" for="c5">
+      슬롯에 <b>?</b>(LOT 미매칭)가 남아 있지 않은가?</label></li>
+    <li><input type="checkbox" id="c6"><label class="txt" for="c6">
+      집계 줄이 <b>✓ 결과 저장됨</b>인가? (● 결과 미저장이 남아 있지 않은지)</label></li>
+    <li><input type="checkbox" id="c7"><label class="txt" for="c7">
+      필요하면 <b>[CSV 내보내기]</b>로 전체 페이지 기록을 남겼는가?</label></li>
+    <li><input type="checkbox" id="c8"><label class="txt" for="c8">
+      상태바에 빨간 <b>오류 메시지</b>가 남아 있지 않은가?</label></li>
+  </ul>
+  <div class="chk-bar">
+    <span id="chkCount">0 / 8</span>
+    <span class="track"><i class="fill" id="chkFill"></i></span>
+    <button class="resetbtn" id="chkReset">초기화</button>
+  </div>
+</section>
+
+<!-- ============ 9. 문제 해결 ============ -->
+<section id="trouble">
+  <h2><span class="num">9</span> 문제 해결</h2>
+
+  <details><summary>프로그램이 실행되지 않아요</summary>
+    <div class="det-body">
+      <p>· <b>&ldquo;PC를 보호했습니다&rdquo;</b> → 추가 정보 → 실행<br>
+      · <b>DLL 오류</b> → 폴더 안의 <code>*.dll</code>이나 <code>models</code> 폴더를 지웠는지 확인.
+        공용 폴더에서 <b>전체를 다시 복사</b>하세요<br>
+      · <b>이미 실행 중이라는 안내</b> → 작업 표시줄에 이미 떠 있습니다. 보이지 않으면
+        작업 관리자에서 <code>LaVIS.exe</code>를 종료 후 다시 실행</p>
+    </div>
+  </details>
+
+  <details><summary>상태바에 &ldquo;AWS 인증 실패&rdquo;가 떠요</summary>
+    <div class="det-body">
+      <p>자격증명이 없거나 잘못됐습니다. <code>C:\Users\사용자\.aws\credentials</code> 파일을 확인하고,
+      설정 → 일반 · 저장 · AWS의 <b>프로필 이름</b>이 그 파일의 프로필과 같은지 보세요.</p>
+      <p>급하면 설정 → OCR 엔진에서 <b>패턴 학습</b> 또는 <b>ONNX</b>(로컬)로 바꿔 오프라인으로 검사할 수 있습니다.
+      인식률은 떨어지므로 결과를 더 꼼꼼히 확인하세요.</p>
+    </div>
+  </details>
+
+  <details><summary>OCR이 계속 &ldquo;진행 중&rdquo;에서 멈춰요</summary>
+    <div class="det-body">
+      <p>네트워크나 AWS 응답이 느린 경우입니다. 같은 오류가 반복되면 프로그램이 <b>남은 페이지 인식을 자동으로 중단</b>합니다
+      (재과금 방지). 설정을 확인한 뒤 페이지를 이동하면 다시 시도합니다.</p>
+      <p>자동 검사 중이라면 3분간 진행이 없을 때 자동으로 중단되고 상태바에 안내가 나옵니다.</p>
+    </div>
+  </details>
+
+  <details><summary>모든 페이지가 &lsquo;확인 필요&rsquo;로 나와요</summary>
+    <div class="det-body">
+      <p>· <b>규격이 잘못 선택</b>됐을 수 있습니다. 우측 <b>문서:</b> 줄을 확인하세요.
+        &lsquo;미감지&rsquo;나 &lsquo;후보 …&rsquo;면 규격 버튼으로 직접 지정합니다<br>
+      · <b>기대 출현 횟수</b>가 실제 라벨과 다를 수 있습니다.
+        설정 → 규격 · 양식 감지에서 검출 수에 맞게 조정하세요<br>
+      · <b>목록의 값이 라벨과 다릅니다.</b> 목록 생성 시 경고를 확인하세요</p>
+    </div>
+  </details>
+
+  <details><summary>같은 오인식이 계속 반복돼요</summary>
+    <div class="det-body">
+      <p>필드 표에서 그 행을 <b>더블클릭</b>해 <b>교정을 등록</b>하세요. 한 번 등록하면 이후 모든 검사에 자동 적용됩니다.</p>
+      <p>등록한 교정은 설정 → OCR 엔진 · 교정 탭에서 확인·수정·삭제할 수 있습니다.</p>
+    </div>
+  </details>
+
+  <details><summary>결과가 저장되지 않아요</summary>
+    <div class="det-body">
+      <p>· 저장 폴더가 <b>네트워크 드라이브인데 연결이 끊긴</b> 경우 → 자동 저장이 자동으로 꺼지고 경고가 뜹니다.
+        <b>[저장 경로]</b>로 로컬 폴더를 지정하세요<br>
+      · <b>권한 없음 / 파일 잠김</b> → 원인이 상태바에 표시됩니다. 해당 파일이 엑셀 등에서 열려 있는지 확인<br>
+      · 검사 결과 자체는 유지되므로 경로를 고친 뒤 다시 저장하면 됩니다</p>
+    </div>
+  </details>
+
+  <details><summary>설정을 잘못 바꿔서 되돌리고 싶어요</summary>
+    <div class="det-body">
+      <p>설정 → 규격 · 양식 감지 → <b>[설정 폴더 열기]</b> → <code>settings.json</code>을 삭제하고
+      프로그램을 다시 실행하면 기본값으로 돌아갑니다. (교정·이력 등 학습 데이터는 그대로 유지됩니다)</p>
+      <p>프리셋을 가져온 적이 있다면 <code>backup-settings-시각</code> 폴더에 이전 설정이 백업되어 있습니다.</p>
+    </div>
+  </details>
+
+  <details><summary>문의할 때 알려 주면 좋은 것</summary>
+    <div class="det-body">
+      <p>① 상태바 오른쪽 <b>버전 번호</b>(클릭하면 나오는 프로그램 정보 화면)<br>
+      ② 화면에 뜬 <b>오류 메시지 전문</b> (또는 캡처)<br>
+      ③ <code>%APPDATA%\LaVIS\app.log</code>, 프로그램이 갑자기 종료된 경우 <code>crash.log</code><br>
+      ④ 문제가 생긴 <b>PDF 파일과 검사 목록</b> (가능하면)</p>
+    </div>
+  </details>
+</section>
+
+</main>
+
+<footer>
+  LaVIS — Label Verification &amp; Inspection System Rev.00 · 품질관리팀 내부 사용 문서<br>
+  이 프로그램은 <b>검사 보조 도구</b>이며 최종 판정은 검사자가 합니다.
+</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- 내비 활성화 ---------- */
+  var navLinks = Array.prototype.slice.call(document.querySelectorAll('.nav-in a'));
+  var sections = navLinks.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  function syncNav(){
+    var y = window.scrollY + 90, idx = 0;
+    for (var i = 0; i < sections.length; i++){
+      if (sections[i] && sections[i].offsetTop <= y) idx = i;
+    }
+    navLinks.forEach(function(a, i){ a.classList.toggle('on', i === idx); });
+  }
+  window.addEventListener('scroll', syncNav, {passive:true});
+  syncNav();
+
+  /* ---------- 화면 핫스팟 ---------- */
+  var HS = {
+    a: ['① 툴바 — 주 동작',
+        'PDF 열기(파랑)와 결과 저장(파랑)이 화면의 주 동작입니다. 그 오른쪽으로 페이지 이동, 자동 검사, 배율, 등록 모드, 내보내기가 기능별로 구분선으로 나뉘어 있습니다.',
+        '단축키: Ctrl+O 열기 · Ctrl+S 저장'],
+    b: ['② 자동 검사 · 결과 목록',
+        '[▶ 자동 검사]는 전체 페이지를 순서대로 검사해 합격 로트와 부적합 로트를 나눕니다. 끝나면 [결과 목록] 창이 부적합만 보기로 자동으로 열립니다.',
+        '실행 중에는 [■ 자동 검사 중지]로 바뀝니다. Esc로도 중지됩니다.'],
+    c: ['③ 페이지 슬롯',
+        '페이지마다 검사 상태를 색과 기호로 보여 줍니다. 회색=OCR 대기, 흰색=검사 대기, ✓녹색=합격, !주황=확인 필요, ?=LOT 미매칭, 굵은 초록=검사자 확인 합격. 아래 초록 띠는 결과가 저장됐다는 뜻입니다.',
+        '슬롯을 클릭하면 그 페이지로 바로 이동합니다.'],
+    d: ['④ 라벨 뷰어',
+        '라벨 이미지 위에 검출 결과가 색 상자로 그려집니다. 항목별 색은 설정에서 바꿀 수 있고, 저장되는 결과 이미지도 같은 색을 씁니다. 청록 상자는 바코드 위치, 보라 상자는 규격 판별에 쓴 문서번호입니다.',
+        '휠 또는 Q/E로 확대·축소, 드래그로 이동합니다.'],
+    e: ['⑤ 필드 모아보기',
+        '같은 항목의 인쇄 부분만 잘라 표로 모아 줍니다. 열은 항목(LOT·PN·REF…), 행은 규격이 요구하는 인쇄 횟수입니다. 같은 열은 모두 같은 값이어야 하므로 다른 값이 바로 눈에 띕니다.',
+        '빨강=미검출, 주황 테두리=저신뢰, 노랑=기준 초과. 칸을 클릭하면 라벨의 그 위치로 이동합니다.'],
+    f: ['⑥ 집계',
+        '합격·확인 필요 페이지 수를 큰 숫자로 보여 줍니다. 오른쪽에 검사 진행(검사 n / 전체 · 미검사 k)과 결과 저장 상태가 표시됩니다.',
+        '● 결과 미저장이 빨갛게 보이면 아직 저장하지 않은 판정이 있다는 뜻입니다.'],
+    g: ['⑦ 검사 목록 · LOT · 규격 · 문서',
+        'LOT은 라벨에서 읽어 목록과 자동으로 맞춥니다(자동(정확)/자동(끝4자리)/자동(유사)). 규격은 라벨에 인쇄된 문서번호로 자동 선택되며, 규격 버튼을 직접 누르면 그 페이지만 수동 지정됩니다.',
+        '문서: 줄에 어떤 문서번호를 읽어 어떤 규격을 골랐는지 표시됩니다.'],
+    h: ['⑧ 판정 배지',
+        '이 페이지의 판정입니다. 큰 글씨는 판정(합격 / 확인 필요), 아래 작은 줄은 사유입니다. 사유줄은 저장되는 이미지의 요약 상자와 같은 문구를 씁니다.',
+        '확인 필요는 불합격이 아니라 검사자가 확인해야 한다는 뜻입니다.'],
+    i: ['⑨ 필드별 검출 표',
+        '항목별로 검사 값과 검출/기준 횟수를 보여 줍니다. ✓ 일치, ✗ 불일치, ! 추출 실패. 출처 열은 GTIN을 바코드로 읽었는지 글자로 읽었는지 표시합니다.',
+        '불일치 행을 더블클릭하면 원인 진단과 교정 등록 화면이 열립니다.'],
+    j: ['⑩ 바코드 검증 표',
+        'GS1-128 등 바코드의 값을 목록과 대조한 결과입니다. 종류·손상 등급·판독값·일치 여부를 보여 줍니다.',
+        'DataMatrix는 이 표에 나오지 않습니다(위치 표시만). 값을 보려면 [▣ 바코드 인식]으로 클릭하세요.'],
+    k: ['⑪ 상태바',
+        '왼쪽부터 OCR 엔진·AWS 인증 상태, 메시지(시각 포함), 진행 막대, 버전, 설정 버튼입니다. 경고·오류 메시지는 5초간 고정되어 다른 메시지에 덮이지 않습니다.',
+        '버전을 클릭하면 프로그램 정보(빌드·데이터 폴더·로그 위치)가 열립니다.']
+  };
+  var hsBtns = document.querySelectorAll('.hs');
+  var hsT = document.getElementById('hsTitle');
+  var hsX = document.getElementById('hsText');
+  var hsH = document.getElementById('hsHint');
+  Array.prototype.forEach.call(hsBtns, function(b){
+    b.addEventListener('click', function(){
+      var d = HS[b.getAttribute('data-k')];
+      if (!d) return;
+      Array.prototype.forEach.call(hsBtns, function(o){ o.classList.remove('on'); });
+      b.classList.add('on');
+      hsT.textContent = d[0]; hsX.textContent = d[1]; hsH.textContent = d[2];
+      document.getElementById('hsPanel').scrollIntoView({block:'nearest', behavior:'smooth'});
+    });
+  });
+
+  /* ---------- 경로 복사 ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll('.copybtn'), function(b){
+    b.addEventListener('click', function(){
+      var txt = b.getAttribute('data-copy');
+      var done = function(){
+        var old = b.textContent;
+        b.textContent = '복사됨 ✓'; b.classList.add('done');
+        setTimeout(function(){ b.textContent = old; b.classList.remove('done'); }, 1600);
+      };
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(txt).then(done, function(){ fallback(txt, done); });
+        } else { fallback(txt, done); }
+      } catch (e) { fallback(txt, done); }
+    });
+  });
+  function fallback(txt, done){
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta); done();
+    } catch (e) { /* 복사 불가 환경 — 사용자가 직접 선택 */ }
+  }
+
+  /* ---------- 설정 검색 ---------- */
+  var setInput = document.getElementById('setSearch');
+  var setRows = Array.prototype.slice.call(document.querySelectorAll('#setTable tbody tr'));
+  var noRes = document.getElementById('setNoRes');
+  var curTab = 'all';
+  function filterSet(){
+    var q = (setInput.value || '').trim().toLowerCase();
+    var shown = 0;
+    setRows.forEach(function(r){
+      var okTab = curTab === 'all' || r.getAttribute('data-tab') === curTab;
+      var okQ = q === '' || r.textContent.toLowerCase().indexOf(q) !== -1;
+      var vis = okTab && okQ;
+      r.style.display = vis ? '' : 'none';
+      if (vis) shown++;
+    });
+    noRes.style.display = shown ? 'none' : 'block';
+  }
+  setInput.addEventListener('input', filterSet);
+  Array.prototype.forEach.call(document.querySelectorAll('.filterbtn'), function(b){
+    b.addEventListener('click', function(){
+      Array.prototype.forEach.call(document.querySelectorAll('.filterbtn'), function(o){
+        o.classList.remove('on');
+      });
+      b.classList.add('on');
+      curTab = b.getAttribute('data-tab');
+      filterSet();
+    });
+  });
+
+  /* ---------- 체크리스트 ---------- */
+  var KEY = 'lavis-guide-checklist-v1';
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('#checklist input'));
+  var cnt = document.getElementById('chkCount');
+  var fill = document.getElementById('chkFill');
+  function load(){
+    try {
+      var raw = window.localStorage.getItem(KEY);
+      if (!raw) return;
+      var saved = JSON.parse(raw) || {};
+      boxes.forEach(function(b){ if (saved[b.id]) b.checked = true; });
+    } catch (e) { /* 저장소 사용 불가 — 무시 */ }
+  }
+  function save(){
+    try {
+      var o = {};
+      boxes.forEach(function(b){ o[b.id] = b.checked; });
+      window.localStorage.setItem(KEY, JSON.stringify(o));
+    } catch (e) { /* 무시 */ }
+  }
+  function sync(){
+    var n = 0;
+    boxes.forEach(function(b){
+      var li = b.closest('li');
+      if (li) li.classList.toggle('done', b.checked);
+      if (b.checked) n++;
+    });
+    cnt.textContent = n + ' / ' + boxes.length;
+    fill.style.width = (boxes.length ? (n / boxes.length * 100) : 0) + '%';
+  }
+  boxes.forEach(function(b){
+    b.addEventListener('change', function(){ save(); sync(); });
+  });
+  document.getElementById('chkReset').addEventListener('click', function(){
+    boxes.forEach(function(b){ b.checked = false; });
+    save(); sync();
+  });
+  load(); sync();
+})();
+</script>
+</body>
+</html>
